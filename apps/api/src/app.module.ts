@@ -7,6 +7,10 @@ import { CompanyModule } from './modules/company/company.module';
 import { UserModule } from './modules/user/user.module';
 import { DepartmentModule } from './modules/department/department.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { ConversationModule } from './modules/conversation/conversation.module';
+import { MessageModule } from './modules/message/message.module';
+import { WebhookModule } from './modules/webhook/webhook.module';
 
 @Module({
   imports: [
@@ -18,11 +22,19 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
       },
     ]),
     PrismaModule,
+    // ── Auth & Core ──────────────────────────────────────────────────────────
     AuthModule,
     CompanyModule,
     UserModule,
     DepartmentModule,
+    // ── WhatsApp ─────────────────────────────────────────────────────────────
     WhatsappModule,
+    // ── Atendimento ──────────────────────────────────────────────────────────
+    ContactModule,
+    ConversationModule,
+    MessageModule,
+    // ── Integrações ───────────────────────────────────────────────────────────
+    WebhookModule,
   ],
 })
 export class AppModule {}
