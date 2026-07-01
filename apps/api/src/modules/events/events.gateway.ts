@@ -7,12 +7,14 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
+  WsException,
 } from '@nestjs/websockets';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { PrismaService } from '../../shared/prisma/prisma.service';
 
 // Estende o Socket para carregar os dados do usuário autenticado
 export interface AuthenticatedSocket extends Socket {
@@ -48,6 +50,7 @@ export class EventsGateway
   constructor(
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   afterInit(server: Server) {
@@ -128,6 +131,22 @@ export class EventsGateway
     @MessageBody() data: { conversationId: string },
   ) {
     if (!data?.conversationId) return;
+
+    // Valida se a conversa pertence ao tenant do usuário
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id: data.conversationId,
+        companyId: socket.user.companyId,
+      },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      this.logger.warn(
+        `Usuário ${socket.user.id} tentou acessar de forma não autorizada a conversa ${data.conversationId}`
+      );
+      throw new WsException('Acesso não autorizado a esta conversa.');
+    }
 
     const room = `conversation:${data.conversationId}`;
     await socket.join(room);
