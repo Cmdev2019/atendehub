@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
@@ -25,7 +26,7 @@ export interface AuthenticatedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'],
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(','),
     credentials: true,
   },
   namespace: '/ws',
@@ -39,13 +40,15 @@ export class EventsGateway
 
   private readonly logger = new Logger(EventsGateway.name);
 
-  // Mapa socketId → dados do usuário (para log e debug)
   private readonly connectedClients = new Map<
     string,
     { userId: string; companyId: string; connectedAt: Date }
   >();
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
+  ) {}
 
   afterInit(server: Server) {
     this.logger.log('Socket.IO Gateway iniciado em /ws');
@@ -53,7 +56,6 @@ export class EventsGateway
     // ── Middleware de autenticação no handshake ────────────────────────────
     server.use((socket: AuthenticatedSocket, next) => {
       try {
-        // Token pode vir no handshake auth ou como query param
         const token =
           socket.handshake.auth?.token ??
           socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
@@ -64,7 +66,7 @@ export class EventsGateway
         }
 
         const payload = this.jwtService.verify<JwtPayload>(token, {
-          secret: process.env.JWT_SECRET,
+          secret: this.config.get<string>('JWT_SECRET'),
         });
 
         socket.user = {

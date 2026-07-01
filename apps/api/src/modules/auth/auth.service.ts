@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
@@ -16,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   // ── Valida email + senha (usado pelo LocalStrategy) ───────────────────────
@@ -165,16 +167,21 @@ export class AuthService {
       role: user.role,
     };
 
-    const expiresIn = this.parseExpiry(process.env.JWT_EXPIRES_IN ?? '15m');
+    const jwtSecret         = this.config.get<string>('JWT_SECRET');
+    const jwtExpiresIn      = this.config.get<string>('JWT_EXPIRES_IN') ?? '15m';
+    const jwtRefreshSecret  = this.config.get<string>('JWT_REFRESH_SECRET');
+    const jwtRefreshExpires = this.config.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+
+    const expiresIn = this.parseExpiry(jwtExpiresIn);
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: process.env.JWT_SECRET,
-        expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
+        secret: jwtSecret,
+        expiresIn: jwtExpiresIn,
       }),
       this.jwtService.signAsync(payload, {
-        secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+        secret: jwtRefreshSecret,
+        expiresIn: jwtRefreshExpires,
       }),
     ]);
 

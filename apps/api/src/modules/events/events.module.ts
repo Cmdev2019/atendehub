@@ -6,6 +6,7 @@ import { EventsService } from './events.service';
 
 @Module({
   imports: [
+    ConfigModule,
     // registerAsync garante que JWT_SECRET é lido após o ConfigModule carregar o .env
     JwtModule.registerAsync({
       imports: [ConfigModule],
