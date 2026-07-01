@@ -1,16 +1,21 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventsGateway } from './events.gateway';
 import { EventsService } from './events.service';
 
 @Module({
   imports: [
-    // JwtService necessário no Gateway para verificar token no handshake
-    JwtModule.register({
-      secret: process.env.JWT_SECRET,
+    // registerAsync garante que JWT_SECRET é lido após o ConfigModule carregar o .env
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET'),
+      }),
     }),
   ],
   providers: [EventsGateway, EventsService],
-  exports: [EventsService], // exportado para WebhookService, ConversationService, WhatsappService
+  exports: [EventsService],
 })
 export class EventsModule {}

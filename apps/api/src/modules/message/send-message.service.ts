@@ -93,7 +93,7 @@ export class SendMessageService {
     const phone = conversation.contact.phone;
 
     // ── 3. Envia para a Evolution API ──────────────────────────────────────
-    let externalId: string;
+    let externalId: string | undefined;
 
     try {
       if (dto.type === MessageType.TEXT) {

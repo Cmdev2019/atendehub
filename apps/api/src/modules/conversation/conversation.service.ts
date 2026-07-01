@@ -194,7 +194,9 @@ export class ConversationService {
       agent: updated.agent,
     });
 
-    return updated;
+    // Retorna sem expor campos internos
+    const { companyId: _c, agentId: _a, departmentId: _d, ...response } = updated;
+    return response;
   }
 
   // ── Atualizar status da conversa ──────────────────────────────────────────
@@ -242,7 +244,9 @@ export class ConversationService {
       changes: { status: updated.status },
     });
 
-    return updated;
+    // Retorna sem expor companyId
+    const { companyId: _c, ...response } = updated;
+    return response;
   }
 
   // ── Zerar contador de não lidas ───────────────────────────────────────────

@@ -267,7 +267,7 @@ export class WebhookService {
       if (!key?.id) continue;
       await this.prisma.message.updateMany({
         where: { externalId: key.id },
-        data: { isDeleted: true, content: null, type: 'DELETED' },
+        data: { isDeleted: true, content: null, type: MessageType.DELETED },
       });
       this.logger.debug(`Mensagem deletada: ${key.id}`);
     }
