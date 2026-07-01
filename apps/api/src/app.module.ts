@@ -10,6 +10,7 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
 import { MessageModule } from './modules/message/message.module';
+import { NoteModule } from './modules/note/note.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { EventsModule } from './modules/events/events.module';
 
@@ -34,6 +35,7 @@ import { EventsModule } from './modules/events/events.module';
     ContactModule,
     ConversationModule,
     MessageModule,
+    NoteModule,
     // ── Tempo real ────────────────────────────────────────────────────────────
     EventsModule,
     // ── Integrações ───────────────────────────────────────────────────────────
