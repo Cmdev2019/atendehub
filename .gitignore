@@ -1,0 +1,57 @@
+# ── Dependências ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build ──────────────────────────────────────────────────────────────────────
+dist/
+build/
+.next/
+out/
+
+# ── Ambiente ───────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ── Prisma ─────────────────────────────────────────────────────────────────────
+# Não versionar client gerado — gerado em tempo de build
+apps/api/node_modules/.prisma/
+
+# ── Docker volumes locais ──────────────────────────────────────────────────────
+infra/nginx/certs/
+
+# ── Editor ─────────────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── OS ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Cache npm local ────────────────────────────────────────────────────────────
+.npm-cache/
+.npmrc
+
+# ── Arquivos temporários Kiro/agentes ──────────────────────────────────────────
+.agents/
+
+# ── Prisma client gerado ───────────────────────────────────────────────────────
+apps/api/src/generated/
+
+# ── Cobertura de testes ────────────────────────────────────────────────────────
+coverage/
+.nyc_output/

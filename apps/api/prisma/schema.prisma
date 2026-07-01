@@ -1,0 +1,477 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AtendeHub — Prisma Schema
+// Banco: PostgreSQL 16
+// ORM:   Prisma 5+
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═════════════════════════════════════════════════════════════════════════════
+
+enum Plan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum Role {
+  SUPER_ADMIN  // acesso total ao sistema (equipe interna)
+  ADMIN        // admin da empresa
+  SUPERVISOR   // supervisor de atendimento
+  AGENT        // atendente
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  CONNECTING
+  QR_CODE      // aguardando scan do QR
+  ERROR
+}
+
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+  EMAIL
+  CHAT         // chat do site
+}
+
+enum ConversationStatus {
+  WAITING      // na fila, sem atendente
+  OPEN         // em atendimento
+  RESOLVED     // resolvida pelo atendente
+  CLOSED       // encerrada (timeout ou finalização)
+}
+
+enum SenderType {
+  AGENT
+  CLIENT
+  BOT
+  SYSTEM       // mensagens automáticas (ex: "Conversa transferida")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  STICKER
+  LOCATION
+  CONTACT_CARD
+  TEMPLATE     // mensagem de template HSM
+  REACTION
+  DELETED
+}
+
+enum MessageStatus {
+  PENDING      // aguardando envio
+  SENT         // enviado para o servidor
+  DELIVERED    // entregue ao dispositivo
+  READ         // lido
+  FAILED       // falhou
+}
+
+enum QueueStrategy {
+  ROUND_ROBIN  // distribui igualmente entre atendentes
+  MANUAL       // atendente pega da fila manualmente
+  LEAST_BUSY   // vai para quem tem menos conversas abertas
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// EMPRESA (root do multi-tenant)
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique           // usado como subdomínio: slug.atendehub.com
+  logoUrl     String?
+  plan        Plan     @default(FREE)
+  isActive    Boolean  @default(true)
+  maxAgents   Int      @default(5)       // limite do plano
+  maxChannels Int      @default(2)
+  trialEndsAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users               User[]
+  departments         Department[]
+  whatsappConnections WhatsAppConnection[]
+  contacts            Contact[]
+  conversations       Conversation[]
+  queues              Queue[]
+  tags                Tag[]
+  webhooks            Webhook[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@map("companies")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// USUÁRIO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model User {
+  id           String    @id @default(cuid())
+  companyId    String
+  name         String
+  email        String
+  passwordHash String
+  role         Role      @default(AGENT)
+  isActive     Boolean   @default(true)
+  avatarUrl    String?
+  phone        String?
+  lastSeenAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  departments   Department[]   @relation("UserDepartments")
+  conversations Conversation[] @relation("AgentConversations")
+  messages      Message[]
+  notes         InternalNote[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@index([email])
+  @@map("users")
+}
+
+// ─── Refresh tokens armazenados no banco (revogação individual) ──────────────
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DEPARTAMENTO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Department {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  color       String   @default("#6366f1")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users               User[]               @relation("UserDepartments")
+  queues              Queue[]
+  whatsappConnections WhatsAppConnection[]
+  conversations       Conversation[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("departments")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// FILA DE ATENDIMENTO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Queue {
+  id           String        @id @default(cuid())
+  companyId    String
+  departmentId String?
+  name         String
+  strategy     QueueStrategy @default(ROUND_ROBIN)
+  maxWaitSecs  Int           @default(300)    // SLA: tempo máximo na fila
+  greetingMsg  String?                        // mensagem automática ao entrar
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department   Department? @relation(fields: [departmentId], references: [id])
+  conversations Conversation[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("queues")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONEXÃO WHATSAPP
+// ═════════════════════════════════════════════════════════════════════════════
+
+model WhatsAppConnection {
+  id             String           @id @default(cuid())
+  companyId      String
+  departmentId   String?
+  name           String                            // "Comercial", "Financeiro"
+  sessionName    String           @unique          // ID na Evolution API
+  phone          String?                           // preenchido após conexão
+  profileName    String?
+  profilePicture String?
+  status         ConnectionStatus @default(DISCONNECTED)
+  battery        Int?
+  platform       String?                           // "android", "ios", "web"
+  qrCode         String?          @db.Text         // base64 temporário
+  lastSeenAt     DateTime?
+  apiToken       String?                           // token na Evolution API
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department    Department?  @relation(fields: [departmentId], references: [id])
+  conversations Conversation[]
+
+  @@index([companyId])
+  @@index([sessionName])
+  @@map("whatsapp_connections")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONTATO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Contact {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  phone       String
+  email       String?
+  avatarUrl   String?
+  channel     Channel  @default(WHATSAPP)
+  isBlocked   Boolean  @default(false)
+  metadata    Json?    // dados extras por canal (handle Instagram, etc.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  tags          Tag[]          @relation("ContactTags")
+
+  @@unique([companyId, phone])
+  @@index([companyId])
+  @@index([companyId, phone])
+  @@map("contacts")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONVERSA
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Conversation {
+  id                   String             @id @default(cuid())
+  companyId            String
+  contactId            String
+  agentId              String?
+  departmentId         String?
+  queueId              String?
+  whatsappConnectionId String?
+  status               ConversationStatus @default(WAITING)
+  channel              Channel            @default(WHATSAPP)
+  unreadCount          Int                @default(0)
+  lastMessageAt        DateTime?
+  lastMessagePreview   String?            // preview para a lista
+  slaBreachedAt        DateTime?          // quando o SLA foi violado
+  resolvedAt           DateTime?
+  closedAt             DateTime?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact     Contact             @relation(fields: [contactId], references: [id])
+  agent       User?               @relation("AgentConversations", fields: [agentId], references: [id])
+  department  Department?         @relation(fields: [departmentId], references: [id])
+  queue       Queue?              @relation(fields: [queueId], references: [id])
+  whatsapp    WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id])
+  messages    Message[]
+  tags        Tag[]               @relation("ConversationTags")
+  notes       InternalNote[]
+
+  @@index([companyId, status])
+  @@index([companyId, contactId])
+  @@index([companyId, agentId])
+  @@index([companyId, lastMessageAt])
+  @@map("conversations")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MENSAGEM
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  senderId       String?       // userId quando for agente
+  senderType     SenderType
+  content        String?       @db.Text
+  type           MessageType   @default(TEXT)
+  externalId     String?       // ID da mensagem no WhatsApp/Evolution
+  status         MessageStatus @default(SENT)
+  isDeleted      Boolean       @default(false)
+  isEdited       Boolean       @default(false)
+  quotedMessageId String?      // mensagem citada
+  metadata       Json?         // reaction, forwarded, etc.
+  sentAt         DateTime      @default(now())
+  deliveredAt    DateTime?
+  readAt         DateTime?
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User?        @relation(fields: [senderId], references: [id])
+  attachments    Attachment[]
+
+  @@index([conversationId])
+  @@index([conversationId, sentAt])
+  @@index([externalId])
+  @@map("messages")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ANEXO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Attachment {
+  id        String  @id @default(cuid())
+  messageId String
+  url       String  // URL no MinIO
+  mimeType  String
+  fileName  String?
+  size      Int?    // bytes
+  width     Int?    // para imagens/vídeos
+  height    Int?
+  duration  Int?    // para áudio/vídeo em segundos
+
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TAG
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Tag {
+  id        String  @id @default(cuid())
+  companyId String
+  name      String
+  color     String  @default("#6366f1")
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations Conversation[] @relation("ConversationTags")
+  contacts      Contact[]      @relation("ContactTags")
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("tags")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// NOTA INTERNA
+// ═════════════════════════════════════════════════════════════════════════════
+
+model InternalNote {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author         User         @relation(fields: [authorId], references: [id])
+
+  @@index([conversationId])
+  @@map("internal_notes")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WEBHOOK EXTERNO
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Webhook {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  url       String
+  events    String[]  // ex: ["message.received", "conversation.created"]
+  secret    String    // HMAC para validação
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("webhooks")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// NOTIFICAÇÃO IN-APP
+// ═════════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  type      String   // ex: "new_conversation", "mentioned", "sla_breach"
+  title     String
+  body      String?
+  data      Json?    // payload extra (conversationId, etc.)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([companyId])
+  @@map("notifications")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AUDITORIA
+// ═════════════════════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String?
+  action    String   // ex: "conversation.transferred", "user.created"
+  entity    String   // ex: "Conversation", "User"
+  entityId  String
+  before    Json?    // estado anterior
+  after     Json?    // estado posterior
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User?   @relation(fields: [userId], references: [id])
+
+  @@index([companyId, entity, entityId])
+  @@index([companyId, createdAt])
+  @@map("audit_logs")
+}
