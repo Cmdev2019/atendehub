@@ -8,6 +8,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
+import { EventsService } from '../events/events.service';
 
 // Campos padrão para listagem
 const CONVERSATION_LIST_SELECT = {
@@ -40,7 +41,10 @@ const CONVERSATION_LIST_SELECT = {
 
 @Injectable()
 export class ConversationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventsService: EventsService,
+  ) {}
 
   // ── Listar conversas com filtros e paginação ──────────────────────────────
   async findAll(companyId: string, query: ListConversationsDto) {
@@ -162,7 +166,7 @@ export class ConversationService {
       if (!dept) throw new NotFoundException('Departamento não encontrado');
     }
 
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id },
       data: {
         agentId: dto.agentId ?? null,
@@ -173,10 +177,24 @@ export class ConversationService {
       select: {
         id: true,
         status: true,
+        companyId: true,
+        agentId: true,
+        departmentId: true,
         agent: { select: { id: true, name: true, avatarUrl: true } },
         department: { select: { id: true, name: true } },
       },
     });
+
+    // Emite evento em tempo real
+    this.eventsService.emitConversationAssigned({
+      companyId: updated.companyId,
+      conversationId: updated.id,
+      agentId: updated.agentId,
+      departmentId: updated.departmentId,
+      agent: updated.agent,
+    });
+
+    return updated;
   }
 
   // ── Atualizar status da conversa ──────────────────────────────────────────
@@ -200,7 +218,7 @@ export class ConversationService {
     }
 
     const now = new Date();
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id },
       data: {
         status: dto.status,
@@ -210,11 +228,21 @@ export class ConversationService {
       select: {
         id: true,
         status: true,
+        companyId: true,
         resolvedAt: true,
         closedAt: true,
         updatedAt: true,
       },
     });
+
+    // Emite evento em tempo real
+    this.eventsService.emitConversationUpdated({
+      companyId: updated.companyId,
+      conversationId: updated.id,
+      changes: { status: updated.status },
+    });
+
+    return updated;
   }
 
   // ── Zerar contador de não lidas ───────────────────────────────────────────

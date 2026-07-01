@@ -10,6 +10,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EvolutionService } from './evolution.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
+import { EventsService } from '../events/events.service';
 
 @Injectable()
 export class WhatsappService {
@@ -18,6 +19,7 @@ export class WhatsappService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evolution: EvolutionService,
+    private readonly eventsService: EventsService,
   ) {}
 
   // ── Listar conexões da empresa ────────────────────────────────────────────
@@ -267,6 +269,16 @@ export class WhatsappService {
         ...(profilePicture && { profilePicture }),
         ...(state === 'open' && { qrCode: null, lastSeenAt: new Date() }),
       },
+    });
+
+    // Emite evento em tempo real para a empresa
+    this.eventsService.emitConnectionStatus({
+      companyId: conn.companyId,
+      connectionId: conn.id,
+      sessionName,
+      status,
+      phone,
+      profileName,
     });
 
     this.logger.log(`Conexão ${sessionName} → ${status}`);

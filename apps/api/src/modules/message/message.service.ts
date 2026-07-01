@@ -182,7 +182,7 @@ export class MessageService {
     // Evita duplicatas pelo externalId
     const existing = await this.prisma.message.findFirst({
       where: { externalId: data.externalId },
-      select: { id: true },
+      select: { id: true, status: true, sentAt: true },
     });
 
     if (existing) return existing;
@@ -197,6 +197,11 @@ export class MessageService {
         externalId: data.externalId,
         status: MessageStatus.DELIVERED,
         metadata: data.metadata,
+      },
+      select: {
+        id: true,
+        status: true,
+        sentAt: true,
       },
     });
   }

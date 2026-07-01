@@ -11,6 +11,7 @@ import { ContactModule } from './modules/contact/contact.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
 import { MessageModule } from './modules/message/message.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -33,6 +34,8 @@ import { WebhookModule } from './modules/webhook/webhook.module';
     ContactModule,
     ConversationModule,
     MessageModule,
+    // ── Tempo real ────────────────────────────────────────────────────────────
+    EventsModule,
     // ── Integrações ───────────────────────────────────────────────────────────
     WebhookModule,
   ],

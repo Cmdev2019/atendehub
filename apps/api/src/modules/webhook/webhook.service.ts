@@ -5,6 +5,7 @@ import { ContactService } from '../contact/contact.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { MessageService } from '../message/message.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { EventsService } from '../events/events.service';
 
 // ─── Tipos dos payloads da Evolution API v2 ───────────────────────────────────
 interface EvolutionMessageKey {
@@ -51,6 +52,7 @@ export class WebhookService {
     private readonly conversationService: ConversationService,
     private readonly messageService: MessageService,
     private readonly whatsappService: WhatsappService,
+    private readonly eventsService: EventsService,
   ) {}
 
   // ── Entry point — roteia pelo tipo de evento ──────────────────────────────
@@ -149,6 +151,9 @@ export class WebhookService {
       whatsappConnectionId,
     );
 
+    // Guarda se a conversa já existia antes do upsert
+    const existing = conversation.createdAt < new Date(Date.now() - 2000);
+
     // Determina tipo e conteúdo da mensagem
     const { type, content } = this.extractMessageContent(message);
 
@@ -156,7 +161,7 @@ export class WebhookService {
     const senderType = key.fromMe ? SenderType.AGENT : SenderType.CLIENT;
 
     // Persiste a mensagem com dedup por externalId
-    await this.messageService.createFromWebhook({
+    const savedMessage = await this.messageService.createFromWebhook({
       conversationId: conversation.id,
       content,
       type,
@@ -172,6 +177,42 @@ export class WebhookService {
     if (!key.fromMe && content) {
       await this.conversationService.updateLastMessage(conversation.id, content);
     }
+
+    // ── Emite evento em tempo real ─────────────────────────────────────────
+    const isNewConversation = !existing;
+
+    if (isNewConversation) {
+      this.eventsService.emitConversationCreated({
+        companyId,
+        conversation: {
+          id: conversation.id,
+          status: conversation.status,
+          channel: conversation.channel,
+          contact: {
+            id: contact.id,
+            name: contact.name,
+            phone: contact.phone,
+            avatarUrl: contact.avatarUrl,
+          },
+          whatsappConnectionId,
+          createdAt: conversation.createdAt,
+        },
+      });
+    }
+
+    this.eventsService.emitNewMessage({
+      companyId,
+      conversationId: conversation.id,
+      message: {
+        id: savedMessage.id,
+        senderType,
+        content,
+        type,
+        status: savedMessage.status,
+        sentAt: savedMessage.sentAt,
+        externalId: key.id,
+      },
+    });
 
     this.logger.debug(`Mensagem processada: ${key.id} | ${phone} | ${type}`);
   }
@@ -195,6 +236,24 @@ export class WebhookService {
       const mappedStatus = statusMap[status];
       if (mappedStatus) {
         await this.messageService.updateStatus(externalId, mappedStatus);
+
+        // Busca a mensagem para obter conversationId e companyId
+        const msg = await this.prisma.message.findFirst({
+          where: { externalId },
+          select: {
+            conversation: { select: { id: true, companyId: true } },
+          },
+        });
+
+        if (msg?.conversation) {
+          this.eventsService.emitMessageStatus({
+            conversationId: msg.conversation.id,
+            companyId: msg.conversation.companyId,
+            externalId,
+            status: mappedStatus,
+          });
+        }
+
         this.logger.debug(`Status atualizado: ${externalId} → ${mappedStatus}`);
       }
     }
@@ -226,6 +285,23 @@ export class WebhookService {
       phone,
       profileName,
     );
+
+    // Emite evento em tempo real para a empresa
+    const conn = await this.prisma.whatsAppConnection.findUnique({
+      where: { sessionName },
+      select: { id: true, companyId: true, status: true },
+    });
+
+    if (conn) {
+      this.eventsService.emitConnectionStatus({
+        companyId: conn.companyId,
+        connectionId: conn.id,
+        sessionName,
+        status: conn.status,
+        phone,
+        profileName,
+      });
+    }
   }
 
   // ── QRCODE_UPDATED — novo QR Code gerado ─────────────────────────────────
