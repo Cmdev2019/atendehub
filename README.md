@@ -160,13 +160,13 @@ cd apps/api && npm run db:migrate
 
 | Fase | Descrição | Status |
 |---|---|---|
-| 1 | Docker Compose + Prisma schema | ✅ Concluída |
-| 2 | Auth (JWT, RBAC, multi-tenant guard) | 🔜 |
-| 3 | CRUD: Company, User, Department | 🔜 |
-| 4 | Módulo WhatsApp — QR Code + sessão | 🔜 |
-| 5 | Webhook + Contact + Conversation + Message | 🔜 |
-| 6 | Socket.IO gateway (tempo real) | 🔜 |
-| 7 | Envio de mensagem (ciclo completo) | 🔜 |
-| 8 | Front-end Next.js + TypeScript | 🔜 |
-| 9 | Filas BullMQ, automações, SLA | 🔜 |
-| 10 | Relatórios, auditoria, notificações | 🔜 |
+| 1 | Docker Compose + Prisma schema |  Concluída |
+| 2 | Auth (JWT, RBAC, multi-tenant guard) | Concluído |
+| 3 | CRUD: Company, User, Department | Parcialmente Concluído |
+| 4 | Módulo WhatsApp — QR Code + sessão | Parcialmente Concluído |
+| 5 | Webhook + Contact + Conversation + Message | Parcialmente Concluído |
+| 6 | Socket.IO gateway (tempo real) | Parcialmente Concluído |
+| 7 | Envio de mensagem (ciclo completo) | Parcialmente Concluído |
+| 8 | Front-end Next.js + TypeScript | Parcialmente Concluído |
+| 9 | Filas BullMQ, automações, SLA | Em validação |
+| 10 | Relatórios, auditoria, notificações | Em Desenvolvimento |
