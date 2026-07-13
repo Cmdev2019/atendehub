@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AtendeHub — Override de produção
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    restart: always
+    ports: []   # não expõe porta externamente em produção
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # obrigatório via .env
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    restart: always
+    ports: []
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  minio:
+    restart: always
+    ports:
+      - "9000:9000"  # manter apenas a API, não o console
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  evolution:
+    restart: always
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL}       # ex: https://evolution.suaempresa.com
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      WEBHOOK_GLOBAL_URL: ${EVOLUTION_WEBHOOK_URL}
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # ── NestJS API (build da imagem da aplicação) ────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: atendehub_api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    env_file: .env
+    networks:
+      - atendehub_net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # ── Next.js Web (build da imagem do front) ───────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: atendehub_web
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    env_file: .env
+    networks:
+      - atendehub_net
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # ── Nginx (reverse proxy + SSL) ──────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: atendehub_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - atendehub_net
