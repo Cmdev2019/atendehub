@@ -1,5 +1,6 @@
 import { createElement as h } from 'react';
 import { LoginForm } from '../components/LoginForm';
+import { Logo } from '../components/Logo';
 
 const e = h;
 
@@ -14,7 +15,7 @@ export function LoginPage({ onLoginSuccess }) {
       e(
         'div',
         { className: 'login-header' },
-        e('div', { className: 'logo' }, 'A'),
+        e(Logo, { size: 64 }),
         e('h1', null, 'AtendeHub'),
         e('p', null, 'Sistema de Atendimento Omnichannel'),
       ),

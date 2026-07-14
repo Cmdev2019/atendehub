@@ -1,6 +1,7 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { Logo } from './Logo';
 
 export function Topbar() {
   const { logout, user } = useAuth();
@@ -18,7 +19,7 @@ export function Topbar() {
     h(
       'div',
       { className: 'topbar-brand' },
-      h('span', { className: 'brand-mark' }, 'A'),
+      h(Logo, { size: 36 }),
       h('strong', null, 'AtendeHub'),
     ),
     h(
