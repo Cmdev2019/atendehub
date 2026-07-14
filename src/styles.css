@@ -1,20 +1,25 @@
 :root {
   color-scheme: light;
-  --bg: #f0f2f5;
+  --bg: #f5f7fa;
   --panel: #ffffff;
-  --panel-soft: #f6f8fb;
-  --text: #17202a;
-  --muted: #687386;
-  --line: #dce4ee;
-  --line-strong: #c7d2df;
+  --panel-soft: #f8fafc;
+  --text: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
   --brand: #0f766e;
+  --brand-light: #14b8a6;
   --brand-dark: #115e59;
-  --accent: #dc2626;
-  --blue: #2563eb;
-  --green: #16a34a;
-  --amber: #d97706;
-  --nav: #111827;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --accent: #ef4444;
+  --accent-light: #fca5a5;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+  --nav: #1e293b;
+  --nav-hover: #334155;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
     sans-serif;
@@ -24,11 +29,17 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
@@ -40,18 +51,23 @@ textarea {
 button {
   cursor: pointer;
   border: none;
+  transition: all 0.2s ease;
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   LAYOUT PRINCIPAL (WhatsApp style)
+   APP CONTAINER - Layout Principal
    ───────────────────────────────────────────────────────────────── */
 
 .app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--bg);
+  overflow: hidden;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   TOPBAR - Header
+   ───────────────────────────────────────────────────────────────── */
 
 .topbar {
   display: flex;
@@ -61,15 +77,17 @@ button {
   padding: 12px 20px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   z-index: 100;
+  flex-shrink: 0;
 }
 
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .brand-mark {
@@ -77,8 +95,8 @@ button {
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 6px;
-  background: var(--brand);
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
   color: white;
   font-weight: 800;
   font-size: 1rem;
@@ -87,7 +105,14 @@ button {
 .topbar-title {
   flex: 1;
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.topbar-title h2 {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -98,23 +123,22 @@ button {
 }
 
 .user-display {
-  font-size: 0.9rem;
-  color: var(--muted);
-  padding-right: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 0 12px;
   border-right: 1px solid var(--line);
 }
 
 .icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--panel-soft);
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
-  transition: background 0.2s;
+  font-size: 1rem;
 }
 
 .icon-btn:hover {
@@ -122,13 +146,12 @@ button {
 }
 
 .btn-logout {
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: 6px;
   background: var(--brand);
   color: white;
   font-size: 0.9rem;
   font-weight: 500;
-  transition: background 0.2s;
 }
 
 .btn-logout:hover {
@@ -136,54 +159,67 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   MAIN LAYOUT (4 colunas: menu + conversas + chat + details)
+   MAIN LAYOUT - Grid Principal
    ───────────────────────────────────────────────────────────────── */
 
 .main-layout {
   display: grid;
-  grid-template-columns: auto 340px 1fr 360px;
+  grid-template-columns: 80px 1fr;
   gap: 0;
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  background: var(--bg);
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   SIDEBAR - Menu Vertical Compacto
+   ───────────────────────────────────────────────────────────────── */
 
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 16px;
+  padding: 8px;
   background: var(--nav);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   overflow-y: auto;
-  min-width: 220px;
-  max-width: 240px;
+  width: 80px;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
 }
 
 .nav-menu {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   padding: 0;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .nav-item {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: 44px;
+  justify-content: center;
+  gap: 6px;
+  width: 64px;
+  height: 64px;
   border-radius: 8px;
   background: transparent;
   color: #cbd5e1;
-  text-align: left;
+  text-align: center;
   transition: all 0.2s;
-  padding: 10px 12px;
-  margin: 0;
-  border: none;
+  padding: 0;
+  margin: 0 auto;
 }
 
 .nav-item:hover {
@@ -192,132 +228,137 @@ button {
 }
 
 .nav-item.active {
-  background: rgba(15, 118, 110, 0.25);
+  background: rgba(20, 184, 166, 0.2);
   color: #5eead4;
-  border-left: 3px solid var(--brand);
-  padding-left: 9px;
 }
 
 .nav-icon {
-  font-size: 1.3rem;
-  flex-shrink: 0;
+  font-size: 1.5rem;
+  line-height: 1;
 }
 
 .nav-label {
-  font-size: 0.9rem;
-  font-weight: 500;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  word-break: break-word;
+  max-width: 60px;
+  line-height: 1.2;
 }
 
 .badge {
-  position: relative;
+  position: absolute;
+  top: 4px;
+  right: 4px;
   min-width: 20px;
   height: 20px;
   border-radius: 999px;
   background: var(--accent);
   color: white;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  flex-shrink: 0;
+  font-weight: 700;
 }
 
 .channels-section {
   margin-top: auto;
-  padding: 16px 0;
+  padding: 8px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .channels-title {
-  margin: 0 0 12px;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  display: none;
 }
 
 .channel-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 8px;
-  border-radius: 6px;
+  justify-content: center;
+  gap: 4px;
+  width: 64px;
+  height: 52px;
+  margin: 0 auto 4px;
+  padding: 6px;
+  border-radius: 8px;
   color: #cbd5e1;
-  font-size: 0.9rem;
+  font-size: 0.7rem;
   cursor: pointer;
   transition: all 0.2s;
-  margin-bottom: 8px;
 }
 
 .channel-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   color: #f1f5f9;
 }
 
 .channel-icon {
-  font-size: 1.2rem;
-  flex-shrink: 0;
+  font-size: 1.3rem;
 }
 
 .channel-label {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
+  word-break: break-word;
+  max-width: 60px;
+  line-height: 1.1;
+  font-size: 0.65rem;
 }
 
 .channel-status {
-  font-size: 1rem;
-  color: var(--green);
-  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--success);
 }
 
 .channel-button {
-  width: 100%;
-  padding: 10px;
-  margin-top: 8px;
+  width: 64px;
+  margin: 4px auto;
+  padding: 8px;
   border-radius: 6px;
-  background: rgba(15, 118, 110, 0.2);
+  background: rgba(20, 184, 166, 0.15);
   color: #5eead4;
-  border: 1px solid rgba(15, 118, 110, 0.3);
-  font-size: 0.9rem;
-  font-weight: 500;
+  border: 1px solid rgba(20, 184, 166, 0.25);
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
 .channel-button:hover {
-  background: rgba(15, 118, 110, 0.3);
+  background: rgba(20, 184, 166, 0.25);
   border-color: #5eead4;
-  color: #f1f5f9;
 }
 
 .btn-sidebar-logout {
-  margin: 16px 8px 8px;
-  padding: 8px;
+  width: 64px;
+  margin: 8px auto 4px;
+  padding: 6px;
   border-radius: 6px;
-  background: rgba(220, 38, 38, 0.2);
+  background: rgba(239, 68, 68, 0.15);
   color: #fca5a5;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .btn-sidebar-logout:hover {
-  background: rgba(220, 38, 38, 0.3);
+  background: rgba(239, 68, 68, 0.25);
   color: #fecaca;
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   CONVERSATION LIST (esquerda)
+   MAIN CONTENT AREA
    ───────────────────────────────────────────────────────────────── */
+
+.workspace {
+  display: grid;
+  grid-template-columns: 300px 1fr 340px;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
 
 .conversation-area {
   display: flex;
@@ -328,10 +369,6 @@ button {
   overflow: hidden;
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   CHAT AREA (centro)
-   ───────────────────────────────────────────────────────────────── */
-
 .chat-area {
   display: flex;
   flex-direction: column;
@@ -339,10 +376,6 @@ button {
   background: var(--panel);
   overflow: hidden;
 }
-
-/* ─────────────────────────────────────────────────────────────────
-   DETAILS AREA (direita)
-   ───────────────────────────────────────────────────────────────── */
 
 .details-area {
   display: flex;
@@ -354,7 +387,7 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   CONVERSATION QUEUE (Lista de conversas)
+   QUEUE - Lista de Conversas
    ───────────────────────────────────────────────────────────────── */
 
 .queue {
@@ -367,14 +400,34 @@ button {
   box-shadow: none;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .search-input {
+  margin: 8px 12px;
   padding: 8px 12px;
-  margin: 8px 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 0.9rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
   background: var(--panel-soft);
   color: var(--text);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
 }
 
 .search-input:focus {
@@ -383,38 +436,32 @@ button {
   background: var(--panel);
 }
 
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 14px;
-  border-bottom: 1px solid var(--line);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
 .queue-list {
   overflow-y: auto;
-  padding: 8px;
+  padding: 4px;
+}
+
+.queue-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.queue-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 3px;
 }
 
 .queue-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  border-radius: 8px;
+  padding: 10px 8px;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.2s;
-  margin-bottom: 4px;
+  transition: all 0.15s;
+  margin-bottom: 2px;
   border: none;
   width: 100%;
 }
@@ -424,22 +471,22 @@ button {
 }
 
 .queue-item.active {
-  background: var(--panel-soft);
+  background: var(--line);
   border-left: 3px solid var(--brand);
-  padding-left: 9px;
+  padding-left: 5px;
 }
 
 .queue-item-avatar {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1rem;
   flex-shrink: 0;
 }
 
@@ -450,26 +497,28 @@ button {
 
 .queue-item-name {
   font-weight: 500;
+  font-size: 0.9rem;
   margin: 0;
+  color: var(--text);
 }
 
 .queue-item-preview {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 2px 0 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .queue-item-time {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: 0.75rem;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   CHAT PANEL (Mensagens)
+   CHAT PANEL - Conversas
    ───────────────────────────────────────────────────────────────── */
 
 .chat-header {
@@ -477,52 +526,67 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px;
+  padding: 12px;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .chat-person {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1;
 }
 
 .chat-header-avatar {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  flex-shrink: 0;
 }
 
 .chat-info {
   flex: 1;
+  min-width: 0;
 }
 
 .chat-info h3 {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
+  color: var(--text);
 }
 
 .chat-info p {
   margin: 2px 0 0;
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .chat-messages {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px;
+  padding: 12px;
   overflow-y: auto;
   flex: 1;
+  background: var(--panel);
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 3px;
 }
 
 .message {
@@ -539,10 +603,11 @@ button {
   max-width: 70%;
   padding: 10px 14px;
   border-radius: 12px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   line-height: 1.4;
   word-wrap: break-word;
   display: inline-block;
+  box-shadow: var(--shadow-sm);
 }
 
 .message.customer .message-bubble {
@@ -559,28 +624,35 @@ button {
 
 .message-time {
   font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 
 .composer {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--line);
   background: var(--panel);
+  flex-shrink: 0;
 }
 
 .composer-input {
   flex: 1;
   border: 1px solid var(--line);
-  border-radius: 24px;
+  border-radius: 20px;
   padding: 10px 16px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   resize: none;
   max-height: 100px;
   background: var(--panel-soft);
+  color: var(--text);
+  transition: all 0.2s;
+}
+
+.composer-input::placeholder {
+  color: var(--text-muted);
 }
 
 .composer-input:focus {
@@ -593,67 +665,95 @@ button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
+  background: var(--brand);
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
   padding: 0;
+  flex-shrink: 0;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--brand-dark);
+}
+
+.send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   CUSTOMER PANEL (Detalhes à direita)
+   CUSTOMER PANEL - Detalhes à Direita
    ───────────────────────────────────────────────────────────────── */
 
 .customer-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   border: none;
   background: transparent;
   box-shadow: none;
   overflow-y: auto;
 }
 
+.customer-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.customer-panel::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 3px;
+}
+
 .customer-head {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 8px;
+  padding: 12px;
   background: var(--panel-soft);
   border-radius: 8px;
 }
 
 .customer-head-avatar {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 1.3rem;
+  font-size: 1.1rem;
 }
 
 .customer-head h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
+  color: var(--text);
+}
+
+.customer-head .info-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .info-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .info-section h3 {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -661,43 +761,45 @@ button {
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   padding: 8px;
   background: var(--panel-soft);
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text);
 }
 
 .info-label {
-  color: var(--muted);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag {
+  display: inline-flex;
+  padding: 4px 8px;
+  background: var(--info);
+  color: white;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.timeline {
+  padding-left: 16px;
+  margin: 0;
   font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   METRICS (opcional - aparece se tiver espaço)
-   ───────────────────────────────────────────────────────────────── */
-
-.metrics {
-  display: none;
-}
-
-.metric-card {
-  display: grid;
-  gap: 5px;
-  padding: 14px;
-}
-
-.metric-card span,
-.metric-card small {
-  color: var(--muted);
-}
-
-.metric-card span {
-  font-size: 0.86rem;
-}
-
-.metric-card strong {
-  font-size: 1.45rem;
+.timeline li {
+  margin-bottom: 6px;
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -709,59 +811,80 @@ button {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+  padding: 16px;
+  background: linear-gradient(135deg, var(--brand) 0%, #0d9488 50%, var(--brand-dark) 100%);
 }
 
-.login-card {
+.login-container {
   width: 100%;
   max-width: 380px;
-  padding: 32px;
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .login-header {
   text-align: center;
   margin-bottom: 32px;
+  color: white;
 }
 
-.login-logo {
-  width: 52px;
-  height: 52px;
+.login-header .logo {
+  width: 56px;
+  height: 56px;
   margin: 0 auto 16px;
-  border-radius: 8px;
-  background: var(--brand);
-  color: white;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 1.5rem;
+  font-size: 1.8rem;
+  backdrop-filter: blur(10px);
 }
 
 .login-header h1 {
-  margin: 0;
-  font-size: 1.6rem;
+  margin: 0 0 8px;
+  font-size: 1.8rem;
   font-weight: 700;
 }
 
 .login-header p {
-  margin: 8px 0 0;
-  color: var(--muted);
+  margin: 0;
   font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+.login-body {
+  padding: 32px;
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+}
+
+.login-body h2 {
+  margin: 0 0 24px;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 18px;
 }
 
 .form-group label {
   font-weight: 500;
   font-size: 0.9rem;
+  color: var(--text);
 }
 
 .form-group input {
@@ -769,16 +892,61 @@ button {
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 0.95rem;
+  background: var(--panel-soft);
+  color: var(--text);
+  transition: all 0.2s;
 }
 
 .form-group input:focus {
   outline: none;
   border-color: var(--brand);
+  background: var(--panel);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
 }
 
-.submit-button {
-  width: 100%;
+.form-group input.error {
+  border-color: var(--accent);
+}
+
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 36px;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  padding: 4px;
+}
+
+.toggle-password:hover {
+  color: var(--text);
+}
+
+.error-text {
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-top: -4px;
+}
+
+.error-box {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 0.9rem;
+  border: 1px solid var(--accent);
+}
+
+.primary-button {
   padding: 12px;
   border-radius: 6px;
   background: var(--brand);
@@ -786,11 +954,33 @@ button {
   font-weight: 600;
   font-size: 0.95rem;
   margin-top: 8px;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
-.submit-button:hover {
+.primary-button:hover:not(:disabled) {
   background: var(--brand-dark);
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.demo-hint {
+  text-align: center;
+  padding: 12px;
+  background: var(--panel-soft);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .loading-screen {
@@ -798,17 +988,23 @@ button {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--bg);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+  flex-direction: column;
   gap: 16px;
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid var(--line);
-  border-top-color: var(--brand);
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.loading-screen p {
+  color: white;
+  font-size: 0.95rem;
 }
 
 @keyframes spin {
@@ -816,124 +1012,86 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   RESPONSIVO - Desktop Grande (1920px+)
-   ───────────────────────────────────────────────────────────────── */
-
-@media (min-width: 2000px) {
-  .main-layout {
-    grid-template-columns: auto 380px 1fr 400px;
-  }
-
-  .sidebar {
-    min-width: 260px;
-    max-width: 280px;
-  }
-
-  .chat-messages {
-    font-size: 1rem;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────
-   RESPONSIVO - Desktop Médio (1600px)
-   ───────────────────────────────────────────────────────────────── */
-
-@media (min-width: 1600px) and (max-width: 1999px) {
-  .main-layout {
-    grid-template-columns: auto 360px 1fr 380px;
-  }
-
-  .sidebar {
-    min-width: 250px;
-    max-width: 260px;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────
-   RESPONSIVO - Desktop Padrão (1200px - 1599px)
-   ───────────────────────────────────────────────────────────────── */
-
-@media (min-width: 1200px) and (max-width: 1599px) {
-  .main-layout {
-    grid-template-columns: auto 320px 1fr 340px;
-  }
-
-  .sidebar {
-    min-width: 220px;
-    max-width: 240px;
-  }
-
-  .user-display {
-    font-size: 0.85rem;
-  }
-
-  .queue-item-preview {
-    font-size: 0.8rem;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────
    RESPONSIVO - Tablet Grande (1024px - 1199px)
    ───────────────────────────────────────────────────────────────── */
 
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .workspace {
+    grid-template-columns: 280px 1fr 300px;
+  }
+
+  .queue-item-preview {
+    display: none;
+  }
+}
+
 @media (min-width: 1024px) and (max-width: 1199px) {
-  .main-layout {
-    grid-template-columns: auto 280px 1fr;
-  }
-
-  .sidebar {
-    min-width: 200px;
-    max-width: 220px;
-    padding: 12px;
-  }
-
-  .nav-item {
-    min-height: 40px;
-    padding: 8px 10px;
-  }
-
-  .nav-label {
-    font-size: 0.85rem;
-  }
-
-  .nav-icon {
-    font-size: 1.1rem;
+  .workspace {
+    grid-template-columns: 260px 1fr;
   }
 
   .details-area {
     display: none;
   }
 
-  .topbar {
-    padding: 10px 16px;
+  .chat-info h3 {
+    font-size: 0.9rem;
   }
 
-  .topbar-title h2 {
-    font-size: 1rem;
+  .topbar-title {
+    font-size: 0.9rem;
   }
 
   .user-display {
     display: none;
   }
-
-  .chat-info h3 {
-    font-size: 0.9rem;
-  }
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   RESPONSIVO - Tablet Pequeno (768px - 1023px)
+   RESPONSIVO - Tablet (768px - 1023px)
    ───────────────────────────────────────────────────────────────── */
 
 @media (max-width: 1023px) {
   .main-layout {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: 60px 1fr;
   }
 
   .sidebar {
-    min-width: 180px;
-    max-width: 200px;
-    padding: 10px;
+    width: 60px;
+    padding: 6px;
+  }
+
+  .nav-item {
+    width: 48px;
+    height: 48px;
+    gap: 4px;
+  }
+
+  .nav-icon {
+    font-size: 1.3rem;
+  }
+
+  .nav-label {
+    font-size: 0.6rem;
+  }
+
+  .channel-item {
+    width: 48px;
+    height: 44px;
+  }
+
+  .channel-button {
+    width: 48px;
+    font-size: 0.7rem;
+  }
+
+  .btn-sidebar-logout {
+    width: 48px;
+    font-size: 0.7rem;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
   }
 
   .conversation-area {
@@ -944,45 +1102,21 @@ button {
     display: none;
   }
 
-  .nav-item {
-    min-height: 38px;
-    padding: 8px 10px;
-  }
-
-  .nav-label {
-    font-size: 0.8rem;
-  }
-
-  .nav-icon {
-    font-size: 1rem;
-  }
-
   .topbar {
     padding: 10px 14px;
   }
 
   .topbar-title {
-    font-size: 0.9rem;
+    display: none;
   }
 
   .user-display {
     display: none;
   }
 
-  .badge {
-    font-size: 0.65rem;
-    min-width: 18px;
-    height: 18px;
-  }
-
   .message-bubble {
-    max-width: 80%;
-    font-size: 0.9rem;
-    padding: 9px 12px;
-  }
-
-  .chat-header {
-    padding: 12px;
+    max-width: 85%;
+    font-size: 0.85rem;
   }
 }
 
@@ -991,23 +1125,74 @@ button {
    ───────────────────────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
-  .app-container {
-    height: 100vh;
+  .main-layout {
+    grid-template-columns: 52px 1fr;
+  }
+
+  .sidebar {
+    width: 52px;
+    padding: 4px;
+  }
+
+  .nav-item {
+    width: 44px;
+    height: 44px;
+    gap: 3px;
+  }
+
+  .nav-icon {
+    font-size: 1.2rem;
+  }
+
+  .nav-label {
+    font-size: 0.55rem;
+  }
+
+  .badge {
+    width: 16px;
+    height: 16px;
+    font-size: 0.6rem;
+  }
+
+  .channel-item {
+    width: 44px;
+    height: 40px;
+    gap: 3px;
+  }
+
+  .channel-icon {
+    font-size: 1.1rem;
+  }
+
+  .channel-label {
+    font-size: 0.6rem;
+  }
+
+  .channel-button {
+    width: 44px;
+    font-size: 0.65rem;
+    padding: 6px;
+  }
+
+  .btn-sidebar-logout {
+    width: 44px;
+    font-size: 0.65rem;
+    padding: 4px;
   }
 
   .topbar {
     padding: 8px 10px;
-    gap: 10px;
-  }
-
-  .topbar-brand {
-    gap: 6px;
+    gap: 8px;
   }
 
   .brand-mark {
     width: 32px;
     height: 32px;
     font-size: 0.9rem;
+  }
+
+  .topbar-brand {
+    gap: 8px;
   }
 
   .topbar-title {
@@ -1017,55 +1202,16 @@ button {
   .icon-btn {
     width: 32px;
     height: 32px;
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   .btn-logout {
-    padding: 4px 8px;
+    padding: 6px 10px;
     font-size: 0.8rem;
   }
 
-  .main-layout {
-    grid-template-columns: auto 1fr;
-  }
-
-  .sidebar {
-    min-width: 140px;
-    max-width: 160px;
-    padding: 8px;
-  }
-
-  .nav-item {
-    min-height: 36px;
-    padding: 6px 8px;
-  }
-
-  .nav-label {
-    font-size: 0.75rem;
-  }
-
-  .nav-icon {
-    font-size: 0.95rem;
-  }
-
-  .badge {
-    font-size: 0.6rem;
-    min-width: 16px;
-    height: 16px;
-  }
-
-  .channels-section {
-    padding: 8px 0;
-  }
-
-  .channel-item {
-    padding: 8px;
-    font-size: 0.8rem;
-  }
-
-  .channel-button {
-    font-size: 0.8rem;
-    padding: 8px;
+  .workspace {
+    grid-template-columns: 1fr;
   }
 
   .conversation-area {
@@ -1078,13 +1224,12 @@ button {
 
   .chat-header {
     padding: 10px;
-    gap: 8px;
   }
 
   .chat-header-avatar {
     width: 36px;
     height: 36px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .chat-info h3 {
@@ -1096,13 +1241,13 @@ button {
   }
 
   .chat-messages {
-    padding: 10px;
+    padding: 8px;
     gap: 8px;
   }
 
   .message-bubble {
     max-width: 85%;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     padding: 8px 10px;
   }
 
@@ -1112,7 +1257,7 @@ button {
   }
 
   .composer-input {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     padding: 8px 12px;
   }
 
@@ -1122,32 +1267,66 @@ button {
     font-size: 1rem;
   }
 
-  .login-card {
-    max-width: 90%;
-    padding: 24px 16px;
+  .login-page {
+    padding: 12px;
+  }
+
+  .login-container {
+    max-width: 100%;
+  }
+
+  .login-body {
+    padding: 20px;
+  }
+
+  .login-body h2 {
+    font-size: 1.1rem;
   }
 
   .login-header {
     margin-bottom: 24px;
   }
 
-  .login-logo {
-    width: 44px;
-    height: 44px;
-    font-size: 1.3rem;
+  .login-header h1 {
+    font-size: 1.5rem;
   }
 
-  .login-header h1 {
-    font-size: 1.4rem;
+  .login-header p {
+    font-size: 0.85rem;
   }
 
   .form-group input {
-    padding: 10px;
     font-size: 16px;
+    padding: 10px;
   }
 
-  .submit-button {
+  .primary-button {
     padding: 10px;
     font-size: 0.9rem;
+  }
+
+  .demo-hint small {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .sidebar {
+    width: 48px;
+  }
+
+  .nav-item {
+    width: 40px;
+    height: 40px;
+  }
+
+  .channel-item {
+    width: 40px;
+  }
+
+  .channel-button,
+  .btn-sidebar-logout {
+    width: 40px;
+    font-size: 0.6rem;
   }
 }
