@@ -53,7 +53,14 @@ async function bootstrap() {
   const port = process.env.APP_PORT ?? 3001;
   await app.listen(port);
 
-  console.log(`🚀 AtendeHub API rodando em http://localhost:${port}/api/v1`);
+  const logger = app.get(Logger);
+  const nodeEnv = process.env.NODE_ENV || 'development';
+
+  if (nodeEnv === 'development') {
+    logger.log(`🚀 AtendeHub API rodando em http://localhost:${port}/api/v1`);
+  } else {
+    logger.log(`🚀 AtendeHub API iniciada na porta ${port}`);
+  }
 }
 
 bootstrap();
