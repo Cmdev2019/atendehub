@@ -784,8 +784,8 @@ button {
   width: 36px;
   height: 36px;
   border-radius: 6px;
-  background: var(--panel-soft);
-  color: var(--text);
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--brand);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -794,12 +794,12 @@ button {
   flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s;
-  border: 1px solid var(--line);
+  border: 1px solid var(--brand);
 }
 
 .attach-button:hover {
-  background: var(--line);
-  color: var(--brand);
+  background: rgba(15, 118, 110, 0.2);
+  color: var(--brand-dark);
 }
 
 .attach-button:active {
