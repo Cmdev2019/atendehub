@@ -20,9 +20,29 @@
   --nav-hover: #334155;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --composer-bg: #f0f4f8;
+  --composer-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
     sans-serif;
+}
+
+/* Dark Mode */
+:root[data-theme="dark"],
+:root.dark-mode {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-soft: #334155;
+  --text: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --line: #334155;
+  --line-strong: #475569;
+  --nav: #0f172a;
+  --nav-hover: #1e293b;
+  --composer-bg: #1e293b;
+  --composer-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
 }
 
 * {
@@ -632,10 +652,12 @@ button {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 12px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
+  padding: 16px;
+  border-top: none;
+  background: var(--composer-bg);
+  box-shadow: var(--composer-shadow), inset 0 1px 0 var(--line);
   flex-shrink: 0;
+  border-radius: 12px 12px 0 0;
 }
 
 .composer-input {
@@ -646,9 +668,10 @@ button {
   font-size: 0.9rem;
   resize: none;
   max-height: 100px;
-  background: var(--panel-soft);
+  background: var(--panel);
   color: var(--text);
   transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .composer-input::placeholder {
@@ -659,13 +682,14 @@ button {
   outline: none;
   border-color: var(--brand);
   background: var(--panel);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .send-button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
   color: white;
   display: flex;
   align-items: center;
@@ -673,10 +697,13 @@ button {
   font-size: 1.1rem;
   padding: 0;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(15, 118, 110, 0.3);
+  transition: all 0.2s;
 }
 
 .send-button:hover:not(:disabled) {
-  background: var(--brand-dark);
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.4);
+  transform: translateY(-2px);
 }
 
 .send-button:disabled {

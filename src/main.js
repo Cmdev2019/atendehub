@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 import { AuthProvider, AuthContext } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -88,15 +89,19 @@ function AppContent() {
   return isAuthenticated ? h(Dashboard) : h(LoginPage);
 }
 
-// App - Wrapper com AuthProvider
+// App - Wrapper com AuthProvider e ThemeProvider
 function App() {
   return h(
     StrictMode,
     null,
     h(
-      AuthProvider,
+      ThemeProvider,
       null,
-      h(AppContent),
+      h(
+        AuthProvider,
+        null,
+        h(AppContent),
+      ),
     ),
   );
 }
