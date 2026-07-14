@@ -1,6 +1,10 @@
-import { StrictMode, createElement } from "react";
+import { StrictMode, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+
+import { AuthProvider, AuthContext } from "./context/AuthContext";
+import { useAuth } from "./hooks/useAuth";
+import { LoginPage } from "./pages/LoginPage";
 
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
@@ -12,7 +16,8 @@ import { useConversations } from "./hooks/useConversations";
 
 const h = createElement;
 
-function App() {
+// Dashboard - Página principal do sistema
+function Dashboard() {
   const {
     conversations,
     activeId,
@@ -56,7 +61,36 @@ function App() {
   );
 }
 
+// AppContent - Lógica de roteamento baseada em autenticação
+function AppContent() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return h(
+      "div",
+      { className: "loading-screen" },
+      h("div", { className: "spinner" }),
+      h("p", null, "Carregando..."),
+    );
+  }
+
+  return isAuthenticated ? h(Dashboard) : h(LoginPage);
+}
+
+// App - Wrapper com AuthProvider
+function App() {
+  return h(
+    StrictMode,
+    null,
+    h(
+      AuthProvider,
+      null,
+      h(AppContent),
+    ),
+  );
+}
+
 const container = document.getElementById("root");
 if (!container) throw new Error("Elemento #root não encontrado no DOM.");
 
-createRoot(container).render(h(StrictMode, null, h(App)));
+createRoot(container).render(h(App));
