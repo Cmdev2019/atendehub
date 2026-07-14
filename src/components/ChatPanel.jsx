@@ -1,8 +1,10 @@
-import { createElement as h, useRef, useEffect } from 'react';
+import { createElement as h, useRef, useEffect, useState } from 'react';
 
 export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [attachments, setAttachments] = useState([]);
 
   useEffect(() => {
     if (messagesRef.current) {
@@ -11,10 +13,27 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
   }, [conversation.messages]);
 
   function handleKeyDown(event) {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    // Enter sozinho = enviar
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       onSend();
     }
+    // Shift+Enter = nova linha
+  }
+
+  function handleFileSelect(event) {
+    const files = Array.from(event.target.files || []);
+    const newAttachments = files.map(file => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    }));
+    setAttachments([...attachments, ...newAttachments]);
+  }
+
+  function removeAttachment(index) {
+    setAttachments(attachments.filter((_, i) => i !== index));
   }
 
   const getInitials = (name) => {
@@ -62,9 +81,58 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
         ),
       ),
     ),
+    // Attachments preview
+    attachments.length > 0 && h(
+      'div',
+      { className: 'attachments-preview' },
+      attachments.map((file, index) =>
+        h(
+          'div',
+          { key: index, className: 'attachment-item' },
+          file.preview ? (
+            h('img', { src: file.preview, alt: file.name, className: 'attachment-image' })
+          ) : (
+            h('div', { className: 'attachment-icon' }, '📎')
+          ),
+          h('div', { className: 'attachment-info' },
+            h('div', { className: 'attachment-name' }, file.name),
+            h('div', { className: 'attachment-size' }, `${(file.size / 1024).toFixed(0)} KB`),
+          ),
+          h(
+            'button',
+            {
+              className: 'attachment-remove',
+              onClick: () => removeAttachment(index),
+              type: 'button',
+              title: 'Remover arquivo'
+            },
+            '✕'
+          ),
+        ),
+      ),
+    ),
+
     h(
       'footer',
       { className: 'composer' },
+      h('input', {
+        ref: fileInputRef,
+        type: 'file',
+        multiple: true,
+        onChange: handleFileSelect,
+        style: { display: 'none' },
+        accept: 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt',
+      }),
+      h(
+        'button',
+        {
+          className: 'attach-button',
+          type: 'button',
+          onClick: () => fileInputRef.current?.click(),
+          title: 'Anexar arquivo ou imagem',
+        },
+        '📎'
+      ),
       h(
         'textarea',
         {
@@ -87,8 +155,8 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
           className: 'send-button',
           type: 'button',
           onClick: onSend,
-          disabled: !draft.trim(),
-          title: 'Enviar mensagem (Ctrl+Enter)',
+          disabled: !draft.trim() && attachments.length === 0,
+          title: 'Enviar (Enter)',
         },
         '📤',
       ),
