@@ -2,11 +2,11 @@ import { createElement as h, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
 const menuItems = [
-  { id: 'inbox', label: 'Caixa de mensagens e conversas', icon: '💬', badge: '34' },
-  { id: 'contacts', label: 'Contatos', icon: '👥', badge: '' },
-  { id: 'funnels', label: 'Funis', icon: '📊', badge: '' },
-  { id: 'reports', label: 'Relatórios', icon: '📈', badge: '' },
-  { id: 'settings', label: 'Configurações', icon: '⚙️', badge: '' },
+  { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: '💬', badge: '34' },
+  { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: '👥', badge: '' },
+  { id: 'funnels', label: 'Funis', shortLabel: 'Funis', icon: '📊', badge: '' },
+  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: '📈', badge: '' },
+  { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: '⚙️', badge: '' },
 ];
 
 const channels = [
@@ -31,7 +31,7 @@ export function Sidebar() {
     h(
       'nav',
       { className: 'nav-menu' },
-      menuItems.map(({ id, label, icon, badge }) =>
+      menuItems.map(({ id, label, shortLabel, icon, badge }) =>
         h(
           'button',
           {
@@ -42,7 +42,7 @@ export function Sidebar() {
             title: label,
           },
           h('span', { className: 'nav-icon' }, icon),
-          h('span', { className: 'nav-label' }, label.split(' ')[1] || label),
+          h('span', { className: 'nav-label' }, shortLabel),
           badge && h('span', { className: 'badge' }, badge),
         ),
       ),
