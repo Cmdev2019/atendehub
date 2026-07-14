@@ -30,33 +30,40 @@ function Dashboard() {
 
   return h(
     "div",
-    { className: "app-shell" },
-    h(Sidebar),
+    { className: "app-container" },
+    h(Topbar),
     h(
-      "main",
-      { className: "workspace" },
-      h(Topbar),
-      h(Metrics),
+      "div",
+      { className: "main-layout" },
+      h(Sidebar),
       h(
         "section",
-        { className: "inbox-layout" },
+        { className: "conversation-area" },
         h(ConversationQueue, {
           activeId,
           conversations,
           onSelect: setActiveId,
         }),
-        activeConversation &&
+      ),
+      activeConversation &&
+        h(
+          "section",
+          { className: "chat-area" },
           h(ChatPanel, {
             conversation: activeConversation,
             draft,
             onDraftChange: setDraft,
             onSend: sendMessage,
           }),
-        activeConversation &&
+        ),
+      activeConversation &&
+        h(
+          "section",
+          { className: "details-area" },
           h(CustomerPanel, {
             conversation: activeConversation,
           }),
-      ),
+        ),
     ),
   );
 }

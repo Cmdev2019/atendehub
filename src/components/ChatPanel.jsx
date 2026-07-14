@@ -2,6 +2,7 @@ import { createElement as h, useRef, useEffect } from 'react';
 
 export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
   const messagesRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     if (messagesRef.current) {
@@ -16,47 +17,48 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
     }
   }
 
+  const getInitials = (name) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return h(
     'article',
-    { className: 'chat-panel', 'aria-label': 'Conversa selecionada' },
+    { className: 'chat-panel' },
     h(
       'header',
       { className: 'chat-header' },
       h(
         'div',
         { className: 'chat-person' },
-        h('span', { className: `avatar ${conversation.tone}`, 'aria-hidden': 'true' }, conversation.initials),
-        h('div', null,
-          h('p', { className: 'eyebrow' }, conversation.channel),
-          h('h2', null, conversation.contact),
+        h('div', { className: 'chat-header-avatar' }, getInitials(conversation.contact)),
+        h(
+          'div',
+          { className: 'chat-info' },
+          h('h3', null, conversation.contact),
+          h('p', null, `📱 ${conversation.channel}`),
         ),
       ),
-      h(
-        'div',
-        { className: 'chat-actions' },
-        h('span', { className: 'status-pill' }, conversation.status),
-        h('button', { className: 'icon-button small', type: 'button', 'aria-label': 'Mais opções' }, '⋯'),
-      ),
-    ),
-    h(
-      'div',
-      { className: 'message-date' },
-      h('span', null, 'Hoje'),
+      h('button', { className: 'icon-btn', type: 'button', title: 'Mais opções' }, '⋯'),
     ),
     h(
       'div',
       {
         ref: messagesRef,
-        className: 'messages',
+        className: 'chat-messages',
         role: 'log',
         'aria-live': 'polite',
-        'aria-label': 'Mensagens da conversa',
       },
       conversation.messages.map(({ id, type, text, time }) =>
         h(
           'div',
           { key: id, className: `message ${type}` },
-          h('span', null, text, h('small', null, time)),
+          h('div', { className: 'message-bubble' }, text),
+          h('div', { className: 'message-time' }, time),
         ),
       ),
     ),
@@ -64,48 +66,31 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
       'footer',
       { className: 'composer' },
       h(
-        'div',
-        { className: 'quick-replies', 'aria-label': 'Respostas rápidas' },
-        ['Confirmar dados', 'Enviar rastreio', 'Encaminhar', 'Finalizar'].map((reply) =>
-          h(
-            'button',
-            {
-              key: reply,
-              type: 'button',
-              onClick: () => onDraftChange(reply),
-            },
-            reply,
-          ),
-        ),
-      ),
-      h(
-        'div',
-        { className: 'composer-box' },
-        h('label', { className: 'sr-only', htmlFor: 'message-input' }, 'Mensagem'),
-        h('textarea', {
-          id: 'message-input',
-          rows: 3,
-          placeholder: 'Digite uma resposta ou use um modelo salvo (Ctrl+Enter para enviar)',
+        'textarea',
+        {
+          ref: textareaRef,
+          className: 'composer-input',
+          placeholder: 'Escrever mensagem...',
           value: draft,
-          onChange: (event) => onDraftChange(event.target.value),
+          onChange: (e) => {
+            onDraftChange(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+          },
           onKeyDown: handleKeyDown,
-        }),
+          rows: 1,
+        },
       ),
       h(
-        'div',
-        { className: 'composer-actions' },
-        h('button', { className: 'ghost-button', type: 'button' }, 'Anexar'),
-        h(
-          'button',
-          {
-            className: 'send-button',
-            type: 'button',
-            onClick: onSend,
-            disabled: !draft.trim(),
-            'aria-label': 'Enviar mensagem',
-          },
-          'Enviar',
-        ),
+        'button',
+        {
+          className: 'send-button',
+          type: 'button',
+          onClick: onSend,
+          disabled: !draft.trim(),
+          title: 'Enviar mensagem (Ctrl+Enter)',
+        },
+        '📤',
       ),
     ),
   );

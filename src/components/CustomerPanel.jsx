@@ -1,54 +1,79 @@
 import { createElement as h } from 'react';
-import { ContextItem } from './ContextItem';
 
 export function CustomerPanel({ conversation }) {
+  const getInitials = (name) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return h(
     'aside',
-    { className: 'customer-panel', 'aria-label': 'Contexto do cliente' },
+    { className: 'customer-panel' },
     h(
       'section',
       { className: 'customer-head' },
-      h('span', { className: `avatar large ${conversation.tone}`, 'aria-hidden': 'true' }, conversation.initials),
-      h('div', null,
-        h('h2', null, conversation.contact),
-        h('p', null, conversation.phone),
-      ),
-    ),
-    h(
-      'section',
-      { className: 'context-grid', 'aria-label': 'Dados do atendimento' },
-      h(ContextItem, { label: 'Responsável', value: conversation.agent }),
-      h(ContextItem, { label: 'SLA', value: conversation.wait }),
-      h(ContextItem, { label: 'Valor', value: conversation.value }),
-      h(ContextItem, { label: 'Canal', value: conversation.channel }),
+      h('div', { className: 'customer-head-avatar' }, getInitials(conversation.contact)),
+      h('h3', null, conversation.contact),
+      h('p', { className: 'info-label' }, conversation.phone || 'Sem telefone'),
     ),
     h(
       'section',
       { className: 'info-section' },
-      h('h3', null, 'Tags'),
+      h('h3', null, '📋 Informações'),
+      h(
+        'div',
+        { className: 'info-item' },
+        h('div', { className: 'info-label' }, 'Responsável'),
+        h('div', null, conversation.agent || '-'),
+      ),
+      h(
+        'div',
+        { className: 'info-item' },
+        h('div', { className: 'info-label' }, 'Canal'),
+        h('div', null, `📱 ${conversation.channel}`),
+      ),
+      h(
+        'div',
+        { className: 'info-item' },
+        h('div', { className: 'info-label' }, 'Tempo em fila'),
+        h('div', null, conversation.wait || '-'),
+      ),
+    ),
+    h(
+      'section',
+      { className: 'info-section' },
+      h('h3', null, '🏷️ Tags'),
       h(
         'div',
         { className: 'tag-list' },
-        conversation.tags.map((tag) => h('span', { key: tag }, tag)),
+        (conversation.tags || []).length > 0 ? (
+          conversation.tags.map((tag) =>
+            h('span', { key: tag, className: 'tag' }, tag),
+          )
+        ) : (
+          h('span', { className: 'info-label' }, 'Sem tags')
+        ),
       ),
     ),
     h(
       'section',
       { className: 'info-section' },
-      h('h3', null, 'Histórico'),
+      h('h3', null, '⏱️ Histórico'),
       h(
         'ol',
-        { className: 'timeline' },
-        conversation.timeline.map((item) => h('li', { key: item }, item)),
+        { className: 'timeline', style: { paddingLeft: '16px', fontSize: '0.85rem' } },
+        (conversation.timeline || []).length > 0 ? (
+          conversation.timeline.map((item, idx) =>
+            h('li', { key: idx, style: { marginBottom: '8px', color: '#687386' } }, item),
+          )
+        ) : (
+          h('li', { style: { color: '#687386' } }, 'Nenhum histórico')
+        ),
       ),
-    ),
-    h(
-      'section',
-      { className: 'info-section' },
-      h('h3', null, 'Ações rápidas'),
-      h('button', { className: 'wide-action', type: 'button' }, 'Criar tarefa'),
-      h('button', { className: 'wide-action', type: 'button' }, 'Mover para funil'),
-      h('button', { className: 'wide-action danger', type: 'button' }, 'Finalizar conversa'),
     ),
   );
 }

@@ -1,78 +1,69 @@
-import { createElement as h } from 'react';
+import { createElement as h, useState } from 'react';
 
 export function ConversationQueue({ activeId, conversations, onSelect }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
+
+  const filteredConversations = conversations.filter(conv =>
+    conv.contact.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getInitials = (name) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return h(
     'div',
-    { className: 'queue', 'aria-label': 'Lista de conversas' },
+    { className: 'queue' },
     h(
       'div',
       { className: 'section-header' },
-      h('div', null,
-        h('h2', null, 'Atendimentos'),
-        h('small', null, 'Fila por prioridade e SLA'),
-      ),
-      h('button', { type: 'button' }, 'Filtrar'),
+      h('h2', null, '💬 Conversas'),
+      h('button', { type: 'button', className: 'icon-btn small' }, '🔍'),
     ),
+    h('input', {
+      type: 'search',
+      className: 'search-input',
+      placeholder: 'Buscar...',
+      value: searchTerm,
+      onChange: (e) => setSearchTerm(e.target.value),
+      'aria-label': 'Buscar conversa',
+    }),
     h(
       'div',
-      { className: 'search-box' },
-      h('span', { 'aria-hidden': 'true' }, '⌕'),
-      h('input', {
-        type: 'search',
-        placeholder: 'Buscar contato, canal ou tag',
-        'aria-label': 'Buscar conversa',
-      }),
-    ),
-    h(
-      'div',
-      { className: 'queue-tabs', role: 'tablist', 'aria-label': 'Filtros de fila' },
-      ['Todas', 'Minhas', 'Aguardando'].map((tab, index) =>
-        h('button', {
-          key: tab,
-          className: index === 0 ? 'active' : '',
-          type: 'button',
-          role: 'tab',
-          'aria-selected': index === 0,
-        }, tab),
-      ),
-    ),
-    h(
-      'div',
-      { className: 'conversation-list' },
-      conversations.map((conv) =>
-        h(
-          'button',
-          {
-            key: conv.id,
-            className: `conversation${activeId === conv.id ? ' active' : ''}`,
-            type: 'button',
-            'aria-current': activeId === conv.id ? 'true' : undefined,
-            onClick: () => onSelect(conv.id),
-          },
-          h('span', { className: `avatar ${conv.tone}`, 'aria-hidden': 'true' }, conv.initials),
+      { className: 'queue-list' },
+      filteredConversations.length > 0 ? (
+        filteredConversations.map((conv) =>
           h(
-            'span',
-            { className: 'conversation-main' },
+            'button',
+            {
+              key: conv.id,
+              className: `queue-item${activeId === conv.id ? ' active' : ''}`,
+              type: 'button',
+              onClick: () => onSelect(conv.id),
+              title: conv.contact,
+            },
+            h('div', { className: 'queue-item-avatar' }, getInitials(conv.contact)),
             h(
-              'span',
-              { className: 'conversation-title' },
-              h('strong', null, conv.contact),
-              h('em', null, conv.wait),
+              'div',
+              { className: 'queue-item-content' },
+              h('div', { className: 'queue-item-name' }, conv.contact),
+              h('div', { className: 'queue-item-preview' },
+                (conv.messages && conv.messages[conv.messages.length - 1]?.text) ||
+                conv.summary ||
+                'Sem mensagens'
+              ),
             ),
-            h('small', null, conv.summary),
-            h(
-              'span',
-              { className: 'conversation-meta' },
-              h('b', null, conv.channel),
-              h('span', null, conv.agent),
-            ),
+            h('div', { className: 'queue-item-time' }, conv.wait || ''),
           ),
-          h(
-            'span',
-            { className: `badge${conv.badge === 'Urgente' ? ' urgent' : ''}` },
-            conv.badge,
-          ),
-        ),
+        )
+      ) : (
+        h('div', { style: { padding: '20px', textAlign: 'center', color: '#687386' } }, 'Nenhuma conversa')
       ),
     ),
   );

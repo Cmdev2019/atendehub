@@ -1,12 +1,13 @@
-import { createElement as h } from 'react';
+import { createElement as h, useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
-const modules = [
-  { label: 'Caixa de entrada', amount: '34' },
-  { label: 'Automações', amount: '8' },
-  { label: 'Contatos', amount: '' },
-  { label: 'Funis', amount: '' },
-  { label: 'Relatórios', amount: '' },
-  { label: 'Configurações', amount: '' },
+const menuItems = [
+  { id: 'inbox', label: '📥 Caixa de entrada', icon: '💬', badge: '34' },
+  { id: 'automations', label: '🤖 Automações', icon: '⚙️', badge: '8' },
+  { id: 'contacts', label: '👥 Contatos', icon: '👤', badge: '' },
+  { id: 'funnels', label: '📊 Funis', icon: '📈', badge: '' },
+  { id: 'reports', label: '📈 Relatórios', icon: '📊', badge: '' },
+  { id: 'settings', label: '⚙️ Configurações', icon: '🔧', badge: '' },
 ];
 
 const channels = [
@@ -17,47 +18,66 @@ const channels = [
 ];
 
 export function Sidebar() {
+  const [activeMenu, setActiveMenu] = useState('inbox');
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('Deseja fazer logout?')) {
+      await logout();
+    }
+  };
+
   return h(
     'aside',
     { className: 'sidebar', 'aria-label': 'Navegação principal' },
-    h(
-      'div',
-      { className: 'brand' },
-      h('span', { className: 'brand-mark', 'aria-hidden': 'true' }, 'A'),
-      h('div', null,
-        h('strong', null, 'AtendeHub'),
-        h('span', null, 'Omnichannel inbox'),
-      ),
-    ),
+
+    // Menu principal
     h(
       'nav',
-      { className: 'nav-list' },
-      modules.map(({ label, amount }, index) =>
+      { className: 'nav-menu' },
+      menuItems.map(({ id, label, icon, badge }) =>
         h(
           'button',
           {
-            key: label,
-            className: `nav-item${index === 0 ? ' active' : ''}`,
+            key: id,
+            className: `nav-item${activeMenu === id ? ' active' : ''}`,
+            onClick: () => setActiveMenu(id),
             type: 'button',
+            title: label,
           },
-          h('span', null, label),
-          amount ? h('strong', null, amount) : null,
+          h('span', { className: 'nav-icon' }, icon),
+          h('span', { className: 'nav-label' }, label.split(' ')[1] || label),
+          badge && h('span', { className: 'badge' }, badge),
         ),
       ),
     ),
+
+    // Canais conectados
     h(
       'section',
-      { className: 'channel-panel', 'aria-labelledby': 'channels-title' },
-      h('h2', { id: 'channels-title' }, 'Canais conectados'),
+      { className: 'channels-section' },
+      h('h3', { className: 'channels-title' }, '📡 Canais'),
       channels.map(({ type, label, amount }) =>
         h(
           'div',
-          { key: type, className: 'channel-row' },
-          h('span', { className: `dot ${type}`, 'aria-hidden': 'true' }),
-          h('span', null, label),
-          h('strong', null, amount),
+          { key: type, className: 'channel-item' },
+          h('span', { className: `channel-dot ${type}` }),
+          h('span', { className: 'channel-label' }, label),
+          h('span', { className: 'channel-badge' }, amount),
         ),
       ),
+    ),
+
+    // Botão de logout
+    h(
+      'button',
+      {
+        className: 'btn-sidebar-logout',
+        onClick: handleLogout,
+        type: 'button',
+        title: 'Fazer logout do sistema'
+      },
+      '🚪 Sair',
     ),
   );
 }

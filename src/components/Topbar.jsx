@@ -1,21 +1,44 @@
 import { createElement as h } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 export function Topbar() {
+  const { logout, user } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('Deseja fazer logout?')) {
+      await logout();
+    }
+  };
+
   return h(
     'header',
     { className: 'topbar' },
     h(
       'div',
-      null,
-      h('p', { className: 'eyebrow' }, 'Central operacional'),
-      h('h1', null, 'Caixa de entrada unificada'),
+      { className: 'topbar-brand' },
+      h('span', { className: 'brand-mark' }, 'A'),
+      h('strong', null, 'AtendeHub'),
+    ),
+    h(
+      'div',
+      { className: 'topbar-title' },
+      h('h2', null, 'Caixa de Entrada'),
     ),
     h(
       'div',
       { className: 'topbar-actions' },
-      h('button', { className: 'icon-button', type: 'button', 'aria-label': 'Pesquisar' }, '⌕'),
-      h('button', { className: 'ghost-button', type: 'button' }, 'Transferir'),
-      h('button', { className: 'primary-button', type: 'button' }, 'Novo atendimento'),
+      user && h('span', { className: 'user-display' }, `👤 ${user.name}`),
+      h('button', { className: 'icon-btn', title: 'Notificações' }, '🔔'),
+      h('button', { className: 'icon-btn', title: 'Configurações' }, '⚙️'),
+      h('button',
+        {
+          className: 'btn-logout',
+          onClick: handleLogout,
+          type: 'button',
+          title: 'Fazer logout'
+        },
+        '🚪 Sair'
+      ),
     ),
   );
 }
