@@ -31,7 +31,7 @@ export const mockUsers = {
 export class MockApiClient {
   constructor() {
     this.token = this.getToken();
-    this.delay = 800; // Simula latência de rede
+    this.delayMs = 800; // Simula latência de rede
   }
 
   getToken() {
@@ -49,12 +49,12 @@ export class MockApiClient {
     this.token = null;
   }
 
-  async delay() {
-    return new Promise(resolve => setTimeout(resolve, this.delay));
+  async simulateDelay() {
+    return new Promise(resolve => setTimeout(resolve, this.delayMs));
   }
 
   async login(email, password) {
-    await this.delay();
+    await this.simulateDelay();
 
     const user = mockUsers[email];
     
@@ -93,12 +93,12 @@ export class MockApiClient {
   }
 
   async logout() {
-    await this.delay();
+    await this.simulateDelay();
     this.clearToken();
   }
 
   async getCurrentUser() {
-    await this.delay();
+    await this.simulateDelay();
 
     if (!this.token) {
       throw { status: 401, message: 'Não autenticado' };
@@ -116,14 +116,14 @@ export class MockApiClient {
   }
 
   async refreshToken() {
-    await this.delay();
+    await this.simulateDelay();
     const newToken = `token_${Date.now()}`;
     this.setToken(newToken);
     return { accessToken: newToken };
   }
 
   async getConversations() {
-    await this.delay();
+    await this.simulateDelay();
     return {
       data: [],
       pagination: { page: 1, limit: 20, total: 0, pages: 0 },
@@ -131,7 +131,7 @@ export class MockApiClient {
   }
 
   async sendMessage() {
-    await this.delay();
+    await this.simulateDelay();
     return { success: true };
   }
 }
