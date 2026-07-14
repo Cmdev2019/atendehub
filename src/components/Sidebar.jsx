@@ -2,19 +2,16 @@ import { createElement as h, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
 const menuItems = [
-  { id: 'inbox', label: '📥 Caixa de entrada', icon: '💬', badge: '34' },
-  { id: 'automations', label: '🤖 Automações', icon: '⚙️', badge: '8' },
-  { id: 'contacts', label: '👥 Contatos', icon: '👤', badge: '' },
-  { id: 'funnels', label: '📊 Funis', icon: '📈', badge: '' },
-  { id: 'reports', label: '📈 Relatórios', icon: '📊', badge: '' },
-  { id: 'settings', label: '⚙️ Configurações', icon: '🔧', badge: '' },
+  { id: 'inbox', label: 'Caixa de entrada', icon: '📥', badge: '34' },
+  { id: 'automations', label: 'Automações', icon: '🤖', badge: '8' },
+  { id: 'contacts', label: 'Contatos', icon: '👥', badge: '' },
+  { id: 'funnels', label: 'Funis', icon: '📊', badge: '' },
+  { id: 'reports', label: 'Relatórios', icon: '📈', badge: '' },
+  { id: 'settings', label: 'Configurações', icon: '⚙️', badge: '' },
 ];
 
 const channels = [
-  { type: 'whatsapp', label: 'WhatsApp', amount: 18 },
-  { type: 'instagram', label: 'Instagram', amount: 7 },
-  { type: 'email', label: 'E-mail', amount: 5 },
-  { type: 'site', label: 'Chat site', amount: 4 },
+  { type: 'whatsapp', label: 'WhatsApp', status: 'connected', icon: '💚' },
 ];
 
 export function Sidebar() {
@@ -52,19 +49,27 @@ export function Sidebar() {
       ),
     ),
 
-    // Canais conectados
+    // Canal WhatsApp
     h(
       'section',
       { className: 'channels-section' },
-      h('h3', { className: 'channels-title' }, '📡 Canais'),
-      channels.map(({ type, label, amount }) =>
+      h('h3', { className: 'channels-title' }, '📱 Canal'),
+      channels.map(({ type, label, icon, status }) =>
         h(
           'div',
           { key: type, className: 'channel-item' },
-          h('span', { className: `channel-dot ${type}` }),
+          h('span', { className: 'channel-icon' }, icon),
           h('span', { className: 'channel-label' }, label),
-          h('span', { className: 'channel-badge' }, amount),
+          h('span', { className: `channel-status ${status}` }, status === 'connected' ? '✓' : '○'),
         ),
+      ),
+      h('button',
+        {
+          className: 'channel-button',
+          type: 'button',
+          title: 'Conectar WhatsApp com QR Code'
+        },
+        '🔗 Conectar'
       ),
     ),
 

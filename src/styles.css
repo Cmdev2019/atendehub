@@ -136,12 +136,12 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   MAIN LAYOUT (3 colunas)
+   MAIN LAYOUT (4 colunas: menu + conversas + chat + details)
    ───────────────────────────────────────────────────────────────── */
 
 .main-layout {
   display: grid;
-  grid-template-columns: 70px 320px 1fr 340px;
+  grid-template-columns: auto 340px 1fr 360px;
   gap: 0;
   flex: 1;
   min-width: 0;
@@ -152,62 +152,68 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 12px 0;
+  padding: 16px;
   background: var(--nav);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   overflow-y: auto;
+  min-width: 220px;
+  max-width: 240px;
 }
 
 .nav-menu {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 8px;
+  padding: 0;
+  margin-bottom: 20px;
 }
 
 .nav-item {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 54px;
-  height: 54px;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
   border-radius: 8px;
   background: transparent;
-  color: #a0aec0;
-  text-align: center;
+  color: #cbd5e1;
+  text-align: left;
   transition: all 0.2s;
-  padding: 0;
-  margin: 0 auto;
+  padding: 10px 12px;
+  margin: 0;
+  border: none;
 }
 
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
+  color: #f1f5f9;
 }
 
 .nav-item.active {
-  background: rgba(15, 118, 110, 0.3);
-  color: var(--brand);
+  background: rgba(15, 118, 110, 0.25);
+  color: #5eead4;
   border-left: 3px solid var(--brand);
+  padding-left: 9px;
 }
 
 .nav-icon {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
+  flex-shrink: 0;
 }
 
 .nav-label {
-  font-size: 0.65rem;
+  font-size: 0.9rem;
   font-weight: 500;
-  text-transform: capitalize;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
+  position: relative;
   min-width: 20px;
   height: 20px;
   border-radius: 999px;
@@ -218,19 +224,19 @@ button {
   align-items: center;
   justify-content: center;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .channels-section {
-  flex: 1;
-  padding: 16px 8px;
+  margin-top: auto;
+  padding: 16px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .channels-title {
   margin: 0 0 12px;
   font-size: 0.8rem;
-  color: #cbd5e1;
-  text-align: center;
+  color: #94a3b8;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -238,54 +244,59 @@ button {
 
 .channel-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 8px;
   border-radius: 6px;
-  color: #94a3b8;
-  font-size: 0.7rem;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 8px;
+}
+
+.channel-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+.channel-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.channel-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-status {
+  font-size: 1rem;
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.channel-button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border-radius: 6px;
+  background: rgba(15, 118, 110, 0.2);
+  color: #5eead4;
+  border: 1px solid rgba(15, 118, 110, 0.3);
+  font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.channel-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1;
-}
-
-.channel-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--green);
-}
-
-.channel-dot.instagram {
-  background: #db2777;
-}
-
-.channel-dot.email {
-  background: var(--blue);
-}
-
-.channel-dot.site {
-  background: var(--amber);
-}
-
-.channel-label {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.channel-badge {
-  font-size: 0.65rem;
-  color: #64748b;
-  font-weight: 500;
+.channel-button:hover {
+  background: rgba(15, 118, 110, 0.3);
+  border-color: #5eead4;
+  color: #f1f5f9;
 }
 
 .btn-sidebar-logout {
@@ -348,12 +359,28 @@ button {
 
 .queue {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
+}
+
+.search-input {
+  padding: 8px 12px;
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: var(--panel);
 }
 
 .section-header {
@@ -789,43 +816,338 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   RESPONSIVO
+   RESPONSIVO - Desktop Grande (1920px+)
    ───────────────────────────────────────────────────────────────── */
 
-@media (max-width: 1200px) {
+@media (min-width: 2000px) {
   .main-layout {
-    grid-template-columns: 70px 280px 1fr 300px;
+    grid-template-columns: auto 380px 1fr 400px;
+  }
+
+  .sidebar {
+    min-width: 260px;
+    max-width: 280px;
+  }
+
+  .chat-messages {
+    font-size: 1rem;
   }
 }
 
-@media (max-width: 900px) {
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVO - Desktop Médio (1600px)
+   ───────────────────────────────────────────────────────────────── */
+
+@media (min-width: 1600px) and (max-width: 1999px) {
   .main-layout {
-    grid-template-columns: 70px 260px 1fr;
+    grid-template-columns: auto 360px 1fr 380px;
+  }
+
+  .sidebar {
+    min-width: 250px;
+    max-width: 260px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVO - Desktop Padrão (1200px - 1599px)
+   ───────────────────────────────────────────────────────────────── */
+
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .main-layout {
+    grid-template-columns: auto 320px 1fr 340px;
+  }
+
+  .sidebar {
+    min-width: 220px;
+    max-width: 240px;
+  }
+
+  .user-display {
+    font-size: 0.85rem;
+  }
+
+  .queue-item-preview {
+    font-size: 0.8rem;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVO - Tablet Grande (1024px - 1199px)
+   ───────────────────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .main-layout {
+    grid-template-columns: auto 280px 1fr;
+  }
+
+  .sidebar {
+    min-width: 200px;
+    max-width: 220px;
+    padding: 12px;
+  }
+
+  .nav-item {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .nav-label {
+    font-size: 0.85rem;
+  }
+
+  .nav-icon {
+    font-size: 1.1rem;
   }
 
   .details-area {
     display: none;
   }
+
+  .topbar {
+    padding: 10px 16px;
+  }
+
+  .topbar-title h2 {
+    font-size: 1rem;
+  }
+
+  .user-display {
+    display: none;
+  }
+
+  .chat-info h3 {
+    font-size: 0.9rem;
+  }
 }
 
-@media (max-width: 600px) {
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVO - Tablet Pequeno (768px - 1023px)
+   ───────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1023px) {
   .main-layout {
-    grid-template-columns: 60px 1fr;
+    grid-template-columns: auto 1fr;
+  }
+
+  .sidebar {
+    min-width: 180px;
+    max-width: 200px;
+    padding: 10px;
   }
 
   .conversation-area {
     display: none;
   }
 
-  .chat-area {
-    border-right: none;
+  .details-area {
+    display: none;
+  }
+
+  .nav-item {
+    min-height: 38px;
+    padding: 8px 10px;
+  }
+
+  .nav-label {
+    font-size: 0.8rem;
+  }
+
+  .nav-icon {
+    font-size: 1rem;
+  }
+
+  .topbar {
+    padding: 10px 14px;
+  }
+
+  .topbar-title {
+    font-size: 0.9rem;
+  }
+
+  .user-display {
+    display: none;
+  }
+
+  .badge {
+    font-size: 0.65rem;
+    min-width: 18px;
+    height: 18px;
+  }
+
+  .message-bubble {
+    max-width: 80%;
+    font-size: 0.9rem;
+    padding: 9px 12px;
+  }
+
+  .chat-header {
+    padding: 12px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVO - Mobile (até 767px)
+   ───────────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .app-container {
+    height: 100vh;
+  }
+
+  .topbar {
+    padding: 8px 10px;
+    gap: 10px;
+  }
+
+  .topbar-brand {
+    gap: 6px;
+  }
+
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
+
+  .topbar-title {
+    display: none;
+  }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .btn-logout {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+  }
+
+  .main-layout {
+    grid-template-columns: auto 1fr;
+  }
+
+  .sidebar {
+    min-width: 140px;
+    max-width: 160px;
+    padding: 8px;
+  }
+
+  .nav-item {
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  .nav-label {
+    font-size: 0.75rem;
+  }
+
+  .nav-icon {
+    font-size: 0.95rem;
+  }
+
+  .badge {
+    font-size: 0.6rem;
+    min-width: 16px;
+    height: 16px;
+  }
+
+  .channels-section {
+    padding: 8px 0;
+  }
+
+  .channel-item {
+    padding: 8px;
+    font-size: 0.8rem;
+  }
+
+  .channel-button {
+    font-size: 0.8rem;
+    padding: 8px;
+  }
+
+  .conversation-area {
+    display: none;
+  }
+
+  .details-area {
+    display: none;
+  }
+
+  .chat-header {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .chat-header-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 0.9rem;
+  }
+
+  .chat-info h3 {
+    font-size: 0.85rem;
+  }
+
+  .chat-info p {
+    font-size: 0.75rem;
+  }
+
+  .chat-messages {
+    padding: 10px;
+    gap: 8px;
   }
 
   .message-bubble {
     max-width: 85%;
+    font-size: 0.85rem;
+    padding: 8px 10px;
   }
 
-  .topbar {
-    padding: 10px 12px;
+  .composer {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .composer-input {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+  }
+
+  .send-button {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .login-card {
+    max-width: 90%;
+    padding: 24px 16px;
+  }
+
+  .login-header {
+    margin-bottom: 24px;
+  }
+
+  .login-logo {
+    width: 44px;
+    height: 44px;
+    font-size: 1.3rem;
+  }
+
+  .login-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .form-group input {
+    padding: 10px;
+    font-size: 16px;
+  }
+
+  .submit-button {
+    padding: 10px;
+    font-size: 0.9rem;
   }
 }
