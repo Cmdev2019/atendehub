@@ -9,7 +9,10 @@
     "start": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "vite build --mode development"
+    "check": "vite build --mode development",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -17,7 +20,15 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@babel/preset-env": "^8.0.2",
+    "@babel/preset-react": "^8.0.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "babel-jest": "^30.4.1",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
     "vite": "^6.0.7"
   },
   "engines": {
