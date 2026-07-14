@@ -2,8 +2,7 @@ import { createElement as h, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
 const menuItems = [
-  { id: 'inbox', label: 'Caixa de entrada', icon: '📥', badge: '34' },
-  { id: 'automations', label: 'Automações', icon: '🤖', badge: '8' },
+  { id: 'inbox', label: 'Caixa de mensagens e conversas', icon: '💬', badge: '34' },
   { id: 'contacts', label: 'Contatos', icon: '👥', badge: '' },
   { id: 'funnels', label: 'Funis', icon: '📊', badge: '' },
   { id: 'reports', label: 'Relatórios', icon: '📈', badge: '' },

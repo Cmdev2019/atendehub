@@ -22,7 +22,7 @@ export function Topbar() {
     h(
       'div',
       { className: 'topbar-title' },
-      h('h2', null, 'Caixa de Entrada'),
+      h('h2', null, 'Caixa de mensagens e conversas'),
     ),
     h(
       'div',
