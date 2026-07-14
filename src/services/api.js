@@ -1,10 +1,32 @@
-// API Service - Cliente HTTP para backend
+// API Service - Cliente HTTP para backend com fallback para mock
+import { mockApiClient } from './apiMock';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
+
+// Detectar se deve usar mock (dev)
+const USE_MOCK = import.meta.env.MODE === 'development' &&
+                 (import.meta.env.VITE_USE_MOCK === 'true' || window.USE_MOCK_API);
 
 class ApiClient {
   constructor() {
     this.baseURL = API_BASE_URL;
     this.token = this.getToken();
+    this.useMock = USE_MOCK;
+    this.backendAvailable = true;
+    this.testConnection();
+  }
+
+  async testConnection() {
+    try {
+      const response = await fetch(`${this.baseURL}/health`, {
+        method: 'GET',
+        timeout: 3000,
+      });
+      this.backendAvailable = response.ok;
+    } catch {
+      this.backendAvailable = false;
+      console.warn('⚠️ Backend não disponível. Usando dados mock para demonstração.');
+    }
   }
 
   getToken() {
@@ -23,6 +45,11 @@ class ApiClient {
   }
 
   async request(endpoint, options = {}) {
+    // Se backend não está disponível, usar mock
+    if (!this.backendAvailable) {
+      return this.requestMock(endpoint, options);
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -42,13 +69,10 @@ class ApiClient {
       const response = await fetch(url, config);
 
       if (response.status === 401) {
-        // Token expirado - tenta refresh
         const refreshed = await this.refreshToken();
         if (refreshed) {
-          // Retry da requisição original
           return this.request(endpoint, options);
         } else {
-          // Logout
           this.clearToken();
           window.location.href = '/login';
           throw new Error('Sessão expirada. Faça login novamente.');
@@ -68,8 +92,37 @@ class ApiClient {
       return data;
     } catch (error) {
       console.error('API Error:', error);
+      // Fallback para mock se erro de rede
+      if (error.message.includes('fetch') || error.message.includes('Failed')) {
+        this.backendAvailable = false;
+        return this.requestMock(endpoint, options);
+      }
       throw error;
     }
+  }
+
+  // Fallback para Mock API
+  async requestMock(endpoint, options) {
+    const method = options.method || 'GET';
+    const body = options.body ? JSON.parse(options.body) : {};
+
+    if (endpoint === '/auth/login') {
+      return mockApiClient.login(body.email, body.password);
+    }
+    if (endpoint === '/auth/logout') {
+      return mockApiClient.logout();
+    }
+    if (endpoint === '/auth/me') {
+      return mockApiClient.getCurrentUser();
+    }
+    if (endpoint === '/auth/refresh') {
+      return mockApiClient.refreshToken();
+    }
+    if (endpoint.startsWith('/conversations')) {
+      return mockApiClient.getConversations();
+    }
+
+    throw { status: 404, message: 'Endpoint não implementado no mock' };
   }
 
   // AUTH ENDPOINTS
