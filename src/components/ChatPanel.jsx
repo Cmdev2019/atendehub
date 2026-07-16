@@ -1,4 +1,5 @@
 import { createElement as h, useRef, useEffect, useState } from 'react';
+import { Icon } from './icons';
 
 export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendError }) {
   const messagesRef = useRef(null);
@@ -59,10 +60,11 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
           'div',
           { className: 'chat-info' },
           h('h3', null, conversation.contact),
-          h('p', null, `📱 ${conversation.channel}`),
+          h('p', null, h(Icon, { name: 'smartphone', size: 13 }), ` ${conversation.channel}`),
         ),
       ),
-      h('button', { className: 'icon-btn', type: 'button', title: 'Mais opções' }, '⋯'),
+      h('button', { className: 'icon-btn', type: 'button', title: 'Mais opções' },
+        h(Icon, { name: 'dots', size: 18, label: 'Mais opções' })),
     ),
     h(
       'div',
@@ -92,7 +94,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
           file.preview ? (
             h('img', { src: file.preview, alt: file.name, className: 'attachment-image' })
           ) : (
-            h('div', { className: 'attachment-icon' }, '📎')
+            h('div', { className: 'attachment-icon' }, h(Icon, { name: 'paperclip', size: 18 }))
           ),
           h('div', { className: 'attachment-info' },
             h('div', { className: 'attachment-name' }, file.name),
@@ -106,7 +108,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
               type: 'button',
               title: 'Remover arquivo'
             },
-            '✕'
+            h(Icon, { name: 'x', size: 12, label: 'Remover arquivo' })
           ),
         ),
       ),
@@ -117,7 +119,8 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
     sendError && h(
       'div',
       { className: 'send-error', role: 'alert' },
-      `⚠️ ${sendError}`,
+      h(Icon, { name: 'warning', size: 15 }),
+      ` ${sendError}`,
     ),
 
     h(
@@ -139,7 +142,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
           onClick: () => fileInputRef.current?.click(),
           title: 'Anexar arquivo ou imagem',
         },
-        '📎'
+        h(Icon, { name: 'paperclip', size: 18, label: 'Anexar arquivo' })
       ),
       h(
         'textarea',
@@ -166,7 +169,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
           disabled: !draft.trim() && attachments.length === 0,
           title: 'Enviar (Enter)',
         },
-        '📤',
+        h(Icon, { name: 'send', size: 18, label: 'Enviar mensagem' }),
       ),
     ),
   );

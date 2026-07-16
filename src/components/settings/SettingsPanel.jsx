@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
 import { apiClient } from '../../services/api';
 import { wsClient } from '../../services/websocket';
+import { Icon } from '../icons';
 
 // ── Níveis de usuário (Role do backend → rótulo do produto) ─────────────────
 export const ROLE_LABELS = {
@@ -36,7 +37,7 @@ function AppearanceSection() {
   return h(
     'div',
     { className: 'settings-section' },
-    h('h3', null, '🎨 Aparência'),
+    h('h3', null, h(Icon, { name: 'palette', size: 17 }), ' Aparência'),
     h('p', { className: 'settings-hint' }, 'Preferências visuais do sistema.'),
     h(
       'div',
@@ -50,7 +51,8 @@ function AppearanceSection() {
       h(
         'button',
         { className: 'settings-btn', type: 'button', onClick: toggleTheme },
-        isDark ? '☀️ Mudar para claro' : '🌙 Mudar para escuro',
+        h(Icon, { name: isDark ? 'sun' : 'moon', size: 15 }),
+        isDark ? ' Mudar para claro' : ' Mudar para escuro',
       ),
     ),
   );
@@ -182,11 +184,11 @@ function WhatsappSection() {
   return h(
     'div',
     { className: 'settings-section' },
-    h('h3', null, '📱 Conexões WhatsApp'),
+    h('h3', null, h(Icon, { name: 'smartphone', size: 17 }), ' Conexões WhatsApp'),
     h('p', { className: 'settings-hint' },
       'Crie uma conexão e escaneie o QR Code com o WhatsApp do número desejado ' +
       '(WhatsApp → Dispositivos conectados → Conectar dispositivo).'),
-    error && h('div', { className: 'settings-error', role: 'alert' }, `⚠️ ${error}`),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     h(
       'form',
@@ -199,7 +201,7 @@ function WhatsappSection() {
         onChange: (e) => setName(e.target.value),
       }),
       h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !name.trim() },
-        '➕ Criar conexão'),
+        h(Icon, { name: 'plus', size: 14 }), ' Criar conexão'),
     ),
 
     h(
@@ -217,7 +219,7 @@ function WhatsappSection() {
                 { className: 'settings-item-main' },
                 h('div', { className: 'settings-row-title' }, conn.name),
                 h('div', { className: 'settings-hint' },
-                  conn.phone ? `📞 ${conn.phone}` : 'Sem número pareado'),
+                  conn.phone ? h('span', null, h(Icon, { name: 'phone', size: 12 }), ` ${conn.phone}`) : 'Sem número pareado'),
               ),
               h('span', { className: `settings-badge ${st.tone}` }, st.label),
               h(
@@ -229,18 +231,18 @@ function WhatsappSection() {
                     type: 'button',
                     disabled: busy,
                     onClick: () => generateQr(conn.id),
-                  }, '📷 Gerar QR'),
+                  }, h(Icon, { name: 'qr', size: 14 }), ' Gerar QR'),
                 conn.status === 'CONNECTED' &&
                   h('button', {
                     className: 'settings-btn',
                     type: 'button',
                     onClick: () => disconnect(conn.id),
-                  }, '⏸️ Desconectar'),
+                  }, h(Icon, { name: 'pause', size: 14 }), ' Desconectar'),
                 h('button', {
                   className: 'settings-btn danger',
                   type: 'button',
                   onClick: () => remove(conn.id),
-                }, '🗑️'),
+                }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
               ),
             );
           }),
@@ -257,7 +259,7 @@ function WhatsappSection() {
         className: 'settings-btn',
         type: 'button',
         onClick: () => generateQr(qr.connectionId),
-      }, '🔄 Gerar novo QR'),
+      }, h(Icon, { name: 'refresh', size: 14 }), ' Gerar novo QR'),
     ),
   );
 }
@@ -330,10 +332,10 @@ function UsersSection({ canManage }) {
   return h(
     'div',
     { className: 'settings-section' },
-    h('h3', null, '👤 Usuários e níveis de acesso'),
+    h('h3', null, h(Icon, { name: 'user', size: 17 }), ' Usuários e níveis de acesso'),
     h('p', { className: 'settings-hint' },
       'Níveis: Usuário comum (atende conversas) · Líder de setor (supervisiona) · Administrador (gerencia tudo).'),
-    error && h('div', { className: 'settings-error', role: 'alert' }, `⚠️ ${error}`),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     canManage && h(
       'form',
@@ -358,7 +360,7 @@ function UsersSection({ canManage }) {
         ASSIGNABLE_ROLES.map((r) => h('option', { key: r, value: r }, ROLE_LABELS[r])),
       ),
       h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy },
-        '➕ Criar usuário'),
+        h(Icon, { name: 'plus', size: 14 }), ' Criar usuário'),
     ),
 
     h(
@@ -392,11 +394,12 @@ function UsersSection({ canManage }) {
             h('button', {
               className: 'settings-btn', type: 'button', onClick: () => toggleActive(u),
               title: u.isActive === false ? 'Reativar usuário' : 'Desativar usuário',
-            }, u.isActive === false ? '▶️ Ativar' : '⏸️ Desativar'),
+            }, h(Icon, { name: u.isActive === false ? 'play' : 'pause', size: 14 }),
+              u.isActive === false ? ' Ativar' : ' Desativar'),
             h('button', {
               className: 'settings-btn danger', type: 'button', onClick: () => remove(u),
               title: 'Excluir usuário',
-            }, '🗑️'),
+            }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
           ),
         ),
       ),
@@ -502,10 +505,10 @@ function GroupsSection() {
   return h(
     'div',
     { className: 'settings-section' },
-    h('h3', null, '👥 Grupos (setores)'),
+    h('h3', null, h(Icon, { name: 'users', size: 17 }), ' Grupos (setores)'),
     h('p', { className: 'settings-hint' },
       'Organize os atendentes em setores — cada grupo pode ter sua fila e conexões.'),
-    error && h('div', { className: 'settings-error', role: 'alert' }, `⚠️ ${error}`),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     h(
       'form',
@@ -521,7 +524,7 @@ function GroupsSection() {
         onChange: (e) => setForm((f) => ({ ...f, color: e.target.value })),
       }),
       h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !form.name.trim() },
-        '➕ Criar grupo'),
+        h(Icon, { name: 'plus', size: 14 }), ' Criar grupo'),
     ),
 
     h(
@@ -547,10 +550,11 @@ function GroupsSection() {
               { className: 'settings-item-actions' },
               h('button', {
                 className: 'settings-btn', type: 'button', onClick: () => openDetail(dept.id),
-              }, expanded?.id === dept.id ? '▲ Fechar' : '▼ Membros'),
+              }, h(Icon, { name: expanded?.id === dept.id ? 'chevron-up' : 'chevron-down', size: 14 }),
+                expanded?.id === dept.id ? ' Fechar' : ' Membros'),
               h('button', {
                 className: 'settings-btn danger', type: 'button', onClick: () => remove(dept),
-              }, '🗑️'),
+              }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
             ),
           ),
 
@@ -568,7 +572,7 @@ function GroupsSection() {
                       className: 'settings-btn danger small', type: 'button',
                       title: 'Remover do grupo',
                       onClick: () => removeMember(dept.id, m.id),
-                    }, '✕'),
+                    }, h(Icon, { name: 'x', size: 12, label: 'Remover do grupo' })),
                   ),
                 ),
             h(
@@ -590,7 +594,7 @@ function GroupsSection() {
                 className: 'settings-btn', type: 'button',
                 disabled: !memberToAdd,
                 onClick: () => addMember(dept.id),
-              }, '➕ Adicionar'),
+              }, h(Icon, { name: 'plus', size: 14 }), ' Adicionar'),
             ),
           ),
         ),
@@ -609,10 +613,10 @@ export function SettingsPanel() {
   const canViewUsers = canManage || role === 'SUPERVISOR';
 
   const sections = [
-    { id: 'appearance', label: '🎨 Aparência', visible: true },
-    { id: 'whatsapp', label: '📱 Conexões WhatsApp', visible: canManage },
-    { id: 'users', label: '👤 Usuários e níveis', visible: canViewUsers },
-    { id: 'groups', label: '👥 Grupos (setores)', visible: canManage },
+    { id: 'appearance', label: 'Aparência', icon: 'palette', visible: true },
+    { id: 'whatsapp', label: 'Conexões WhatsApp', icon: 'smartphone', visible: canManage },
+    { id: 'users', label: 'Usuários e níveis', icon: 'user', visible: canViewUsers },
+    { id: 'groups', label: 'Grupos (setores)', icon: 'users', visible: canManage },
   ].filter((s) => s.visible);
 
   const [active, setActive] = useState(sections[0]?.id ?? 'appearance');
@@ -623,7 +627,7 @@ export function SettingsPanel() {
     h(
       'nav',
       { className: 'settings-nav', 'aria-label': 'Seções de configurações' },
-      h('h2', null, '⚙️ Configurações'),
+      h('h2', null, h(Icon, { name: 'settings', size: 17 }), ' Configurações'),
       sections.map((s) =>
         h(
           'button',
@@ -633,7 +637,8 @@ export function SettingsPanel() {
             className: `settings-nav-item${active === s.id ? ' active' : ''}`,
             onClick: () => setActive(s.id),
           },
-          s.label,
+          h(Icon, { name: s.icon, size: 16 }),
+          ` ${s.label}`,
         ),
       ),
     ),

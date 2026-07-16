@@ -1,6 +1,7 @@
 import { createElement as h, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { validateForm } from '../utils/validators';
+import { Icon } from './icons';
 
 const e = h;
 
@@ -80,7 +81,11 @@ export function LoginForm({ onSuccess }) {
           className: 'toggle-password',
           onClick: () => setShowPassword(!showPassword),
           'aria-label': showPassword ? 'Ocultar senha' : 'Mostrar senha',
-        }, showPassword ? '👁️' : '👁️‍🗨️'),
+        }, h(Icon, {
+          name: showPassword ? 'eye-off' : 'eye',
+          size: 18,
+          label: showPassword ? 'Ocultar senha' : 'Mostrar senha',
+        })),
       ),
       errors.password && e('span', { id: 'password-error', className: 'error-text' }, errors.password),
     ),
@@ -97,14 +102,14 @@ export function LoginForm({ onSuccess }) {
         className: 'primary-button',
         disabled: loading,
       },
-      loading ? e('span', null, '⏳ Conectando...') : 'Entrar',
+      loading ? e('span', null, h(Icon, { name: 'refresh', size: 14 }), ' Conectando...') : 'Entrar',
     ),
 
     // Demo credentials hint
     e(
       'div',
       { className: 'demo-hint' },
-      e('small', null, '💡 Demo: admin@demo.com / Admin@123'),
+      e('small', null, h(Icon, { name: 'info', size: 13 }), ' Demo: admin@demo.com / Admin@123'),
     ),
   );
 }

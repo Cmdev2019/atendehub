@@ -1,14 +1,15 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { Icon } from './icons';
 
 // WhatsApp/Conectar e o tema saíram do menu vertical — agora vivem em
-// Configurações (⚙️), junto com usuários, grupos e níveis de acesso.
+// Configurações, junto com usuários, grupos e níveis de acesso.
 const menuItems = [
-  { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: '💬', badge: '' },
-  { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: '👥', badge: '' },
-  { id: 'funnels', label: 'Funis', shortLabel: 'Funis', icon: '📊', badge: '' },
-  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: '📈', badge: '' },
-  { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: '⚙️', badge: '' },
+  { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: 'chat', badge: '' },
+  { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: 'users', badge: '' },
+  { id: 'funnels', label: 'Funis', shortLabel: 'Funis', icon: 'funnel', badge: '' },
+  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'chart', badge: '' },
+  { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: 'settings', badge: '' },
 ];
 
 // Itens que já possuem uma tela correspondente
@@ -48,7 +49,7 @@ export function Sidebar({ activeView = 'inbox', onNavigate }) {
             title: NAVIGABLE.has(id) ? label : `${label} (em breve)`,
             disabled: !NAVIGABLE.has(id),
           },
-          h('span', { className: 'nav-icon' }, icon),
+          h('span', { className: 'nav-icon' }, h(Icon, { name: icon, size: 20 })),
           h('span', { className: 'nav-label' }, shortLabel),
           badge && h('span', { className: 'badge' }, badge),
         ),
@@ -64,7 +65,8 @@ export function Sidebar({ activeView = 'inbox', onNavigate }) {
         type: 'button',
         title: 'Fazer logout do sistema'
       },
-      '🚪 Sair',
+      h(Icon, { name: 'logout', size: 16 }),
+      ' Sair',
     ),
   );
 }

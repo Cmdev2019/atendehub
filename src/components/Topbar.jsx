@@ -1,6 +1,7 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Logo } from './Logo';
+import { Icon } from './icons';
 
 // O toggle de tema saiu daqui — agora fica em Configurações → Aparência.
 export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
@@ -29,8 +30,12 @@ export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
     h(
       'div',
       { className: 'topbar-actions' },
-      user && h('span', { className: 'user-display' }, `👤 ${user.name}`),
-      h('button', { className: 'icon-btn', title: 'Notificações', type: 'button' }, '🔔'),
+      user && h('span', { className: 'user-display' },
+        h(Icon, { name: 'user', size: 16 }),
+        ` ${user.name}`,
+      ),
+      h('button', { className: 'icon-btn', title: 'Notificações', type: 'button' },
+        h(Icon, { name: 'bell', size: 18, label: 'Notificações' })),
       h('button',
         {
           className: 'icon-btn',
@@ -38,7 +43,7 @@ export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
           type: 'button',
           onClick: onOpenSettings,
         },
-        '⚙️'
+        h(Icon, { name: 'settings', size: 18, label: 'Configurações' })
       ),
       h('button',
         {
@@ -47,7 +52,8 @@ export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
           type: 'button',
           title: 'Fazer logout'
         },
-        '🚪 Sair'
+        h(Icon, { name: 'logout', size: 16 }),
+        ' Sair'
       ),
     ),
   );

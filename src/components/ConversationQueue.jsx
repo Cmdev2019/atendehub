@@ -1,4 +1,5 @@
 import { createElement as h, useState } from 'react';
+import { Icon } from './icons';
 
 export function ConversationQueue({ activeId, conversations, onSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,8 +24,9 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
     h(
       'div',
       { className: 'section-header' },
-      h('h2', null, '💬 Conversas'),
-      h('button', { type: 'button', className: 'icon-btn small' }, '🔍'),
+      h('h2', null, h(Icon, { name: 'chat', size: 16 }), ' Conversas'),
+      h('button', { type: 'button', className: 'icon-btn small' },
+        h(Icon, { name: 'search', size: 15, label: 'Buscar' })),
     ),
     h('input', {
       type: 'search',

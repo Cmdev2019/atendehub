@@ -590,6 +590,52 @@ button {
   color: var(--text-muted);
 }
 
+/* ── Ícones SVG (svgrepo.com) ──────────────────────────────────────────────
+   Renderizados inline via <Icon>; herdam a cor do texto (currentColor). */
+.icon {
+  flex-shrink: 0;
+  vertical-align: -0.15em;
+  display: inline-block;
+}
+
+/* Botões e rótulos que combinam ícone + texto */
+.settings-btn,
+.btn-logout,
+.btn-sidebar-logout,
+.settings-nav-item,
+.send-button,
+.attach-button,
+.primary-button,
+.user-display,
+.send-error,
+.settings-error,
+.demo-banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.send-error,
+.settings-error {
+  justify-content: flex-start;
+}
+
+.settings-nav-item {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.section-header h2,
+.info-section h3,
+.settings-section h3,
+.settings-nav h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Banner persistente de modo demonstração (mock ativo) — flutua sobre o app
    sem alterar os layouts de 100vh; some quando o backend real volta */
 .demo-banner {

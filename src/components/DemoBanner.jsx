@@ -1,5 +1,6 @@
 import { createElement as h, useSyncExternalStore } from 'react';
 import { apiClient } from '../services/api';
+import { Icon } from './icons';
 
 // Banner persistente exibido sempre que o app está operando sobre o mock
 // (backend indisponível em dev ou mock explícito). Some sozinho quando o
@@ -15,6 +16,7 @@ export function DemoBanner() {
   return h(
     'div',
     { className: 'demo-banner', role: 'status' },
-    '🧪 Modo demonstração — dados fictícios (backend indisponível)',
+    h(Icon, { name: 'flask', size: 15 }),
+    ' Modo demonstração — dados fictícios (backend indisponível)',
   );
 }

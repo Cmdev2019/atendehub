@@ -1,4 +1,5 @@
 import { createElement as h } from 'react';
+import { Icon } from './icons';
 
 export function CustomerPanel({ conversation }) {
   const getInitials = (name) => {
@@ -23,7 +24,7 @@ export function CustomerPanel({ conversation }) {
     h(
       'section',
       { className: 'info-section' },
-      h('h3', null, '📋 Informações'),
+      h('h3', null, h(Icon, { name: 'clipboard', size: 15 }), ' Informações'),
       h(
         'div',
         { className: 'info-item' },
@@ -34,7 +35,7 @@ export function CustomerPanel({ conversation }) {
         'div',
         { className: 'info-item' },
         h('div', { className: 'info-label' }, 'Canal'),
-        h('div', null, `📱 ${conversation.channel}`),
+        h('div', null, h(Icon, { name: 'smartphone', size: 13 }), ` ${conversation.channel}`),
       ),
       h(
         'div',
@@ -46,7 +47,7 @@ export function CustomerPanel({ conversation }) {
     h(
       'section',
       { className: 'info-section' },
-      h('h3', null, '🏷️ Tags'),
+      h('h3', null, h(Icon, { name: 'tag', size: 15 }), ' Tags'),
       h(
         'div',
         { className: 'tag-list' },
@@ -62,7 +63,7 @@ export function CustomerPanel({ conversation }) {
     h(
       'section',
       { className: 'info-section' },
-      h('h3', null, '⏱️ Histórico'),
+      h('h3', null, h(Icon, { name: 'clock', size: 15 }), ' Histórico'),
       h(
         'ol',
         { className: 'timeline', style: { paddingLeft: '16px', fontSize: '0.85rem' } },
