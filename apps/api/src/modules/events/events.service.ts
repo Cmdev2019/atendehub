@@ -81,13 +81,10 @@ export class EventsService {
   emitNewMessage(payload: MessageNewPayload): void {
     const { companyId, conversationId } = payload;
 
-    // Emite para todos na sala da conversa (agente que está com ela aberta)
+    // Salas encadeadas numa única emissão: o Socket.IO entrega à UNIÃO das
+    // salas, sem duplicar para sockets presentes em ambas.
     this.gateway.server
       .to(`conversation:${conversationId}`)
-      .emit('message.new', payload);
-
-    // Emite também para a sala da empresa (para atualizar lista de conversas)
-    this.gateway.server
       .to(`company:${companyId}`)
       .emit('message.new', payload);
 
@@ -100,9 +97,6 @@ export class EventsService {
 
     this.gateway.server
       .to(`conversation:${conversationId}`)
-      .emit('message.status', payload);
-
-    this.gateway.server
       .to(`company:${companyId}`)
       .emit('message.status', payload);
 
@@ -129,9 +123,6 @@ export class EventsService {
 
     this.gateway.server
       .to(`conversation:${conversationId}`)
-      .emit('conversation.updated', payload);
-
-    this.gateway.server
       .to(`company:${companyId}`)
       .emit('conversation.updated', payload);
 
@@ -142,22 +133,17 @@ export class EventsService {
   emitConversationAssigned(payload: ConversationAssignedPayload): void {
     const { companyId, conversationId, agentId } = payload;
 
-    // Notifica a sala da conversa
-    this.gateway.server
+    // União das salas: conversa + empresa + agente atribuído (sem duplicar
+    // para sockets presentes em mais de uma sala)
+    let broadcast = this.gateway.server
       .to(`conversation:${conversationId}`)
-      .emit('conversation.assigned', payload);
+      .to(`company:${companyId}`);
 
-    // Notifica toda a empresa (lista de conversas precisa atualizar)
-    this.gateway.server
-      .to(`company:${companyId}`)
-      .emit('conversation.assigned', payload);
-
-    // Notifica o agente específico (para ele saber que recebeu uma atribuição)
     if (agentId) {
-      this.gateway.server
-        .to(`agent:${agentId}`)
-        .emit('conversation.assigned', payload);
+      broadcast = broadcast.to(`agent:${agentId}`);
     }
+
+    broadcast.emit('conversation.assigned', payload);
 
     this.logger.debug(
       `conversation.assigned → ${conversationId} | agente: ${agentId ?? 'nenhum'}`,
@@ -181,13 +167,9 @@ export class EventsService {
   emitSlaBreached(payload: SlaBreachedPayload): void {
     const { companyId, conversationId } = payload;
 
-    // Notifica todos na empresa (para alertar disponíveis/supervisores)
+    // União das salas: empresa (supervisores/disponíveis) + conversa em questão
     this.gateway.server
       .to(`company:${companyId}`)
-      .emit('sla.breached', payload);
-
-    // Notifica também a conversa em questão
-    this.gateway.server
       .to(`conversation:${conversationId}`)
       .emit('sla.breached', payload);
 

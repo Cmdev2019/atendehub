@@ -16,7 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:prod": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "ts-node prisma/seed.ts",
+    "db:seed": "ts-node -r dotenv/config prisma/seed.ts",
     "db:reset": "prisma migrate reset --force"
   },
   "dependencies": {

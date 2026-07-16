@@ -129,20 +129,7 @@ NUNCA comita este arquivo no Git.
 
   console.log("\n✅ Seed concluído com sucesso!");
   console.log(`📄 Credenciais salvas em: ${fileName}`);
-  console.log("⚠️  Este arquivo será auto-deletado em 1 hora");
-
-  // Auto-delete em desenvolvimento após 1 hora
-  if (process.env.NODE_ENV !== "production") {
-    setTimeout(() => {
-      try {
-        const fs = require("fs");
-        fs.unlinkSync(fileName);
-        console.log("🗑️  Arquivo de credenciais deletado automaticamente");
-      } catch (err) {
-        console.warn(`Falha ao deletar arquivo de credenciais: ${err.message}`);
-      }
-    }, 60 * 60 * 1000); // 1 hora
-  }
+  console.log("⚠️  Guarde a senha em local seguro e delete o arquivo em seguida.");
 }
 
 main()

@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bull';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { StorageModule } from './shared/storage/storage.module';
+import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { UserModule } from './modules/user/user.module';
@@ -56,6 +57,8 @@ import { EventsModule } from './modules/events/events.module';
     }),
     PrismaModule,
     StorageModule,
+    // ── Infra ────────────────────────────────────────────────────────────────
+    HealthModule,
     // ── Auth & Core ──────────────────────────────────────────────────────────
     AuthModule,
     CompanyModule,
