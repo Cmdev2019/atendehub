@@ -1,6 +1,6 @@
 import { createElement as h, useRef, useEffect, useState } from 'react';
 
-export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
+export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendError }) {
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -110,6 +110,14 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend }) {
           ),
         ),
       ),
+    ),
+
+    // Aviso de falha no envio (a mensagem otimista é removida — sem isso o
+    // envio falha silenciosamente e o usuário não sabe o que aconteceu)
+    sendError && h(
+      'div',
+      { className: 'send-error', role: 'alert' },
+      `⚠️ ${sendError}`,
     ),
 
     h(

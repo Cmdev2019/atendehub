@@ -13,7 +13,8 @@ jest.mock('../services/websocket', () => ({
   wsClient: {
     on: jest.fn(),
     off: jest.fn(),
-    sendMessage: jest.fn(),
+    joinConversation: jest.fn(),
+    leaveConversation: jest.fn(),
     isConnected: true,
   },
 }));
@@ -26,6 +27,7 @@ describe('useConversations Integration Tests', () => {
     jest.clearAllMocks();
     mockApiClient = require('../services/api').apiClient;
     mockWsClient = require('../services/websocket').wsClient;
+    mockWsClient.isConnected = true;
   });
 
   it('retorna estrutura inicial de conversas', () => {
@@ -76,7 +78,7 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
-  it('inscreve em eventos WebSocket', () => {
+  it('inscreve nos eventos WebSocket do backend (message.new, conversation.updated)', () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [],
       pagination: { page: 1, limit: 20, total: 0 },
@@ -84,8 +86,8 @@ describe('useConversations Integration Tests', () => {
 
     renderHook(() => useConversations());
 
-    expect(mockWsClient.on).toHaveBeenCalledWith('message:created', expect.any(Function));
-    expect(mockWsClient.on).toHaveBeenCalledWith('conversation:updated', expect.any(Function));
+    expect(mockWsClient.on).toHaveBeenCalledWith('message.new', expect.any(Function));
+    expect(mockWsClient.on).toHaveBeenCalledWith('conversation.updated', expect.any(Function));
   });
 
   it('desinscreve de eventos ao desmontar', () => {
@@ -98,14 +100,58 @@ describe('useConversations Integration Tests', () => {
 
     unmount();
 
-    expect(mockWsClient.off).toHaveBeenCalledWith('message:created');
-    expect(mockWsClient.off).toHaveBeenCalledWith('conversation:updated');
+    expect(mockWsClient.off).toHaveBeenCalledWith('message.new');
+    expect(mockWsClient.off).toHaveBeenCalledWith('conversation.updated');
   });
 
-  it('envia mensagem via WebSocket se conectado', async () => {
+  it('entra na sala da conversa ativa via join:conversation', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    expect(mockWsClient.joinConversation).toHaveBeenCalledWith('1');
+  });
+
+  it('sai da sala anterior ao trocar de conversa ativa', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [
+        { id: '1', contact: 'João', messages: [] },
+        { id: '2', contact: 'Maria', messages: [] },
+      ],
+      pagination: { page: 1, limit: 20, total: 2 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(2);
+    });
+
+    act(() => {
+      result.current.setActiveId('2');
+    });
+
+    expect(mockWsClient.leaveConversation).toHaveBeenCalledWith('1');
+    expect(mockWsClient.joinConversation).toHaveBeenCalledWith('2');
+  });
+
+  it('envia mensagem sempre via API REST (mesmo com WebSocket conectado)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    mockApiClient.sendMessage.mockResolvedValueOnce({
+      id: 'db-1',
+      senderType: 'AGENT',
+      content: 'Teste',
+      sentAt: new Date().toISOString(),
     });
 
     mockWsClient.isConnected = true;
@@ -121,21 +167,24 @@ describe('useConversations Integration Tests', () => {
       result.current.setDraft('Teste');
     });
 
-    act(() => {
-      result.current.sendMessage();
+    await act(async () => {
+      await result.current.sendMessage();
     });
 
-    expect(mockWsClient.sendMessage).toHaveBeenCalledWith('1', 'Teste');
+    expect(mockApiClient.sendMessage).toHaveBeenCalledWith('1', 'Teste');
   });
 
-  it('envia mensagem via API se WebSocket desconectado', async () => {
+  it('substitui a mensagem otimista pela versão persistida da API', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
     });
-
-    mockApiClient.sendMessage.mockResolvedValueOnce({ success: true });
-    mockWsClient.isConnected = false;
+    mockApiClient.sendMessage.mockResolvedValueOnce({
+      id: 'db-42',
+      senderType: 'AGENT',
+      content: 'Teste',
+      sentAt: new Date().toISOString(),
+    });
 
     const { result } = renderHook(() => useConversations());
 
@@ -148,11 +197,40 @@ describe('useConversations Integration Tests', () => {
       result.current.setDraft('Teste');
     });
 
-    act(() => {
-      result.current.sendMessage();
+    await act(async () => {
+      await result.current.sendMessage();
     });
 
-    expect(mockApiClient.sendMessage).toHaveBeenCalledWith('1', 'Teste');
+    expect(result.current.activeConversation.messages).toHaveLength(1);
+    expect(result.current.activeConversation.messages[0].id).toBe('db-42');
+    expect(result.current.activeConversation.messages[0].text).toBe('Teste');
+  });
+
+  it('remove a mensagem otimista se o envio falhar', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    mockApiClient.sendMessage.mockRejectedValueOnce(new Error('API fora do ar'));
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    act(() => {
+      result.current.setActiveId('1');
+      result.current.setDraft('Teste');
+    });
+
+    await act(async () => {
+      await result.current.sendMessage();
+    });
+
+    expect(result.current.activeConversation.messages).toHaveLength(0);
+    // O erro precisa ficar visível para o usuário (F2-6)
+    expect(result.current.sendError).toBeTruthy();
   });
 
   it('adiciona mensagem otimista ao enviar', async () => {
@@ -160,8 +238,8 @@ describe('useConversations Integration Tests', () => {
       data: [{ id: '1', contact: 'João', messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
     });
-
-    mockWsClient.isConnected = true;
+    // Sem id na resposta: a mensagem otimista permanece
+    mockApiClient.sendMessage.mockResolvedValueOnce({ success: true });
 
     const { result } = renderHook(() => useConversations());
 
@@ -176,15 +254,15 @@ describe('useConversations Integration Tests', () => {
 
     const initialLength = result.current.activeConversation.messages.length;
 
-    act(() => {
-      result.current.sendMessage();
+    await act(async () => {
+      await result.current.sendMessage();
     });
 
     expect(result.current.activeConversation.messages).toHaveLength(initialLength + 1);
     expect(result.current.draft).toBe('');
   });
 
-  it('atualiza conversa ao receber evento WebSocket', async () => {
+  it('adiciona mensagem ao receber message.new do WebSocket', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
@@ -196,23 +274,87 @@ describe('useConversations Integration Tests', () => {
       expect(result.current.conversations).toHaveLength(1);
     });
 
-    // Simular evento WebSocket de mensagem criada
-    const messageCreatedHandler = mockWsClient.on.mock.calls.find(
-      call => call[0] === 'message:created'
+    // Payload real do backend: { conversationId, companyId, message }
+    const messageNewHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'message.new'
     )[1];
 
     act(() => {
-      messageCreatedHandler({
-        id: 'msg-1',
+      messageNewHandler({
         conversationId: '1',
-        text: 'Nova mensagem',
-        type: 'customer',
+        companyId: 'company-1',
+        message: {
+          id: 'msg-1',
+          senderType: 'CLIENT',
+          content: 'Nova mensagem',
+          type: 'TEXT',
+          status: 'RECEIVED',
+          sentAt: '2026-07-15T10:00:00.000Z',
+        },
       });
     });
 
     await waitFor(() => {
       expect(result.current.activeConversation.messages).toHaveLength(1);
       expect(result.current.activeConversation.messages[0].text).toBe('Nova mensagem');
+      expect(result.current.activeConversation.messages[0].type).toBe('customer');
+    });
+  });
+
+  it('não duplica mensagem recebida via message.new (dedupe por id)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [{ id: 'msg-1', type: 'customer', text: 'Oi', time: '10:00' }] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    const messageNewHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'message.new'
+    )[1];
+
+    act(() => {
+      messageNewHandler({
+        conversationId: '1',
+        companyId: 'company-1',
+        message: { id: 'msg-1', senderType: 'CLIENT', content: 'Oi', type: 'TEXT', status: 'RECEIVED', sentAt: '2026-07-15T10:00:00.000Z' },
+      });
+    });
+
+    expect(result.current.activeConversation.messages).toHaveLength(1);
+  });
+
+  it('aplica changes ao receber conversation.updated do WebSocket', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    // Payload real do backend: { conversationId, companyId, changes }
+    const conversationUpdatedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.updated'
+    )[1];
+
+    act(() => {
+      conversationUpdatedHandler({
+        conversationId: '1',
+        companyId: 'company-1',
+        changes: { status: 'OPEN' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeConversation.status).toBe('OPEN');
     });
   });
 
@@ -248,8 +390,7 @@ describe('useConversations Integration Tests', () => {
       data: [{ id: '1', contact: 'João', messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
     });
-
-    mockWsClient.isConnected = true;
+    mockApiClient.sendMessage.mockResolvedValueOnce({ success: true });
 
     const { result } = renderHook(() => useConversations());
 
@@ -264,8 +405,8 @@ describe('useConversations Integration Tests', () => {
 
     expect(result.current.draft).toBe('Teste');
 
-    act(() => {
-      result.current.sendMessage();
+    await act(async () => {
+      await result.current.sendMessage();
     });
 
     expect(result.current.draft).toBe('');

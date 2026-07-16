@@ -1,6 +1,22 @@
 import { io } from 'socket.io-client';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
+
+// O gateway NestJS escuta no namespace /ws (events.gateway.ts). Aceita a URL
+// base com ou sem /ws no final para tolerar variações de configuração.
+const WS_URL = `${WS_BASE_URL.replace(/\/(ws\/?)?$/, '')}/ws`;
+
+// Eventos emitidos pelo backend (nomes conforme events.service.ts / gateway)
+const BACKEND_EVENTS = [
+  'connected',
+  'message.new',
+  'message.status',
+  'conversation.created',
+  'conversation.updated',
+  'conversation.assigned',
+  'connection.status',
+  'sla.breached',
+];
 
 export class WebSocketClient {
   constructor() {
@@ -46,17 +62,11 @@ export class WebSocketClient {
           this.isConnected = false;
         });
 
-        // Ouvir eventos que chegam do backend
-        this.socket.on('message:created', (data) => {
-          this.emit('message:created', data);
-        });
-
-        this.socket.on('conversation:updated', (data) => {
-          this.emit('conversation:updated', data);
-        });
-
-        this.socket.on('user:typing', (data) => {
-          this.emit('user:typing', data);
+        // Repassa os eventos do backend para os listeners locais
+        BACKEND_EVENTS.forEach((event) => {
+          this.socket.on(event, (data) => {
+            this.emit(event, data);
+          });
         });
 
         this.socket.on('error', (error) => {
@@ -122,14 +132,6 @@ export class WebSocketClient {
   leaveConversation(conversationId) {
     this.send('leave:conversation', { conversationId });
     console.log(`📍 Saindo da conversa: ${conversationId}`);
-  }
-
-  // Enviar mensagem (será retransmitida pelo backend)
-  sendMessage(conversationId, text) {
-    this.send('send:message', {
-      conversationId,
-      text,
-    });
   }
 
   // Indicar que está digitando
