@@ -236,11 +236,47 @@ export function useConversations() {
 
   const activeConversation = conversations.find((c) => c.id === activeId);
 
-  const sendMessage = async () => {
+  // Envia texto e/ou arquivos de mídia (prints colados, anexos).
+  // Retorna true em sucesso — o ChatPanel usa isso para limpar os anexos.
+  const sendMessage = async (files = []) => {
     const text = draft.trim();
-    if (!text) return;
+    const mediaFiles = (files || []).map((f) => f?.file || f).filter(Boolean);
+
+    if (!text && mediaFiles.length === 0) return false;
 
     setSendError(null);
+
+    // ── Mídia: um envio por arquivo; o texto do composer vira caption do 1º ──
+    if (mediaFiles.length > 0) {
+      setDraft('');
+      try {
+        for (let i = 0; i < mediaFiles.length; i++) {
+          const response = await apiClient.sendMediaMessage(
+            activeId,
+            mediaFiles[i],
+            i === 0 ? text : '',
+          );
+          const saved = toUiMessage(response?.message ?? response);
+          if (saved?.id) {
+            setConversations((prev) =>
+              prev.map((conv) => {
+                if (conv.id !== activeId) return conv;
+                // Eco via socket pode já ter chegado — não duplica
+                if (conv.messages?.some((m) => m.id === saved.id)) return conv;
+                return { ...conv, messages: [...(conv.messages || []), saved] };
+              }),
+            );
+          }
+        }
+        return true;
+      } catch (error) {
+        console.error('❌ Erro ao enviar mídia:', error);
+        setSendError(
+          `Não foi possível enviar a imagem. ${error?.message || ''}`.trim(),
+        );
+        return false;
+      }
+    }
 
     // Mensagem otimista (aparece imediatamente)
     const optimisticMessage = {
@@ -308,7 +344,9 @@ export function useConversations() {
             : conv,
         ),
       );
+      return false;
     }
+    return true;
   };
 
   return {

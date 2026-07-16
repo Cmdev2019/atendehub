@@ -7,9 +7,18 @@ import {
 } from '@nestjs/common';
 import { MessageType, MessageStatus, SenderType, Role, ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
 import { SendMessageDto } from './dto/send-message.dto';
+
+// Arquivo recebido via multer (memory storage)
+interface UploadedMediaFile {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+}
 
 @Injectable()
 export class SendMessageService {
@@ -17,18 +26,18 @@ export class SendMessageService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     private readonly evolution: EvolutionService,
     private readonly eventsService: EventsService,
   ) {}
 
-  async send(
+  // ── Carrega a conversa e aplica as regras de envio (compartilhado) ────────
+  private async prepareSend(
     companyId: string,
     conversationId: string,
     senderId: string,
     senderRole: Role,
-    dto: SendMessageDto,
   ) {
-    // ── 1. Carrega a conversa com tudo que precisa ─────────────────────────
     const conversation = await this.prisma.conversation.findFirst({
       where: { id: conversationId, companyId },
       select: {
@@ -48,8 +57,6 @@ export class SendMessageService {
     if (!conversation) {
       throw new NotFoundException('Conversa não encontrada');
     }
-
-    // ── 2. Regras de negócio ───────────────────────────────────────────────
 
     // Conversa fechada não aceita mensagem
     if (conversation.status === ConversationStatus.CLOSED) {
@@ -89,7 +96,24 @@ export class SendMessageService {
       );
     }
 
-    const { sessionName } = conversation.whatsapp;
+    return conversation;
+  }
+
+  async send(
+    companyId: string,
+    conversationId: string,
+    senderId: string,
+    senderRole: Role,
+    dto: SendMessageDto,
+  ) {
+    const conversation = await this.prepareSend(
+      companyId,
+      conversationId,
+      senderId,
+      senderRole,
+    );
+
+    const { sessionName } = conversation.whatsapp!;
     const phone = conversation.contact.phone;
 
     // ── 3. Envia para a Evolution API ──────────────────────────────────────
@@ -204,6 +228,158 @@ export class SendMessageService {
     );
 
     return message;
+  }
+
+  // ── Envio de mídia com upload direto (print colado, arquivo anexado) ──────
+  // Recebe o arquivo do navegador (multipart), armazena no MinIO (URL usada
+  // pelo painel) e envia à Evolution em BASE64 — o container da Evolution não
+  // resolve a URL localhost do MinIO.
+  async sendMedia(
+    companyId: string,
+    conversationId: string,
+    senderId: string,
+    senderRole: Role,
+    file: UploadedMediaFile,
+    caption?: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Arquivo de mídia ausente ou vazio');
+    }
+
+    const conversation = await this.prepareSend(
+      companyId,
+      conversationId,
+      senderId,
+      senderRole,
+    );
+
+    const { sessionName } = conversation.whatsapp!;
+    const phone = conversation.contact.phone;
+
+    const mimeType = file.mimetype || 'application/octet-stream';
+    const type = this.getMessageTypeFromMime(mimeType);
+    const mediaTypeMap: Record<string, 'image' | 'video' | 'document' | 'audio'> = {
+      IMAGE: 'image',
+      VIDEO: 'video',
+      AUDIO: 'audio',
+      DOCUMENT: 'document',
+    };
+
+    // ── 1. Armazena no MinIO (URL consumida pelo painel/Attachment) ────────
+    const stored = await this.storage.upload(
+      file.buffer,
+      mimeType,
+      companyId,
+      file.originalname,
+      file.size,
+    );
+
+    // ── 2. Envia à Evolution como base64 ───────────────────────────────────
+    let externalId: string | undefined;
+    try {
+      const result = await this.evolution.sendMediaMessage(
+        sessionName,
+        phone,
+        file.buffer.toString('base64'),
+        mediaTypeMap[type],
+        caption,
+        file.originalname,
+      );
+      externalId = result.key?.id;
+    } catch (err: any) {
+      this.logger.error(`Falha ao enviar mídia: ${err.message}`);
+      throw new BadRequestException(
+        `Falha ao enviar mídia via WhatsApp: ${err.message}`,
+      );
+    }
+
+    // ── 3. Persiste mensagem + attachment ──────────────────────────────────
+    const message = await this.prisma.message.create({
+      data: {
+        conversationId,
+        senderId,
+        senderType: SenderType.AGENT,
+        content: caption ?? null,
+        type,
+        status: MessageStatus.SENT,
+        externalId,
+      },
+      select: {
+        id: true,
+        senderType: true,
+        content: true,
+        type: true,
+        status: true,
+        sentAt: true,
+        externalId: true,
+        sender: { select: { id: true, name: true, avatarUrl: true } },
+      },
+    });
+
+    const attachment = await this.prisma.attachment.create({
+      data: {
+        messageId: message.id,
+        url: stored.url,
+        mimeType,
+        fileName: file.originalname ?? null,
+        size: file.size,
+      },
+    });
+
+    // ── 4. Preview da conversa ──────────────────────────────────────────────
+    const preview = `[${type.toLowerCase()}]${caption ? ` ${caption}` : ''}`;
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastMessageAt: new Date(),
+        lastMessagePreview: preview.slice(0, 100),
+        ...(conversation.status === ConversationStatus.WAITING && {
+          status: ConversationStatus.OPEN,
+          agentId: senderId,
+        }),
+      },
+    });
+
+    // ── 5. Eventos em tempo real ────────────────────────────────────────────
+    this.eventsService.emitNewMessage({
+      companyId,
+      conversationId,
+      message: {
+        id: message.id,
+        senderType: message.senderType,
+        content: message.content,
+        type: message.type,
+        status: message.status,
+        sentAt: message.sentAt,
+        externalId: message.externalId,
+      },
+    });
+    this.eventsService.emitMessageUpdated({
+      companyId,
+      conversationId,
+      messageId: message.id,
+      attachment: {
+        id: attachment.id,
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        fileName: attachment.fileName,
+      },
+    });
+
+    this.logger.log(
+      `Mídia enviada: ${message.id} | conversa: ${conversationId} | tipo: ${type} | ${file.size} bytes`,
+    );
+
+    // Resposta inclui o attachment — o painel renderiza a mídia imediatamente
+    return { ...message, attachments: [attachment] };
+  }
+
+  // ── Helper: MessageType a partir do MIME type do arquivo ───────────────────
+  private getMessageTypeFromMime(mimeType: string): MessageType {
+    if (mimeType.startsWith('image/')) return MessageType.IMAGE;
+    if (mimeType.startsWith('video/')) return MessageType.VIDEO;
+    if (mimeType.startsWith('audio/')) return MessageType.AUDIO;
+    return MessageType.DOCUMENT;
   }
 
   // ── Helper: mapeia MessageType para MIME type genérico ─────────────────────

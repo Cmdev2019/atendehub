@@ -73,27 +73,63 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
     }
   }, [conversation.messages]);
 
+  async function handleSend() {
+    const ok = await onSend(attachments);
+    if (ok) {
+      attachments.forEach((a) => a.preview && URL.revokeObjectURL(a.preview));
+      setAttachments([]);
+    }
+  }
+
   function handleKeyDown(event) {
     // Enter sozinho = enviar
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      onSend();
+      handleSend();
     }
     // Shift+Enter = nova linha
   }
 
-  function handleFileSelect(event) {
-    const files = Array.from(event.target.files || []);
-    const newAttachments = files.map(file => ({
+  function addFiles(files) {
+    const newAttachments = files.map((file) => ({
+      file, // File original — necessário para o upload
       name: file.name,
       size: file.size,
       type: file.type,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
     }));
-    setAttachments([...attachments, ...newAttachments]);
+    setAttachments((prev) => [...prev, ...newAttachments]);
+  }
+
+  function handleFileSelect(event) {
+    addFiles(Array.from(event.target.files || []));
+    event.target.value = ''; // permite anexar o mesmo arquivo de novo
+  }
+
+  // Print/imagem colado com Ctrl+V direto no composer — sem salvar em arquivo
+  function handlePaste(event) {
+    const items = Array.from(event.clipboardData?.items || []);
+    const images = items
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter(Boolean)
+      .map((file, i) =>
+        file.name && file.name !== 'image.png'
+          ? file
+          : new File([file], `print-${Date.now()}${i ? `-${i}` : ''}.png`, {
+              type: file.type || 'image/png',
+            }),
+      );
+
+    if (images.length > 0) {
+      event.preventDefault(); // não cola o nome/base64 como texto
+      addFiles(images);
+    }
   }
 
   function removeAttachment(index) {
+    const removed = attachments[index];
+    if (removed?.preview) URL.revokeObjectURL(removed.preview);
     setAttachments(attachments.filter((_, i) => i !== index));
   }
 
@@ -220,6 +256,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
             e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
           },
           onKeyDown: handleKeyDown,
+          onPaste: handlePaste,
           rows: 1,
         },
       ),
@@ -228,7 +265,7 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
         {
           className: 'send-button',
           type: 'button',
-          onClick: onSend,
+          onClick: handleSend,
           disabled: !draft.trim() && attachments.length === 0,
           title: 'Enviar (Enter)',
         },

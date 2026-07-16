@@ -143,8 +143,11 @@ class ApiClient {
       return this.fallbackToMock(endpoint, options);
     }
 
+    // FormData (upload de mídia): o navegador define o Content-Type com o
+    // boundary — defini-lo manualmente quebraria o multipart
+    const isFormData = options.body instanceof FormData;
     const headers = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...options.headers,
     };
 
@@ -200,7 +203,10 @@ class ApiClient {
   // Fallback para Mock API
   async requestMock(endpoint, options) {
     const method = (options.method || 'GET').toUpperCase();
-    const body = options.body ? JSON.parse(options.body) : {};
+    const body =
+      options.body && typeof options.body === 'string'
+        ? JSON.parse(options.body)
+        : {};
     // Ignora query string e quebra o path em segmentos: /users/user-1 → ['users', 'user-1']
     const seg = endpoint.split('?')[0].split('/').filter(Boolean);
     const [resource, id, sub, subId] = seg;
@@ -220,6 +226,10 @@ class ApiClient {
 
     if (resource === 'conversations') {
       if (sub === 'messages' && method === 'POST') {
+        // subId === 'media' → envio de mídia; no mock vira texto ilustrativo
+        if (subId === 'media') {
+          return mockApiClient.sendMessage(id, '[Imagem enviada]');
+        }
         return mockApiClient.sendMessage(id, body.content);
       }
       return mockApiClient.getConversations();
@@ -335,6 +345,18 @@ class ApiClient {
     return this.request(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ type: 'TEXT', content: text }),
+    });
+  }
+
+  async sendMediaMessage(conversationId, file, caption) {
+    // Upload direto (print colado ou arquivo anexado) — multipart
+    const form = new FormData();
+    form.append('file', file, file.name || 'imagem.png');
+    if (caption) form.append('caption', caption);
+
+    return this.request(`/conversations/${conversationId}/messages/media`, {
+      method: 'POST',
+      body: form,
     });
   }
 
