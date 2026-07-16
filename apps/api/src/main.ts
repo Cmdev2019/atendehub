@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import { AppModule } from './app.module';
@@ -17,7 +18,15 @@ const INSECURE_PLACEHOLDERS = [
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
+    bodyParser: false, // registrado manualmente abaixo com limites por rota
   });
+
+  // ── Body parser com limite por rota ────────────────────────────────────────
+  // Webhooks da Evolution chegam com mídia embutida em base64 (webhookBase64)
+  // e estouram o limite padrão de 100kb → 413 e a mensagem nunca entra.
+  app.use('/api/v1/webhooks', json({ limit: '25mb' }));
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   // ── Validação crítica de segredos na inicialização ─────────────────────────
   const config = app.get(ConfigService);
