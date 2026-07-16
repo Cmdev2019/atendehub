@@ -1,7 +1,7 @@
 {
-  "name": "multi-atendimento",
+  "name": "@atendehub/web",
   "version": "0.1.0",
-  "description": "Protótipo de central de atendimento multiplataforma.",
+  "description": "Front-end do AtendeHub — central de atendimento multiatendente via WhatsApp (Vite + React).",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,172 +1,155 @@
 # AtendeHub
 
-Plataforma SaaS de atendimento omnichannel multi-tenant com integração WhatsApp via Evolution API.
+Plataforma SaaS de atendimento multiatendente via WhatsApp (multi-tenant), com
+conversas em tempo real, fila de atendimento, níveis de acesso e integração
+WhatsApp via Evolution API.
+
+> 📌 **Status do projeto:** em estabilização ativa. O documento canônico de
+> progresso é o [`ROADMAP_ESTABILIZACAO.md`](ROADMAP_ESTABILIZACAO.md) —
+> consulte-o antes de qualquer trabalho. O contrato da API está em
+> [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
 
 ---
 
-## Stack
+## Stack (real)
 
 | Camada | Tecnologia |
 |---|---|
-| Front-end | Next.js 14 + React + TypeScript |
-| Back-end | NestJS + TypeScript |
-| ORM | Prisma 5 |
+| Front-end | **Vite 6 + React 19 (JavaScript)** — na raiz do repo |
+| Back-end | NestJS 10 + TypeScript — `apps/api` |
+| ORM | Prisma |
 | Banco | PostgreSQL 16 |
-| Cache / Filas | Redis 7 + BullMQ |
-| Tempo real | Socket.IO |
-| WhatsApp | Evolution API v2 |
-| Storage | MinIO (S3 compatível) |
+| Cache / Filas | Redis 7 + Bull |
+| Tempo real | Socket.IO (namespace `/ws`) |
+| WhatsApp | Evolution API v2 (Baileys) |
+| Storage de mídia | MinIO (S3 compatível) |
 | Containers | Docker + Docker Compose |
-| Proxy | Nginx |
 
----
+> O front em Next.js/TypeScript citado em versões antigas deste README nunca
+> existiu (`apps/web` não existe). A permanência em Vite+React ou migração
+> futura é a decisão F5-3 do roadmap.
 
 ## Estrutura do projeto
 
 ```
 atendehub/
-├── apps/
-│   ├── api/                  # Backend NestJS
-│   │   ├── prisma/
-│   │   │   ├── schema.prisma
-│   │   │   ├── migrations/
-│   │   │   └── seed.ts
-│   │   └── src/
-│   └── web/                  # Front-end Next.js (Fase 8)
-├── infra/
-│   ├── postgres/
-│   │   └── init.sql
-│   └── nginx/
-│       └── nginx.conf
-├── docker-compose.yml        # Infraestrutura local
-├── docker-compose.prod.yml   # Override de produção
-└── .env.example
+├── src/                      # Front-end Vite + React (componentes, hooks, services)
+│   ├── components/           # UI (ChatPanel, ConversationQueue, Settings, icons...)
+│   ├── hooks/                # useConversations, useAuth, useTheme
+│   ├── services/             # api.js (REST), websocket.js (Socket.IO), apiMock.js
+│   └── context/              # AuthContext, ThemeContext
+├── apps/api/                 # Backend NestJS
+│   ├── prisma/               # schema, migrations, seed
+│   └── src/modules/          # auth, conversation, message, webhook, whatsapp, ...
+├── docs/                     # API_CONTRACT.md, LOGO_GUIDELINES.md, archive/
+├── infra/                    # postgres/init.sql, nginx/
+├── docker-compose.yml        # Infra local (Postgres, Redis, MinIO, Evolution)
+└── docker-compose.prod.yml   # Override de produção
 ```
-
----
 
 ## Pré-requisitos
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac/Linux)
-- Node.js >= 20
-- npm >= 10
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Node.js >= 20 e npm >= 10
 
----
+## Como rodar (validado em 2026-07-16)
 
-## Configuração inicial
-
-### 1. Copiar variáveis de ambiente
+### 1. Variáveis de ambiente
 
 ```bash
-cp .env.example .env
+cp apps/api/.env.example apps/api/.env   # backend
 ```
 
-> Em desenvolvimento os valores padrão do `.env.example` já funcionam.
-> Em produção, **troque todos os segredos** antes de subir.
+Crie também um `.env` na **raiz** com `EVOLUTION_API_KEY=<mesma chave do apps/api/.env>` —
+o docker-compose lê a chave da raiz e a API precisa usar a MESMA (sem isso,
+toda chamada API→Evolution responde 401).
 
-### 2. Subir a infraestrutura
+### 2. Infraestrutura
 
 ```bash
-docker compose up -d
+docker compose up -d postgres redis minio evolution
 ```
 
-Isso sobe em background:
-- **PostgreSQL** → `localhost:5432`
-- **Redis** → `localhost:6379`
-- **MinIO** → `localhost:9000` (API S3) / `localhost:9001` (Console web)
-- **Evolution API** → `localhost:8080`
+> ⚠️ Não use `docker compose up -d` sem listar os serviços: o container
+> auxiliar `minio_init` referencia uma tag que saiu do Docker Hub e aborta o
+> pull (item B-5 do roadmap). O bucket é criado pela própria API no boot.
 
-### 3. Verificar se tudo está saudável
+Sobe: PostgreSQL (`:5432`), Redis (`:6379`), MinIO (`:9000` API / `:9001` console)
+e Evolution API (`:8080`).
 
-```bash
-docker compose ps
-```
-
-Todos os serviços devem aparecer com status `healthy` ou `running`.
-
-### 4. Instalar dependências do backend
+### 3. Backend
 
 ```bash
 cd apps/api
 npm install
+npm run db:generate && npm run db:migrate
+npm run db:seed        # cria empresa demo + admin com SENHA ALEATÓRIA
+npm run start          # ou npm run start:dev (watch) — porta 3001
 ```
 
-### 5. Gerar o client Prisma e rodar as migrations
+> 🔑 **Senha do admin:** o seed gera uma senha aleatória e a salva em
+> `apps/api/.seed-credentials-<timestamp>.txt` (gitignored). Apague o arquivo
+> após guardar a senha. No ambiente de desenvolvimento deste repo a senha do
+> `admin@demo.com` foi definida como `Admin@123` (igual ao mock do front).
+
+Health check: `curl http://localhost:3001/api/v1/health` → `{"status":"ok"}`.
+
+### 4. Front-end
 
 ```bash
-npm run db:generate
-npm run db:migrate
+# na raiz do repo
+npm install
+npm run dev            # http://localhost:3000
 ```
 
-### 6. Popular o banco com dados iniciais
+Sem o backend no ar, o front entra em **modo demonstração** (dados fictícios)
+com um banner visível — comportamento restrito a desenvolvimento.
+
+### 5. Conectar o WhatsApp
+
+Login → **Configurações → Conexões WhatsApp** → criar conexão → escanear o QR
+Code com o celular (WhatsApp → Dispositivos conectados). O status muda para
+"Conectado" automaticamente e as conversas passam a chegar em tempo real.
+
+## Testes e build
 
 ```bash
-npm run db:seed
+npm test               # front (Jest) — 74 testes
+npm run build          # front (vite build)
+cd apps/api && npm run build   # backend (nest build)
 ```
 
-Cria:
-- Empresa **demo**
-- Admin: `admin@demo.com` / `Admin@123`
-- Departamentos: Atendimento, Financeiro, Suporte
-- Filas e tags padrão
+> O backend ainda não tem testes — é a Fase 4 do roadmap.
 
-### 7. Abrir o Prisma Studio (visualizador do banco)
+## Serviços e URLs (desenvolvimento)
 
-```bash
-npm run db:studio
-```
-
-Acesse: http://localhost:5555
-
----
-
-## Serviços e suas URLs
-
-| Serviço | URL | Credenciais |
+| Serviço | URL | Credenciais (apenas dev) |
 |---|---|---|
-| PostgreSQL | `localhost:5432` | user: `atendehub` / pass: `atendehub_secret` |
-| Redis | `localhost:6379` | senha: `redis_secret` |
-| MinIO Console | http://localhost:9001 | user: `atendehub_minio` / pass: `minio_secret_123` |
-| Evolution API | http://localhost:8080 | API Key: `evolution_api_key_dev` |
-| Prisma Studio | http://localhost:5555 | — |
-| Backend NestJS | http://localhost:3001 | — |
-| Front-end | http://localhost:3000 | — |
+| Front-end | http://localhost:3000 | `admin@demo.com` / `Admin@123` |
+| Backend (API) | http://localhost:3001/api/v1 | JWT via `/auth/login` |
+| PostgreSQL | `localhost:5432` | `atendehub` / `atendehub_secret` |
+| Redis | `localhost:6379` | senha `redis_secret` |
+| MinIO Console | http://localhost:9001 | `atendehub_minio` / `minio_secret_123` |
+| Evolution API | http://localhost:8080 | `apikey` = `EVOLUTION_API_KEY` do `.env` |
 
----
+> 🔒 Estes valores são defaults de desenvolvimento. Em produção, **todos os
+> segredos devem ser trocados** (checklist na Fase 6 do roadmap).
 
-## Comandos úteis
+## Estado atual (2026-07-16)
 
-```bash
-# Parar tudo
-docker compose down
+| Área | Status |
+|---|---|
+| Login real (JWT + refresh + blacklist) | ✅ |
+| Conversas em tempo real (socket `/ws`) | ✅ |
+| Envio/recepção de mensagens WhatsApp (validado ponta a ponta) | ✅ |
+| Mídia: figurinhas/fotos/áudio no chat + envio de prints (Ctrl+V) | ✅ |
+| Fotos de perfil dos contatos | ✅ |
+| Configurações: conexões WhatsApp (QR), usuários/níveis, grupos, tema | ✅ |
+| Modo demonstração explícito (banner) e resiliência de conexão | ✅ |
+| SLA (detecção de violação) | ⬜ módulo escrito, não ativado (Fase 3) |
+| Testes no backend | ⬜ (Fase 4) |
+| Métricas com dados reais | ⬜ (B-2) |
+| CI / deploy de produção | ⬜ (Fase 7) |
 
-# Parar e apagar volumes (reset completo do banco)
-docker compose down -v
-
-# Ver logs de um serviço específico
-docker compose logs -f evolution
-docker compose logs -f postgres
-
-# Resetar banco (apaga tudo e re-roda seed)
-cd apps/api && npm run db:reset
-
-# Criar nova migration após alterar schema.prisma
-cd apps/api && npm run db:migrate
-```
-
----
-
-## Roteiro de desenvolvimento
-
-| Fase | Descrição | Status |
-|---|---|---|
-| 1 | Docker Compose + Prisma schema |  Concluída |
-| 2 | Auth (JWT, RBAC, multi-tenant guard) | Concluído |
-| 3 | CRUD: Company, User, Department | Parcialmente Concluído |
-| 4 | Módulo WhatsApp — QR Code + sessão | Parcialmente Concluído |
-| 5 | Webhook + Contact + Conversation + Message | Parcialmente Concluído |
-| 6 | Socket.IO gateway (tempo real) | Parcialmente Concluído |
-| 7 | Envio de mensagem (ciclo completo) | Parcialmente Concluído |
-| 8 | Front-end Next.js + TypeScript | Parcialmente Concluído |
-| 9 | Filas BullMQ, automações, SLA | Em validação |
-| 10 | Relatórios, auditoria, notificações | Em Desenvolvimento |
+O detalhamento item a item, com evidências e changelog, está no
+[`ROADMAP_ESTABILIZACAO.md`](ROADMAP_ESTABILIZACAO.md).
