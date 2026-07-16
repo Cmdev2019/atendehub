@@ -39,10 +39,12 @@ export interface EvolutionSendMessage {
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
   private readonly http: AxiosInstance;
+  private readonly apiKey: string;
 
   constructor(private readonly config: ConfigService) {
     const baseURL = this.config.get<string>('EVOLUTION_API_URL', 'http://localhost:8080');
     const apiKey = this.config.get<string>('EVOLUTION_API_KEY', '');
+    this.apiKey = apiKey;
 
     this.http = axios.create({
       baseURL,
@@ -77,6 +79,11 @@ export class EvolutionService {
         instanceName: sessionName,
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
+        // Token da instância = chave global. Sem isso a Evolution gera um
+        // token aleatório por instância e o envia no campo "apikey" dos
+        // webhooks — que o WebhookController rejeitaria (valida contra a
+        // EVOLUTION_API_KEY global).
+        token: this.apiKey,
         webhook: {
           url: webhookUrl,
           byEvents: true,

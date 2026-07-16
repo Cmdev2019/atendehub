@@ -104,7 +104,9 @@ services:
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-atendehub}:${POSTGRES_PASSWORD:-atendehub_secret}@postgres:5432/${POSTGRES_DB:-atendehub}
+      # Banco DEDICADO da Evolution — não pode compartilhar o banco da API:
+      # ambos usam Prisma e colidem na tabela _prisma_migrations (crash-loop)
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-atendehub}:${POSTGRES_PASSWORD:-atendehub_secret}@postgres:5432/evolution
       DATABASE_CONNECTION_CLIENT_NAME: evolution_api
       DATABASE_SAVE_DATA_INSTANCE: "true"
       DATABASE_SAVE_DATA_NEW_MESSAGE: "true"

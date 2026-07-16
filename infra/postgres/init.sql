@@ -3,6 +3,10 @@
 -- Executado automaticamente na primeira vez que o container sobe
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Banco dedicado da Evolution API (não pode compartilhar o banco da API:
+-- ambos usam Prisma e colidem na tabela _prisma_migrations)
+CREATE DATABASE evolution OWNER atendehub;
+
 -- Habilita extensão para UUIDs (Prisma usa cuid por padrão, mas é boa prática)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
