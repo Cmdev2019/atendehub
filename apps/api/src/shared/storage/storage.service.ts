@@ -60,6 +60,23 @@ export class StorageService implements OnModuleInit {
         await this.client.makeBucket(this.bucket);
         this.logger.log(`Bucket "${this.bucket}" criado.`);
       }
+
+      // Leitura pública dos objetos: as URLs de mídia salvas nos Attachments
+      // são acessadas diretamente pelo navegador (sem a policy → 403).
+      // Em produção, trocar por URLs pré-assinadas ou proxy autenticado (F6).
+      const publicReadPolicy = JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { AWS: ['*'] },
+            Action: ['s3:GetObject'],
+            Resource: [`arn:aws:s3:::${this.bucket}/*`],
+          },
+        ],
+      });
+      await this.client.setBucketPolicy(this.bucket, publicReadPolicy);
+
       this.logger.log(`StorageService inicializado — bucket: ${this.bucket}`);
     } catch (err: any) {
       this.logger.error(

@@ -232,4 +232,17 @@ export class EvolutionService {
       return false;
     }
   }
+
+  // ── Buscar foto de perfil de um contato ────────────────────────────────────
+  // Retorna null se o contato não tem foto ou a privacidade dele bloqueia.
+  async fetchProfilePictureUrl(sessionName: string, phone: string): Promise<string | null> {
+    try {
+      const { data } = await this.http.post(`/chat/fetchProfilePictureUrl/${sessionName}`, {
+        number: phone,
+      });
+      return data?.profilePictureUrl ?? null;
+    } catch {
+      return null;
+    }
+  }
 }

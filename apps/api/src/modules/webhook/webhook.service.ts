@@ -5,6 +5,7 @@ import { ContactService } from '../contact/contact.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { MessageService } from '../message/message.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
 import { MediaDownloadService } from './media-download.service';
 
@@ -47,12 +48,19 @@ interface EvolutionWebhookPayload {
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
 
+  // Throttle da busca de foto de perfil: no máximo 1 tentativa por contato
+  // a cada 6h (contatos sem foto/privacidade sempre retornam null — sem o
+  // throttle seria 1 chamada à Evolution por mensagem recebida)
+  private readonly avatarFetchedAt = new Map<string, number>();
+  private static readonly AVATAR_RETRY_MS = 6 * 60 * 60 * 1000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly contactService: ContactService,
     private readonly conversationService: ConversationService,
     private readonly messageService: MessageService,
     private readonly whatsappService: WhatsappService,
+    private readonly evolutionService: EvolutionService,
     private readonly eventsService: EventsService,
     private readonly mediaDownloadService: MediaDownloadService,
   ) {}
@@ -151,6 +159,14 @@ export class WebhookService {
     if (contact.isBlocked) {
       this.logger.debug(`Mensagem de contato bloqueado: ${phone}`);
       return;
+    }
+
+    // Foto de perfil: busca na Evolution quando o contato ainda não tem
+    // (fire-and-forget — não atrasa o processamento da mensagem)
+    if (!contact.avatarUrl) {
+      this.maybeFetchAvatar(sessionName, phone, contact.id).catch((err) => {
+        this.logger.debug(`Falha ao buscar avatar de ${phone}: ${err.message}`);
+      });
     }
 
     // Upsert da conversa
@@ -476,24 +492,22 @@ export class WebhookService {
   ): Promise<void> {
     const effectiveMimeType = mimeType ?? 'application/octet-stream';
 
-    let result = null;
+    // Estratégia 1: getBase64FromMediaMessage da Evolution API — retorna a
+    // mídia DECRIPTADA. A URL do payload (mmg.whatsapp.net/...enc) é
+    // criptografada: baixá-la direto armazena bytes ilegíveis.
+    let result = await this.mediaDownloadService.downloadFromEvolution(
+      sessionName,
+      externalMessageId,
+      effectiveMimeType,
+      companyId,
+      fileName,
+    );
 
-    // Estratégia 1: Se temos URL direta, tenta baixar diretamente
-    if (mediaUrl) {
+    // Estratégia 2 (fallback): download direto — só serve para URLs não
+    // criptografadas (ex.: mídia hospedada fora do WhatsApp)
+    if (!result && mediaUrl && !mediaUrl.includes('.enc')) {
       result = await this.mediaDownloadService.downloadAndStore(
         mediaUrl,
-        effectiveMimeType,
-        companyId,
-        fileName,
-      );
-    }
-
-    // Estratégia 2: Se não tem URL ou download direto falhou,
-    // usa o endpoint getBase64FromMediaMessage da Evolution API
-    if (!result) {
-      result = await this.mediaDownloadService.downloadFromEvolution(
-        sessionName,
-        externalMessageId,
         effectiveMimeType,
         companyId,
         fileName,
@@ -521,5 +535,25 @@ export class WebhookService {
     this.logger.debug(
       `Attachment criado para msg ${externalMessageId}: ${result.url}`,
     );
+  }
+
+  // ── Busca a foto de perfil do contato na Evolution (com throttle) ─────────
+  private async maybeFetchAvatar(
+    sessionName: string,
+    phone: string,
+    contactId: string,
+  ): Promise<void> {
+    const last = this.avatarFetchedAt.get(contactId);
+    if (last && Date.now() - last < WebhookService.AVATAR_RETRY_MS) return;
+    this.avatarFetchedAt.set(contactId, Date.now());
+
+    const url = await this.evolutionService.fetchProfilePictureUrl(sessionName, phone);
+    if (!url) return;
+
+    await this.prisma.contact.update({
+      where: { id: contactId },
+      data: { avatarUrl: url },
+    });
+    this.logger.debug(`Avatar atualizado para contato ${phone}`);
   }
 }
