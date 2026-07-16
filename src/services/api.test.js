@@ -57,21 +57,21 @@ describe('Mock API Client', () => {
   });
 
   describe('login', () => {
-    it('lança erro se email não encontrado', async () => {
+    it('lança erro genérico se email não encontrado (anti-enumeração)', async () => {
       await expect(
         mockApiClient.login('invalid@email.com', 'password')
       ).rejects.toEqual({
         status: 401,
-        message: 'Email não encontrado',
+        message: 'Usuário ou senha incorreta.',
       });
     });
 
-    it('lança erro se senha incorreta', async () => {
+    it('lança erro genérico se senha incorreta', async () => {
       await expect(
         mockApiClient.login('admin@demo.com', 'wrong-password')
       ).rejects.toEqual({
         status: 401,
-        message: 'Senha incorreta',
+        message: 'Usuário ou senha incorreta.',
       });
     });
 
