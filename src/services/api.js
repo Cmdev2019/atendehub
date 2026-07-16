@@ -103,8 +103,11 @@ class ApiClient {
 
   // Fallback para Mock API
   async requestMock(endpoint, options) {
-    const method = options.method || 'GET';
+    const method = (options.method || 'GET').toUpperCase();
     const body = options.body ? JSON.parse(options.body) : {};
+    // Ignora query string e quebra o path em segmentos: /users/user-1 → ['users', 'user-1']
+    const seg = endpoint.split('?')[0].split('/').filter(Boolean);
+    const [resource, id, sub, subId] = seg;
 
     if (endpoint === '/auth/login') {
       return mockApiClient.login(body.email, body.password);
@@ -118,8 +121,41 @@ class ApiClient {
     if (endpoint === '/auth/refresh') {
       return mockApiClient.refreshToken();
     }
-    if (endpoint.startsWith('/conversations')) {
+
+    if (resource === 'conversations') {
+      if (sub === 'messages' && method === 'POST') {
+        return mockApiClient.sendMessage(id, body.content);
+      }
       return mockApiClient.getConversations();
+    }
+
+    if (resource === 'users') {
+      if (!id && method === 'GET') return mockApiClient.getUsers();
+      if (!id && method === 'POST') return mockApiClient.createUser(body);
+      if (id && method === 'PATCH') return mockApiClient.updateUser(id, body);
+      if (id && method === 'DELETE') return mockApiClient.deleteUser(id);
+    }
+
+    if (resource === 'departments') {
+      if (!id && method === 'GET') return mockApiClient.getDepartments();
+      if (!id && method === 'POST') return mockApiClient.createDepartment(body);
+      if (id && sub === 'users' && method === 'POST') {
+        return mockApiClient.addUserToDepartment(id, body.userId);
+      }
+      if (id && sub === 'users' && subId && method === 'DELETE') {
+        return mockApiClient.removeUserFromDepartment(id, subId);
+      }
+      if (id && method === 'GET') return mockApiClient.getDepartment(id);
+      if (id && method === 'DELETE') return mockApiClient.deleteDepartment(id);
+    }
+
+    if (resource === 'whatsapp') {
+      if (!id && method === 'GET') return mockApiClient.getWhatsappConnections();
+      if (!id && method === 'POST') return mockApiClient.createWhatsappConnection(body);
+      if (id && sub === 'qrcode') return mockApiClient.getWhatsappQrCode(id);
+      if (id && sub === 'status') return mockApiClient.getWhatsappStatus(id);
+      if (id && sub === 'disconnect') return mockApiClient.disconnectWhatsapp(id);
+      if (id && method === 'DELETE') return mockApiClient.deleteWhatsappConnection(id);
     }
 
     throw { status: 404, message: 'Endpoint não implementado no mock' };
@@ -190,10 +226,19 @@ class ApiClient {
     return this.request(`/conversations/${id}`, { method: 'GET' });
   }
 
+  async getMessages(conversationId, limit = 50) {
+    // Retorna { data: [mensagens em ordem cronológica], meta }
+    return this.request(`/conversations/${conversationId}/messages?limit=${limit}`, {
+      method: 'GET',
+    });
+  }
+
   async sendMessage(conversationId, text) {
+    // Contrato do SendMessageDto do backend: { type, content }.
+    // O ValidationPipe usa forbidNonWhitelisted — campos extras são rejeitados.
     return this.request(`/conversations/${conversationId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ type: 'TEXT', content: text }),
     });
   }
 
@@ -212,6 +257,87 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  async updateUser(id, data) {
+    return this.request(`/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUser(id) {
+    return this.request(`/users/${id}`, { method: 'DELETE' });
+  }
+
+  // DEPARTMENTS (grupos/setores)
+  async getDepartments() {
+    return this.request('/departments', { method: 'GET' });
+  }
+
+  async getDepartment(id) {
+    return this.request(`/departments/${id}`, { method: 'GET' });
+  }
+
+  async createDepartment(data) {
+    return this.request('/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateDepartment(id, data) {
+    return this.request(`/departments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteDepartment(id) {
+    return this.request(`/departments/${id}`, { method: 'DELETE' });
+  }
+
+  async addUserToDepartment(departmentId, userId) {
+    return this.request(`/departments/${departmentId}/users`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    });
+  }
+
+  async removeUserFromDepartment(departmentId, userId) {
+    return this.request(`/departments/${departmentId}/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // WHATSAPP (conexões via QR Code)
+  async getWhatsappConnections() {
+    return this.request('/whatsapp', { method: 'GET' });
+  }
+
+  async createWhatsappConnection(data) {
+    return this.request('/whatsapp', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getWhatsappQrCode(id) {
+    // Retorna { qrCode: <base64>, code }
+    return this.request(`/whatsapp/${id}/qrcode`, { method: 'GET' });
+  }
+
+  async getWhatsappStatus(id) {
+    // Sincroniza o status com a Evolution API
+    return this.request(`/whatsapp/${id}/status`, { method: 'GET' });
+  }
+
+  async disconnectWhatsapp(id) {
+    return this.request(`/whatsapp/${id}/disconnect`, { method: 'POST' });
+  }
+
+  async deleteWhatsappConnection(id) {
+    return this.request(`/whatsapp/${id}`, { method: 'DELETE' });
   }
 }
 

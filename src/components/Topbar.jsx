@@ -1,11 +1,10 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { useTheme } from '../hooks/useTheme';
 import { Logo } from './Logo';
 
-export function Topbar() {
+// O toggle de tema saiu daqui — agora fica em Configurações → Aparência.
+export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
   const { logout, user } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
     if (confirm('Deseja fazer logout?')) {
@@ -25,23 +24,22 @@ export function Topbar() {
     h(
       'div',
       { className: 'topbar-title' },
-      h('h2', null, 'Caixa de Entrada'),
+      h('h2', null, title),
     ),
     h(
       'div',
       { className: 'topbar-actions' },
       user && h('span', { className: 'user-display' }, `👤 ${user.name}`),
-      h('button', { className: 'icon-btn', title: 'Notificações' }, '🔔'),
+      h('button', { className: 'icon-btn', title: 'Notificações', type: 'button' }, '🔔'),
       h('button',
         {
           className: 'icon-btn',
-          title: isDark ? 'Modo claro' : 'Modo escuro',
-          onClick: toggleTheme,
-          type: 'button'
+          title: 'Configurações',
+          type: 'button',
+          onClick: onOpenSettings,
         },
-        isDark ? '☀️' : '🌙'
+        '⚙️'
       ),
-      h('button', { className: 'icon-btn', title: 'Configurações' }, '⚙️'),
       h('button',
         {
           className: 'btn-logout',

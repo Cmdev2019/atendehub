@@ -13,12 +13,19 @@ import { Metrics } from "./components/Metrics";
 import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
 import { CustomerPanel } from "./components/CustomerPanel";
+import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { useConversations } from "./hooks/useConversations";
 
 const h = createElement;
 
+const VIEW_TITLES = {
+  inbox: "Caixa de Entrada",
+  settings: "Configurações",
+};
+
 // Dashboard - Página principal do sistema
 function Dashboard() {
+  const [view, setView] = useState("inbox");
   const {
     conversations,
     activeId,
@@ -27,48 +34,55 @@ function Dashboard() {
     setDraft,
     activeConversation,
     sendMessage,
+    sendError,
   } = useConversations();
 
   return h(
     "div",
     { className: "app-container" },
-    h(Topbar),
+    h(Topbar, {
+      title: VIEW_TITLES[view] ?? VIEW_TITLES.inbox,
+      onOpenSettings: () => setView("settings"),
+    }),
     h(
       "div",
       { className: "main-layout" },
-      h(Sidebar),
-      h(
-        "div",
-        { className: "workspace" },
-        h(
-          "section",
-          { className: "conversation-area" },
-          h(ConversationQueue, {
-            activeId,
-            conversations,
-            onSelect: setActiveId,
-          }),
-        ),
-        activeConversation &&
-          h(
-            "section",
-            { className: "chat-area" },
-            h(ChatPanel, {
-              conversation: activeConversation,
-              draft,
-              onDraftChange: setDraft,
-              onSend: sendMessage,
-            }),
+      h(Sidebar, { activeView: view, onNavigate: setView }),
+      view === "settings"
+        ? h("div", { className: "workspace workspace-settings" }, h(SettingsPanel))
+        : h(
+            "div",
+            { className: "workspace" },
+            h(
+              "section",
+              { className: "conversation-area" },
+              h(ConversationQueue, {
+                activeId,
+                conversations,
+                onSelect: setActiveId,
+              }),
+            ),
+            activeConversation &&
+              h(
+                "section",
+                { className: "chat-area" },
+                h(ChatPanel, {
+                  conversation: activeConversation,
+                  draft,
+                  onDraftChange: setDraft,
+                  onSend: sendMessage,
+                  sendError,
+                }),
+              ),
+            activeConversation &&
+              h(
+                "section",
+                { className: "details-area" },
+                h(CustomerPanel, {
+                  conversation: activeConversation,
+                }),
+              ),
           ),
-        activeConversation &&
-          h(
-            "section",
-            { className: "details-area" },
-            h(CustomerPanel, {
-              conversation: activeConversation,
-            }),
-          ),
-      ),
     ),
   );
 }

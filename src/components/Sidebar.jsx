@@ -1,25 +1,31 @@
-import { createElement as h, useState } from 'react';
+import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
+// WhatsApp/Conectar e o tema saíram do menu vertical — agora vivem em
+// Configurações (⚙️), junto com usuários, grupos e níveis de acesso.
 const menuItems = [
-  { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: '💬', badge: '34' },
+  { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: '💬', badge: '' },
   { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: '👥', badge: '' },
   { id: 'funnels', label: 'Funis', shortLabel: 'Funis', icon: '📊', badge: '' },
   { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: '📈', badge: '' },
   { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: '⚙️', badge: '' },
 ];
 
-const channels = [
-  { type: 'whatsapp', label: 'WhatsApp', status: 'connected', icon: '💚' },
-];
+// Itens que já possuem uma tela correspondente
+const NAVIGABLE = new Set(['inbox', 'settings']);
 
-export function Sidebar() {
-  const [activeMenu, setActiveMenu] = useState('inbox');
+export function Sidebar({ activeView = 'inbox', onNavigate }) {
   const { logout } = useAuth();
 
   const handleLogout = async () => {
     if (confirm('Deseja fazer logout?')) {
       await logout();
+    }
+  };
+
+  const handleClick = (id) => {
+    if (NAVIGABLE.has(id) && onNavigate) {
+      onNavigate(id);
     }
   };
 
@@ -36,39 +42,16 @@ export function Sidebar() {
           'button',
           {
             key: id,
-            className: `nav-item${activeMenu === id ? ' active' : ''}`,
-            onClick: () => setActiveMenu(id),
+            className: `nav-item${activeView === id ? ' active' : ''}`,
+            onClick: () => handleClick(id),
             type: 'button',
-            title: label,
+            title: NAVIGABLE.has(id) ? label : `${label} (em breve)`,
+            disabled: !NAVIGABLE.has(id),
           },
           h('span', { className: 'nav-icon' }, icon),
           h('span', { className: 'nav-label' }, shortLabel),
           badge && h('span', { className: 'badge' }, badge),
         ),
-      ),
-    ),
-
-    // Canal WhatsApp
-    h(
-      'section',
-      { className: 'channels-section' },
-      h('h3', { className: 'channels-title' }, '📱 Canal'),
-      channels.map(({ type, label, icon, status }) =>
-        h(
-          'div',
-          { key: type, className: 'channel-item' },
-          h('span', { className: 'channel-icon' }, icon),
-          h('span', { className: 'channel-label' }, label),
-          h('span', { className: `channel-status ${status}` }, status === 'connected' ? '✓' : '○'),
-        ),
-      ),
-      h('button',
-        {
-          className: 'channel-button',
-          type: 'button',
-          title: 'Conectar WhatsApp com QR Code'
-        },
-        '🔗 Conectar'
       ),
     ),
 
