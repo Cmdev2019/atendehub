@@ -128,6 +128,39 @@ export function useConversations() {
       );
     });
 
+    // Payload: { conversationId, messageId, attachment } — o download da mídia
+    // termina DEPOIS do message.new; este evento troca o placeholder pela
+    // mídia real sem precisar de refresh
+    wsClient.on('message.updated', (payload) => {
+      const { conversationId, messageId, attachment } = payload ?? {};
+      if (!conversationId || !messageId || !attachment?.url) return;
+
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== conversationId) return conv;
+          return {
+            ...conv,
+            messages: conv.messages?.map((m) =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    attachments: [
+                      ...(m.attachments || []).filter((a) => a.id !== attachment.id),
+                      {
+                        id: attachment.id,
+                        url: attachment.url,
+                        mimeType: attachment.mimeType || '',
+                        fileName: attachment.fileName || null,
+                      },
+                    ],
+                  }
+                : m,
+            ),
+          };
+        }),
+      );
+    });
+
     // Payload: { conversationId, companyId, changes }
     wsClient.on('conversation.updated', (payload) => {
       const { conversationId, changes } = payload ?? {};
@@ -144,6 +177,7 @@ export function useConversations() {
     // Cleanup
     return () => {
       wsClient.off('message.new');
+      wsClient.off('message.updated');
       wsClient.off('conversation.updated');
     };
   }, []);

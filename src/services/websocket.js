@@ -11,6 +11,7 @@ const WS_URL = `${WS_BASE_URL.replace(/\/(ws\/?)?$/, '')}/ws`;
 const BACKEND_EVENTS = [
   'connected',
   'message.new',
+  'message.updated',
   'message.status',
   'conversation.created',
   'conversation.updated',

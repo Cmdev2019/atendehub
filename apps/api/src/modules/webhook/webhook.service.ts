@@ -202,6 +202,7 @@ export class WebhookService {
     if (this.isMediaType(type) && savedMessage) {
       this.downloadAndSaveMedia(
         savedMessage.id,
+        conversation.id,
         companyId,
         sessionName,
         key.id,
@@ -482,6 +483,7 @@ export class WebhookService {
   // ── Baixa mídia e cria registro Attachment no banco ───────────────────────
   private async downloadAndSaveMedia(
     messageId: string,
+    conversationId: string,
     companyId: string,
     sessionName: string,
     externalMessageId: string,
@@ -522,13 +524,27 @@ export class WebhookService {
     }
 
     // Cria o registro Attachment no banco
-    await this.prisma.attachment.create({
+    const attachment = await this.prisma.attachment.create({
       data: {
         messageId,
         url: result.url,
         mimeType: result.mimeType,
         fileName: result.fileName ?? null,
         size: result.size,
+      },
+    });
+
+    // O message.new foi emitido antes do download terminar — avisa a UI que
+    // o anexo ficou pronto (troca o placeholder pela mídia real, sem F5)
+    this.eventsService.emitMessageUpdated({
+      companyId,
+      conversationId,
+      messageId,
+      attachment: {
+        id: attachment.id,
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        fileName: attachment.fileName,
       },
     });
 

@@ -91,6 +91,23 @@ export class EventsService {
     this.logger.debug(`message.new → conversation:${conversationId}`);
   }
 
+  // ── Mensagem atualizada (anexo de mídia pronto após o message.new) ────────
+  emitMessageUpdated(payload: {
+    companyId: string;
+    conversationId: string;
+    messageId: string;
+    attachment: { id: string; url: string; mimeType: string; fileName?: string | null };
+  }): void {
+    const { companyId, conversationId } = payload;
+
+    this.gateway.server
+      .to(`conversation:${conversationId}`)
+      .to(`company:${companyId}`)
+      .emit('message.updated', payload);
+
+    this.logger.debug(`message.updated → msg ${payload.messageId} (anexo pronto)`);
+  }
+
   // ── Status de mensagem atualizado (entregue, lido) ────────────────────────
   emitMessageStatus(payload: MessageStatusPayload): void {
     const { companyId, conversationId } = payload;
