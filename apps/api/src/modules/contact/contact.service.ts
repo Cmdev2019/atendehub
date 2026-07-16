@@ -171,7 +171,7 @@ export class ContactService {
   async upsertFromWebhook(
     companyId: string,
     phone: string,
-    name: string,
+    name?: string,
     avatarUrl?: string,
   ) {
     return this.prisma.contact.upsert({
@@ -183,7 +183,7 @@ export class ContactService {
       create: {
         companyId,
         phone,
-        name,
+        name: name || phone,
         avatarUrl,
         channel: Channel.WHATSAPP,
       },

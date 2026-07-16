@@ -117,8 +117,13 @@ export class WebhookService {
       return;
     }
 
-    // Extrai número limpo: "5511999999999@s.whatsapp.net" → "5511999999999"
-    const phone = key.remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+    // Extrai número limpo: "5511999999999:12@s.whatsapp.net" → "5511999999999"
+    // (":NN" é id de dispositivo e não faz parte do número — sem removê-lo,
+    // o mesmo contato vira registros duplicados)
+    const phone = key.remoteJid
+      .replace('@s.whatsapp.net', '')
+      .replace('@c.us', '')
+      .split(':')[0];
 
     // Busca a conexão pelo sessionName para obter o companyId
     const connection = await this.prisma.whatsAppConnection.findUnique({
@@ -133,11 +138,13 @@ export class WebhookService {
 
     const { companyId, id: whatsappConnectionId } = connection;
 
-    // Upsert do contato
+    // Upsert do contato. pushName é o nome de quem ENVIOU a mensagem:
+    // em mensagens fromMe ele é o dono da conexão, não o contato —
+    // nesse caso não atualiza o nome (senão todo contato vira o dono)
     const contact = await this.contactService.upsertFromWebhook(
       companyId,
       phone,
-      pushName || phone,
+      key.fromMe ? undefined : pushName,
     );
 
     // Contato bloqueado — ignora
@@ -344,7 +351,10 @@ export class WebhookService {
     if (!connection) return;
 
     for (const c of contacts) {
-      const phone = (c.id ?? '').replace('@s.whatsapp.net', '').replace('@c.us', '');
+      const phone = (c.id ?? '')
+        .replace('@s.whatsapp.net', '')
+        .replace('@c.us', '')
+        .split(':')[0];
       const name = c.pushName ?? c.verifiedName ?? c.name;
 
       if (!phone || !name) continue;
