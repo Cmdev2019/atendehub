@@ -15,7 +15,7 @@
 | Fase | Objetivo | Prioridade | Progresso | Status |
 |---|---|---|---|---|
 | [Fase 0](#-fase-0--religar-frontend--backend) | Religar frontend ↔ backend | 🔴 P0 | 11/11 | ✅ Concluída |
-| [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 6/11 | 🔄 Em andamento |
+| [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 7/11 | 🔄 Em andamento |
 | [Fase 2](#-fase-2--modo-demo-explícito-e-resiliência) | Modo demo explícito e resiliência | 🟠 P1 | 8/8 | ✅ Concluída |
 | [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 0/5 | ⬜ Não iniciada |
 | [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 0/6 | ⬜ Não iniciada |
@@ -23,7 +23,7 @@
 | [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 0/5 | ⬜ Não iniciada |
 | [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 0/5 | ⬜ Não iniciada |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 9/11 | 🔄 Em andamento |
-| **Total** | | | **34/67** | |
+| **Total** | | | **35/67** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -70,7 +70,7 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F1-1 | Documentar o contrato real de resposta da API (auth, conversations, messages, contacts) a partir dos DTOs/services do backend — incluir paginação (`response.data`?) e nomes de campos. Salvar em `docs/API_CONTRACT.md`. | `apps/api/src/modules/*/dto/` · `apps/api/prisma/schema.prisma` | ⬜ |
+| F1-1 | Documentar o contrato real de resposta da API (auth, conversations, messages, contacts) a partir dos DTOs/services do backend — incluir paginação (`response.data`?) e nomes de campos. Salvar em `docs/API_CONTRACT.md`. **Feito:** documento completo com os 3 formatos de listagem (`{data,meta}` offset, `{data,meta}` cursor e array puro), 9 enums, todos os 14 recursos REST (incl. `messages/media` e webhooks), contrato Socket.IO (`/ws`, salas, 9 eventos com payloads) e a lista de divergências conhecidas do mock (alimenta F1-2/F1-3). | `docs/API_CONTRACT.md` (novo) | ✅ 2026-07-16 |
 | F1-2 | Adaptar os componentes ao shape real (ou criar camada normalizadora única no service). Componentes afetados: ChatPanel, ConversationQueue, CustomerPanel, Metrics. **Aceite:** UI renderiza dados reais do seed sem erro no console. **Parcial 2026-07-15:** normalizadores `toUiConversation`/`toUiMessage` no hook + carregamento de mensagens sob demanda (`getMessages`) — sem isso o dashboard quebrava com dados reais (`conv.contact.toLowerCase` em objeto). Falta: Metrics com dados reais, evento `conversation.created`, revisão completa dos componentes. | `src/hooks/useConversations.js` · `src/services/api.js` · `src/components/*.jsx` | 🔄 2026-07-15 |
 | F1-3 | Reescrever `mockConversations.js` no shape exato da API — o mock vira espelho fiel do contrato (inclusive enums `ConversationStatus`, `SenderType`, `MessageType`). | `src/data/mockConversations.js` | ⬜ |
 | F1-4 | `apiClient.register()` chama `POST /auth/register`, rota que **não existe** no backend (só `login`, `refresh`, `logout`, `revoke`, `me`). Decidir: remover do front ou implementar no back. Registrar em Decisões. | `src/services/api.js:143-148` · `apps/api/src/modules/auth/auth.controller.ts:32-77` | ⬜ |
@@ -232,6 +232,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-16 | **F1-1 concluído: contrato da API documentado em `docs/API_CONTRACT.md`.** Extraído do código real (controllers, DTOs, selects do Prisma, gateway): base URL/auth/validação/rate-limit, os 3 formatos de listagem, 9 enums, 14 recursos REST com shapes de request/response e regras de negócio (envio, permissões), contrato completo do Socket.IO e as 4 divergências conhecidas do mock. Detalhes verificados contra o código antes de afirmar (users `{data,meta}`, notes array puro, logout 204, change-password DTO). | F1-1 ✅ | `docs/API_CONTRACT.md` criado · shapes conferidos por leitura dos services |
 | 2026-07-16 | **Envio de prints/anexos direto no chat (pedido do usuário — F1-11, fecha B-1).** Ctrl+V no composer cola a imagem da área de transferência com preview, sem salvar em arquivo; seletor de arquivos também envia de verdade agora (antes os anexos eram decorativos). Novo endpoint multipart `messages/media`: MinIO para o painel + base64 para a Evolution (container não resolve localhost:9000); mensagem persiste com attachment e a UI de todos os agentes recebe `message.new`+`message.updated`. Texto digitado vira caption do primeiro arquivo. | F1-11 ✅ · B-1 ✅ | `npx jest` → 74/74 · `vite build` OK · `nest build` OK · rota `POST .../messages/media` → 401 sem token (registrada+protegida) |
 | 2026-07-16 | **3 bugs reportados pelo usuário no uso real, diagnosticados e corrigidos (F1-8/F1-9/F1-10).** (1) Duplicação de mensagens enviadas: corrida eco-socket × resposta REST na reconciliação otimista — só na UI, banco estava íntegro; (2) figurinhas/fotos invisíveis: mídia armazenada **criptografada** (download da URL `.enc` direta — magic bytes verificados), bucket MinIO sem leitura pública (403) e frontend sem renderização de anexos — as 3 camadas corrigidas (Evolution-first decriptado, política pública no boot, ChatPanel com imagem/áudio/vídeo/link/placeholder); (3) avatares: `fetchProfilePictureUrl` novo na Evolution + busca automática com throttle no webhook + renderização com fallback para iniciais; backfill de 5/6 contatos. Anexos corrompidos limpos. Início da sessão: usuário relatara "mensagens não chegam / não pareado" — diagnóstico: pipeline saudável, era a página do navegador com socket morto (bastou F5). | F1-8 ✅ · F1-9 ✅ · F1-10 ✅ | `npx jest` → 74/74 · `vite build` OK · `nest build` OK · attachment 404 (não mais 403) pós-policy · `UPDATE contacts` → 5 avatares |
 | 2026-07-16 | **Remodelagem de ícones (pedido do usuário): emojis → SVGs do svgrepo.com.** Novo `src/components/icons.jsx` com componente `Icon` e 34 ícones inline da coleção Tabler Icons (svgrepo, MIT — 24×24, stroke 2, `currentColor`, tema-aware por herança de cor); substituição completa em Sidebar, Topbar, ChatPanel, ConversationQueue, CustomerPanel, SettingsPanel, LoginForm e DemoBanner; CSS de alinhamento ícone+texto (inline-flex + gap). svgrepo.com estava com rate-limit (429) para clientes não-navegador — SVGs baixados da fonte canônica da coleção; são os mesmos arquivos. Convenção registrada em Decisões e na memória do assistente. | F8-11 ✅ | `npx jest` → 74/74 · `vite build` → OK · varredura: zero emojis restantes nos componentes |
