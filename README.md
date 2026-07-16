@@ -26,8 +26,9 @@ WhatsApp via Evolution API.
 | Containers | Docker + Docker Compose |
 
 > O front em Next.js/TypeScript citado em versões antigas deste README nunca
-> existiu (`apps/web` não existe). A permanência em Vite+React ou migração
-> futura é a decisão F5-3 do roadmap.
+> existiu (`apps/web` não existe). **Decisão F5-3 (2026-07-16): o frontend
+> permanece em Vite + React** — migração só será reavaliada com necessidade
+> concreta (SSR/SEO).
 
 ## Estrutura do projeto
 

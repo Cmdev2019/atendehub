@@ -5,8 +5,8 @@
 > trabalho (humana ou com Claude) deve atualizar os status dos itens, o painel
 > de progresso e registrar uma entrada no [Changelog](#-changelog).
 >
-> **Última atualização:** 2026-07-16 · Fase 0 e Fase 2 CONCLUÍDAS (round-trip real validado + modo demo explícito/resiliência)
-> **Próxima ação:** Fase 1 restante (contrato de dados: F1-1, F1-2, F1-3, F1-4, F1-6) · Depois: Fase 3 (SLA) e Fase 4 (testes backend). Obs.: sessão WhatsApp deslogada em 2026-07-16 02:06 — re-parear via QR antes do próximo teste real
+> **Última atualização:** 2026-07-16 · Fase 5 CONCLUÍDA (README real, raiz limpa, About do GitHub, decisão Vite+React, CLAUDE.md)
+> **Próxima ação:** Fase 1 restante (F1-2 Metrics reais, F1-3 mock no contrato, F1-4 register, F1-6 testes) · Depois: Fase 3 (SLA) e Fase 4 (testes backend)
 
 ---
 
@@ -19,11 +19,11 @@
 | [Fase 2](#-fase-2--modo-demo-explícito-e-resiliência) | Modo demo explícito e resiliência | 🟠 P1 | 8/8 | ✅ Concluída |
 | [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 0/5 | ⬜ Não iniciada |
 | [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 0/6 | ⬜ Não iniciada |
-| [Fase 5](#-fase-5--higiene-do-repositório-e-documentação) | Higiene do repo e documentação | 🟡 P2 | 3/5 | 🔄 Em andamento |
+| [Fase 5](#-fase-5--higiene-do-repositório-e-documentação) | Higiene do repo e documentação | 🟡 P2 | 5/5 | ✅ Concluída |
 | [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 0/5 | ⬜ Não iniciada |
 | [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 0/5 | ⬜ Não iniciada |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 9/11 | 🔄 Em andamento |
-| **Total** | | | **38/67** | |
+| **Total** | | | **40/67** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -142,9 +142,9 @@
 |---|---|---|---|
 | F5-1 | Criar `docs/archive/` e mover os relatórios da raiz (`ALL_FIXES_COMPLETE.txt`, `CORRECTIONS_*`, `SECURITY_*`, `FRONTEND_*`, `PROJECT_*`, `GIT_*`, `SLA_FIXES.md`, `START_HERE.txt`, `TESTE_*.md`, `CODE_QUALITY_CHECKLIST.md`, `COMO_TESTAR_AGORA.md`, `DELIVERABLES.md`); `LOGO_GUIDELINES.md` → `docs/`. Na raiz ficam: `README.md` + este roadmap. **Feito:** 20 relatórios movidos com `git mv` (histórico preservado) + `docs/archive/README.md` avisando que não são fonte de verdade. | raiz do repo | ✅ 2026-07-16 |
 | F5-2 | Reescrever o `README.md` com a stack real (frontend Vite + React 19 JS na raiz; sem `apps/web`), passos de execução **validados** e roteiro de fases atualizado. **Feito:** stack corrigida, estrutura real, passos com os pitfalls conhecidos (`.env` da raiz com `EVOLUTION_API_KEY` — F8-9; subir serviços nominalmente por causa do `minio_init` quebrado — B-5; senha do seed é ALEATÓRIA em `.seed-credentials-*.txt` — F0-6), tabela de estado atual e ponteiros para o roadmap e o `API_CONTRACT.md`. | `README.md` | ✅ 2026-07-16 |
-| F5-3 | Decisão de arquitetura do frontend: permanecer com Vite + React (recomendado para estabilizar agora) ou migrar para Next.js/TS como o README prometia. Registrar em Decisões e alinhar o README. | — | ⬜ |
+| F5-3 | Decisão de arquitetura do frontend: permanecer com Vite + React (recomendado para estabilizar agora) ou migrar para Next.js/TS como o README prometia. Registrar em Decisões e alinhar o README. **Decidido: permanece Vite + React** (registrado em Decisões; README e CLAUDE.md alinhados). | — | ✅ 2026-07-16 |
 | F5-4 | Renomear pacote raiz `multi-atendimento` → `@atendehub/web` e atualizar descrição (deixou de ser "protótipo"?). **Feito:** nome e descrição atualizados; testes e build inalterados. | `package.json` | ✅ 2026-07-16 |
-| F5-5 | Criar `CLAUDE.md` na raiz: comandos (dev/test/build front e back, docker, prisma), arquitetura resumida, convenções e apontador para este roadmap. | raiz do repo | ⬜ |
+| F5-5 | Criar `CLAUDE.md` na raiz: comandos (dev/test/build front e back, docker, prisma), arquitetura resumida, convenções e apontador para este roadmap. **Feito:** inclui também os 5 pitfalls conhecidos (chave Evolution na raiz, minio_init, mídia criptografada, base64 p/ Evolution, janelas próprias no Windows) e as convenções (ícones svgrepo, commits PT, regras do doc vivo). | `CLAUDE.md` (novo) | ✅ 2026-07-16 |
 
 ---
 
@@ -220,7 +220,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 | 2026-07-16 | Ícones da UI: svgrepo.com é a fonte padrão (coleção Tabler Icons); emojis banidos da interface | Pedido do usuário — visual profissional e consistente entre SO/navegadores; componente central `Icon` facilita manutenção | F8-11 |
 | 2026-07-16 | `user:typing` removido do frontend (em vez de implementar ponta a ponta) | O gateway não tem handler, o servidor nunca emite o evento e nenhum componente chamava `setTyping` — era código morto nos dois sentidos. Reintroduzir ponta a ponta se o produto pedir indicador de digitação | F2-5 |
 | 2026-07-16 | Erros da API sempre via classe `ApiError` (com `.status`/`.message`); rede detectada por `instanceof TypeError` | Objeto literal lançado quebrava `error.message.includes` quando `message` era `undefined`, mascarando o erro original | F1-5, F2-1 |
-| _pendente_ | Frontend permanece Vite+React ou migra para Next.js/TS? | — | F5-3 |
+| 2026-07-16 | Frontend permanece **Vite + React (JS)** — sem migração para Next.js/TS agora | A stack atual está estável (74 testes, build ok, integração real validada); migrar no meio da estabilização custaria semanas sem valor ao usuário. Reavaliar apenas se surgir necessidade concreta (SSR, SEO) | F5-3 |
 | _pendente_ | `POST /auth/register`: implementar ou remover do front? | — | F1-4 |
 | _pendente_ | Tokens: cookie httpOnly+CSRF ou manter localStorage com mitigações? | — | F6-1 |
 
@@ -232,6 +232,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-16 | **🏁 FASE 5 CONCLUÍDA — higiene do repositório e documentação.** F5-3 decidido: frontend permanece **Vite + React** (registrado em Decisões; migração para Next.js só com necessidade concreta). F5-5: `CLAUDE.md` criado na raiz com comandos, arquitetura, convenções e os 5 pitfalls conhecidos do ambiente. README ajustado para refletir a decisão. | F5-3 ✅ · F5-5 ✅ | `CLAUDE.md` na raiz · decisão na tabela de Decisões · `npx jest` → 74/74 |
 | 2026-07-16 | **About do GitHub preenchido (complemento da higiene).** gh CLI instalado via winget (autenticado com o token do Git Credential Manager); descrição do repositório definida e 8 topics adicionados (whatsapp, nestjs, react, vite, prisma, evolution-api, customer-support, multi-tenant) — estava tudo vazio. | F5-2 (complemento) | `gh repo view` → description + topics conferidos |
 | 2026-07-16 | **Higiene do repositório (pedido do usuário: "informações incorretas no GitHub") — F5-1, F5-2, F5-4.** README reescrito com a realidade: a stack anunciada (Next.js 14 + TS em `apps/web`) nunca existiu — é Vite 6 + React 19 JS na raiz; roteiro obsoleto substituído por tabela de estado atual + ponteiro para este roadmap; passos de execução com os 3 pitfalls que custaram sessões de debug (chave Evolution na raiz, minio_init quebrado, senha aleatória do seed). 20 relatórios antigos (alguns afirmando mais do que o código entrega) movidos para `docs/archive/` com aviso; `LOGO_GUIDELINES.md` → `docs/`; pacote raiz renomeado para `@atendehub/web`. | F5-1 ✅ · F5-2 ✅ · F5-4 ✅ | `git mv` (histórico preservado) · raiz com apenas README + roadmap · `npx jest` → 74/74 · `vite build` OK |
 | 2026-07-16 | **F1-1 concluído: contrato da API documentado em `docs/API_CONTRACT.md`.** Extraído do código real (controllers, DTOs, selects do Prisma, gateway): base URL/auth/validação/rate-limit, os 3 formatos de listagem, 9 enums, 14 recursos REST com shapes de request/response e regras de negócio (envio, permissões), contrato completo do Socket.IO e as 4 divergências conhecidas do mock. Detalhes verificados contra o código antes de afirmar (users `{data,meta}`, notes array puro, logout 204, change-password DTO). | F1-1 ✅ | `docs/API_CONTRACT.md` criado · shapes conferidos por leitura dos services |
