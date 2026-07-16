@@ -17,7 +17,10 @@ export function CustomerPanel({ conversation }) {
     h(
       'section',
       { className: 'customer-head' },
-      h('div', { className: 'customer-head-avatar' }, getInitials(conversation.contact)),
+      h('div', { className: 'customer-head-avatar' },
+        conversation.avatarUrl
+          ? h('img', { src: conversation.avatarUrl, alt: '', className: 'avatar-img' })
+          : getInitials(conversation.contact)),
       h('h3', null, conversation.contact),
       h('p', { className: 'info-label' }, conversation.phone || 'Sem telefone'),
     ),

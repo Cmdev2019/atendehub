@@ -1,6 +1,66 @@
 import { createElement as h, useRef, useEffect, useState } from 'react';
 import { Icon } from './icons';
 
+const MEDIA_LABELS = {
+  IMAGE: 'Foto',
+  STICKER: 'Figurinha',
+  AUDIO: 'Mensagem de voz',
+  VIDEO: 'Vídeo',
+  DOCUMENT: 'Documento',
+  LOCATION: 'Localização',
+  CONTACT_CARD: 'Contato',
+};
+
+// Conteúdo do balão: anexos (imagem/figurinha inline, áudio/vídeo com player,
+// resto como link), placeholder para mídia ainda não baixada e o texto/caption
+function renderBubbleContent(msg) {
+  const parts = [];
+  const attachments = msg.attachments || [];
+
+  for (const att of attachments) {
+    const mime = att.mimeType || '';
+    const isImage =
+      mime.startsWith('image/') ||
+      msg.mediaType === 'IMAGE' ||
+      msg.mediaType === 'STICKER';
+
+    if (isImage) {
+      parts.push(h('img', {
+        key: att.id,
+        src: att.url,
+        alt: MEDIA_LABELS[msg.mediaType] || 'Imagem',
+        className: `bubble-media${msg.mediaType === 'STICKER' ? ' sticker' : ''}`,
+        loading: 'lazy',
+      }));
+    } else if (mime.startsWith('audio/')) {
+      parts.push(h('audio', { key: att.id, src: att.url, controls: true, className: 'bubble-audio' }));
+    } else if (mime.startsWith('video/')) {
+      parts.push(h('video', { key: att.id, src: att.url, controls: true, className: 'bubble-media' }));
+    } else {
+      parts.push(h(
+        'a',
+        { key: att.id, href: att.url, target: '_blank', rel: 'noreferrer', className: 'bubble-file' },
+        h(Icon, { name: 'paperclip', size: 13 }),
+        ` ${att.fileName || MEDIA_LABELS[msg.mediaType] || 'Arquivo'}`,
+      ));
+    }
+  }
+
+  // Mensagem de mídia sem anexo carregado (evento em tempo real chega antes
+  // do download terminar) — mostra um placeholder em vez de balão vazio
+  if (parts.length === 0 && msg.mediaType && msg.mediaType !== 'TEXT' && !msg.text) {
+    parts.push(h(
+      'span',
+      { key: 'placeholder', className: 'bubble-placeholder' },
+      h(Icon, { name: 'paperclip', size: 13 }),
+      ` ${MEDIA_LABELS[msg.mediaType] || 'Anexo'}`,
+    ));
+  }
+
+  if (msg.text) parts.push(h('div', { key: 'text', className: 'bubble-text' }, msg.text));
+  return parts;
+}
+
 export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendError }) {
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
@@ -55,7 +115,10 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
       h(
         'div',
         { className: 'chat-person' },
-        h('div', { className: 'chat-header-avatar' }, getInitials(conversation.contact)),
+        h('div', { className: 'chat-header-avatar' },
+          conversation.avatarUrl
+            ? h('img', { src: conversation.avatarUrl, alt: '', className: 'avatar-img' })
+            : getInitials(conversation.contact)),
         h(
           'div',
           { className: 'chat-info' },
@@ -74,12 +137,12 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
         role: 'log',
         'aria-live': 'polite',
       },
-      conversation.messages.map(({ id, type, text, time }) =>
+      conversation.messages.map((msg) =>
         h(
           'div',
-          { key: id, className: `message ${type}` },
-          h('div', { className: 'message-bubble' }, text),
-          h('div', { className: 'message-time' }, time),
+          { key: msg.id, className: `message ${msg.type}` },
+          h('div', { className: 'message-bubble' }, renderBubbleContent(msg)),
+          h('div', { className: 'message-time' }, msg.time),
         ),
       ),
     ),

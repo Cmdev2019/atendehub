@@ -50,7 +50,10 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
               onClick: () => onSelect(conv.id),
               title: conv.contact,
             },
-            h('div', { className: 'queue-item-avatar' }, getInitials(conv.contact)),
+            h('div', { className: 'queue-item-avatar' },
+              conv.avatarUrl
+                ? h('img', { src: conv.avatarUrl, alt: '', className: 'avatar-img' })
+                : getInitials(conv.contact)),
             h(
               'div',
               { className: 'queue-item-content' },

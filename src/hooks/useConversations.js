@@ -27,6 +27,16 @@ function toUiMessage(message) {
     type: message.senderType === 'CLIENT' ? 'customer' : 'agent',
     text: message.content ?? '',
     time: formatTime(sentAt),
+    // Tipo da mensagem no backend (TEXT | IMAGE | STICKER | AUDIO | ...) e
+    // anexos baixados para o MinIO — usados pelo ChatPanel para renderizar
+    // mídia real ou placeholder
+    mediaType: message.type || 'TEXT',
+    attachments: (message.attachments || []).map((a) => ({
+      id: a.id,
+      url: a.url,
+      mimeType: a.mimeType || '',
+      fileName: a.fileName || null,
+    })),
   };
 }
 
@@ -43,6 +53,7 @@ function toUiConversation(conv) {
     ...conv,
     contact: conv.contact.name || conv.contact.phone || 'Contato',
     phone: conv.contact.phone || '',
+    avatarUrl: conv.contact.avatarUrl || null,
     channel: conv.channel === 'WHATSAPP' ? 'WhatsApp' : (conv.channel || ''),
     agent: conv.agent?.name || null,
     tags: (conv.tags || []).map((tag) => tag?.name ?? tag),
@@ -220,21 +231,25 @@ export function useConversations() {
     try {
       const response = await apiClient.sendMessage(activeId, text);
 
-      // Substitui a mensagem otimista pela versão persistida (id real do banco),
-      // o que também permite o dedupe quando o eco chegar via message.new.
+      // Substitui a mensagem otimista pela versão persistida (id real do banco).
+      // ATENÇÃO à corrida: o eco via socket (message.new) pode chegar ANTES
+      // desta resposta — nesse caso a mensagem real já está na lista e basta
+      // remover a otimista (substituir criaria uma duplicata).
       const saved = toUiMessage(response?.message ?? response);
       if (saved?.id) {
         setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === activeId
-              ? {
-                  ...conv,
-                  messages: conv.messages?.map((m) =>
+          prev.map((conv) => {
+            if (conv.id !== activeId) return conv;
+            const echoed = conv.messages?.some((m) => m.id === saved.id);
+            return {
+              ...conv,
+              messages: echoed
+                ? conv.messages.filter((m) => m.id !== optimisticMessage.id)
+                : conv.messages?.map((m) =>
                     m.id === optimisticMessage.id ? saved : m,
                   ),
-                }
-              : conv,
-          ),
+            };
+          }),
         );
       }
     } catch (error) {

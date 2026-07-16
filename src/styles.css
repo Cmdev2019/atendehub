@@ -636,6 +636,54 @@ button {
   gap: 8px;
 }
 
+/* ── Avatares com foto real (fallback: iniciais) ──────────────────────────── */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Mídia dentro do balão de mensagem ────────────────────────────────────── */
+.bubble-media {
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 10px;
+  display: block;
+}
+
+.bubble-media.sticker {
+  max-width: 150px;
+  max-height: 150px;
+}
+
+.bubble-audio {
+  max-width: 260px;
+  display: block;
+}
+
+.bubble-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: underline;
+}
+
+.bubble-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.75;
+  font-style: italic;
+}
+
+.bubble-media + .bubble-text,
+.bubble-audio + .bubble-text {
+  margin-top: 6px;
+}
+
 /* Banner persistente de modo demonstração (mock ativo) — flutua sobre o app
    sem alterar os layouts de 100vh; some quando o backend real volta */
 .demo-banner {
