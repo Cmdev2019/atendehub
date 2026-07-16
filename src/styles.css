@@ -590,6 +590,16 @@ button {
   color: var(--text-muted);
 }
 
+/* Painel central do chat: coluna flex com altura presa à célula do grid —
+   sem isso a lista cresce com a conversa e empurra o composer para fora */
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .chat-messages {
   display: flex;
   flex-direction: column;
