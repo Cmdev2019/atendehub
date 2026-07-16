@@ -14,8 +14,8 @@
 
 | Fase | Objetivo | Prioridade | Progresso | Status |
 |---|---|---|---|---|
-| [Fase 0](#-fase-0--religar-frontend--backend) | Religar frontend ↔ backend | 🔴 P0 | 7/9 | 🔍 Em validação |
-| [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 0/6 | 🔄 Em andamento |
+| [Fase 0](#-fase-0--religar-frontend--backend) | Religar frontend ↔ backend | 🔴 P0 | 9/11 | 🔍 Em validação |
+| [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 1/7 | 🔄 Em andamento |
 | [Fase 2](#-fase-2--modo-demo-explícito-e-resiliência) | Modo demo explícito e resiliência | 🟠 P1 | 3/8 | 🔄 Em andamento |
 | [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 0/5 | ⬜ Não iniciada |
 | [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 0/6 | ⬜ Não iniciada |
@@ -23,7 +23,7 @@
 | [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 0/5 | ⬜ Não iniciada |
 | [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 0/5 | ⬜ Não iniciada |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 8/10 | 🔄 Em andamento |
-| **Total** | | | **18/59** | |
+| **Total** | | | **21/62** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -58,6 +58,8 @@
 | F0-7 | **[Descoberto na execução]** `npm run db:seed` estava quebrado por 2 defeitos: (a) ts-node não carrega `.env` → `Environment variable not found: DATABASE_URL`; (b) `setTimeout` de 1h (auto-delete do arquivo de credenciais) prendia o processo — o comando nunca terminava. Corrigido: `-r dotenv/config` no script + remoção do auto-delete (o arquivo já é gitignored). | `apps/api/package.json` (`db:seed`) · `apps/api/prisma/seed.ts:130-133` | ✅ 2026-07-15 |
 | F0-8 | **[Descoberto na execução]** `npm run start` quebrado: o build incluía `prisma/**` e gerava `dist/src/main.js` em vez de `dist/main.js` (`Cannot find module dist/main`). Criado `tsconfig.build.json` compilando apenas `src/` (convenção NestJS). | `apps/api/tsconfig.build.json` (novo) · `apps/api/tsconfig.json:24` | ✅ 2026-07-15 |
 | F0-9 | **[Descoberto no smoke test]** Evolution API em **crash-loop desde sempre** neste ambiente: o compose apontava `DATABASE_CONNECTION_URI` para o MESMO banco `atendehub` da API — ambos usam Prisma e colidem na `_prisma_migrations` (`relation "_prisma_migrations" already exists`). Havia ainda um container órfão de um projeto compose antigo reiniciando em loop e bloqueando o nome `atendehub_evolution`. Corrigido: banco dedicado `evolution` criado, compose e `init.sql` atualizados, container órfão removido. | `docker-compose.yml` · `infra/postgres/init.sql` | ✅ 2026-07-15 |
+| F0-10 | **[Descoberto no round-trip real]** Webhooks de mensagem rejeitados com **413 Payload Too Large**: a Evolution envia mídia embutida em base64 (`webhookBase64: true`) e o corpo estourava o limite padrão de ~100kb do Express — mensagens reais chegavam na Evolution e se perdiam na API. Corrigido: body parser manual com limite de 25mb **apenas** na rota `/api/v1/webhooks` (1mb no resto da API). | `apps/api/src/main.ts` | ✅ 2026-07-15 |
+| F0-11 | **[Descoberto no round-trip real]** Nomes de contato corrompidos por 2 defeitos no processamento do webhook: (a) JID com sufixo de dispositivo (`5512...:12@s.whatsapp.net`) não era normalizado → o mesmo número virava contatos duplicados; (b) em mensagens `fromMe`, o `pushName` é o **dono da conexão** — e o upsert renomeava o contato para o nome do dono a cada resposta enviada pelo celular. Corrigido: `split(':')[0]` na extração do número (tb. no handler de CONTACTS_UPSERT) e `pushName` ignorado quando `fromMe`; `upsertFromWebhook` aceita nome opcional com fallback para o telefone na criação. Dados de teste duplicados removidos do banco. | `apps/api/src/modules/webhook/webhook.service.ts` · `apps/api/src/modules/contact/contact.service.ts` | ✅ 2026-07-15 |
 
 ---
 
@@ -74,6 +76,7 @@
 | F1-4 | `apiClient.register()` chama `POST /auth/register`, rota que **não existe** no backend (só `login`, `refresh`, `logout`, `revoke`, `me`). Decidir: remover do front ou implementar no back. Registrar em Decisões. | `src/services/api.js:143-148` · `apps/api/src/modules/auth/auth.controller.ts:32-77` | ⬜ |
 | F1-5 | Corrigir tratamento de erro do `ApiClient`: o `request()` lança objeto literal (`throw { status, message, error }`); no catch, `error.message` pode ser `undefined` e `error.message.includes(...)` explode com TypeError, mascarando o erro original. Usar classes de erro ou checagem defensiva. | `src/services/api.js:84-101` | ⬜ |
 | F1-6 | Atualizar os testes do frontend (66 hoje) para o novo contrato + adicionar teste do adapter/normalizador. **Aceite:** `npm test` verde. | `src/**/*.test.js` · `jest.config.js` | ⬜ |
+| F1-7 | **[Descoberto no round-trip real]** `.chat-panel` não tinha NENHUMA regra CSS: o painel crescia junto com a conversa e empurrava o composer para fora da área visível (o `flex:1`/`overflow-y:auto` do `.chat-messages` era inerte sem pai flex). Invisível com mock (poucas mensagens); quebrou com conversa real crescendo. Corrigido: `.chat-panel` como coluna flex com `min-height:0` + `overflow:hidden` — lista rola internamente, composer fixo embaixo. | `src/styles.css` | ✅ 2026-07-15 |
 
 ---
 
@@ -221,6 +224,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-15 | **Round-trip real em andamento: recepção em tempo real FUNCIONANDO (validada pelo usuário — "as conversas começaram a aparecer").** Sessão re-pareada após reinício da máquina (conexão nova "teste"; a anterior foi invalidada pelo WhatsApp — comportamento esperado). Dois bugs descobertos e corrigidos no caminho: **F0-10** (webhooks 413 — mensagens se perdiam) e **F0-11** (nomes de contato corrompidos por JID com sufixo de dispositivo + pushName de mensagens fromMe). Contatos duplicados de teste removidos do banco. **Falta:** usuário confirmar nomes corretos após as correções + resposta enviada pelo painel chegando no celular (fecha F0-4/F0-6). | F0-10 ✅ · F0-11 ✅ · F0-6 (parcial) | Payload de teste 200KB no webhook → HTTP 200 · conversas reais criadas em tempo real (6 no banco) · `SELECT contacts` pós-limpeza → 3 contatos, sem duplicatas |
 | 2026-07-15 | **Configurações funcionais em modo mock (erro "Endpoint não implementado no mock" reportado pelo usuário).** Causa imediata: a stack local inteira estava fora do ar (Docker Desktop parado — provável reinício da máquina; a janela "AtendeHub API" da sessão anterior não sobreviveu) → o front caiu no fallback mock → todas as seções de Configurações quebravam, pois o mock só conhecia auth/conversas. Dois consertos: (1) stack religada — Docker Desktop + containers + API relançada em janela própria minimizada "AtendeHub API"; (2) mock estendido com users/departments/whatsapp em memória (incl. QR de demonstração e simulação de pareamento) e `requestMock` reescrito com roteamento por path+método. É a 2ª vez que o fallback silencioso confunde o usuário (cf. incidente do login) — reforça F2-1/F2-2. | F2-8 ✅ | `npx jest` → 71/71 · health pós-restart → 200 `{status:"ok"}` |
 | 2026-07-15 | **🏆 WHATSAPP REAL PAREADO PELO USUÁRIO.** Conexão "carlos teste" criada pela tela de Configurações, QR escaneado com o celular, status `CONNECTED` persistido (webhook `CONNECTION_UPDATE` aceito — prova viva do fix F8-10) e confirmado via sync com a Evolution. O aviso "não é possível conectar novos dispositivos" no celular era rate-limit temporário do WhatsApp (múltiplas tentativas); a versão Baileys estava atual (2.3000.1035194821 = master oficial). Limpeza: conexão-fixture `e2e-session` excluída (pelo próprio usuário, via UI). **Falta para fechar F0-4/F0-6:** round-trip de mensagem real (receber msg de outro número → responder pelo painel). | F8-4 ✅ | `GET /whatsapp` → status CONNECTED · `GET /whatsapp/:id/status` (sync Evolution) → CONNECTED |
 | 2026-07-15 | **QR Code do WhatsApp destravado (erro "Instância e2e-session não encontrada" reportado pelo usuário).** Cadeia de 3 causas corrigidas: (1) a fixture `e2e-session` existia só no banco → instância criada na Evolution; (2) chave da Evolution desalinhada (F8-9) → `.env` da raiz criado e container recriado; (3) token de instância ≠ chave global quebraria webhooks reais pós-pareamento (F8-10) → `createInstance` passa `token` global + instância recriada + API reiniciada com build novo. | F8-9 ✅ · F8-10 ✅ · F8-4 (destravado) | `POST /instance/create` → 201 com token global · `GET /whatsapp/:id/qrcode` via API oficial → `{"qrCode":"data:image/png;base64,..."}` · health 200 pós-restart |
