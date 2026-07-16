@@ -1,32 +1,103 @@
-// API Service - Cliente HTTP para backend com fallback para mock
+// API Service - Cliente HTTP para backend com fallback para mock (somente em dev)
 import { mockApiClient } from './apiMock';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
-// Detectar se deve usar mock (dev)
-const USE_MOCK = import.meta.env.MODE === 'development' &&
-                 (import.meta.env.VITE_USE_MOCK === 'true' || window.USE_MOCK_API);
+// Mock nunca é permitido fora de desenvolvimento: em produção uma API fora
+// do ar gera erro visível + retry, jamais dados fictícios.
+const IS_DEV = import.meta.env.MODE === 'development';
+
+// Mock explícito (opt-in): VITE_USE_MOCK=true ou window.USE_MOCK_API
+const FORCE_MOCK = IS_DEV &&
+                   (import.meta.env.VITE_USE_MOCK === 'true' || window.USE_MOCK_API);
+
+const HEALTH_TIMEOUT_MS = 3000;
+const RETRY_DELAY_MIN_MS = 5000;
+const RETRY_DELAY_MAX_MS = 30000;
+
+// Erro estruturado da API: sempre tem .status e .message (string), ao
+// contrário do objeto literal anterior que explodia em error.message.includes
+export class ApiError extends Error {
+  constructor(status, message, data = null) {
+    super(message || 'Erro na requisição');
+    this.name = 'ApiError';
+    this.status = status;
+    this.error = data;
+  }
+}
 
 class ApiClient {
   constructor() {
     this.baseURL = API_BASE_URL;
     this.token = this.getToken();
-    this.useMock = USE_MOCK;
-    this.backendAvailable = true;
-    this.testConnection();
+    // null = ainda não testado; as requests aguardam o 1º health check
+    // (elimina a race de decidir com backendAvailable "chutado" como true)
+    this.backendAvailable = null;
+    this.mockActive = FORCE_MOCK;
+    this.modeListeners = new Set();
+    this.retryTimer = null;
+    this.retryDelay = RETRY_DELAY_MIN_MS;
+    this.ready = FORCE_MOCK ? Promise.resolve() : this.testConnection();
   }
 
+  // ── Modo mock observável (banner de demonstração) ─────────────────────────
+  isMockActive() {
+    return this.mockActive;
+  }
+
+  onModeChange(callback) {
+    this.modeListeners.add(callback);
+    return () => this.modeListeners.delete(callback);
+  }
+
+  setMockActive(active) {
+    if (this.mockActive === active) return;
+    this.mockActive = active;
+    this.modeListeners.forEach((cb) => {
+      try {
+        cb(active);
+      } catch (err) {
+        console.error('Erro em listener de modo da API:', err);
+      }
+    });
+  }
+
+  // ── Detecção de backend com revalidação (backoff 5s → 30s) ────────────────
   async testConnection() {
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
       const response = await fetch(`${this.baseURL}/health`, {
         method: 'GET',
-        timeout: 3000,
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       this.backendAvailable = response.ok;
     } catch {
       this.backendAvailable = false;
-      console.warn('⚠️ Backend não disponível. Usando dados mock para demonstração.');
     }
+
+    if (this.backendAvailable) {
+      this.retryDelay = RETRY_DELAY_MIN_MS;
+      if (!FORCE_MOCK) this.setMockActive(false);
+    } else {
+      console.warn(
+        IS_DEV
+          ? '⚠️ Backend não disponível. Usando dados mock para demonstração.'
+          : '⚠️ Backend não disponível. Tentando reconectar...',
+      );
+      this.scheduleHealthRetry();
+    }
+    return this.backendAvailable;
+  }
+
+  scheduleHealthRetry() {
+    if (this.retryTimer) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.testConnection();
+    }, this.retryDelay);
+    this.retryDelay = Math.min(this.retryDelay * 2, RETRY_DELAY_MAX_MS);
   }
 
   getToken() {
@@ -44,10 +115,32 @@ class ApiClient {
     this.token = null;
   }
 
-  async request(endpoint, options = {}) {
-    // Se backend não está disponível, usar mock
-    if (!this.backendAvailable) {
+  // Fallback controlado: mock só em desenvolvimento; em produção, erro
+  // visível com retry agendado (nunca dados fictícios — F2-1)
+  fallbackToMock(endpoint, options) {
+    this.scheduleHealthRetry();
+    if (IS_DEV) {
+      this.setMockActive(true);
       return this.requestMock(endpoint, options);
+    }
+    throw new ApiError(
+      503,
+      'Servidor indisponível no momento. Reconectando automaticamente — tente novamente em instantes.',
+    );
+  }
+
+  async request(endpoint, options = {}) {
+    if (FORCE_MOCK) {
+      return this.requestMock(endpoint, options);
+    }
+
+    // Aguarda o 1º health check antes de decidir real × mock (F2-3)
+    if (this.backendAvailable === null) {
+      await this.ready;
+    }
+
+    if (!this.backendAvailable) {
+      return this.fallbackToMock(endpoint, options);
     }
 
     const headers = {
@@ -75,27 +168,30 @@ class ApiClient {
         } else {
           this.clearToken();
           window.location.href = '/login';
-          throw new Error('Sessão expirada. Faça login novamente.');
+          throw new ApiError(401, 'Sessão expirada. Faça login novamente.');
         }
       }
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw {
-          status: response.status,
-          message: data.message || 'Erro na requisição',
-          error: data,
-        };
+        throw new ApiError(
+          response.status,
+          data.message || 'Erro na requisição',
+          data,
+        );
       }
 
       return data;
     } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
       console.error('API Error:', error);
-      // Fallback para mock se erro de rede
-      if (error.message.includes('fetch') || error.message.includes('Failed')) {
+      // fetch lança TypeError em falha de rede (backend caiu / sem conexão)
+      if (error instanceof TypeError) {
         this.backendAvailable = false;
-        return this.requestMock(endpoint, options);
+        return this.fallbackToMock(endpoint, options);
       }
       throw error;
     }
@@ -158,7 +254,7 @@ class ApiClient {
       if (id && method === 'DELETE') return mockApiClient.deleteWhatsappConnection(id);
     }
 
-    throw { status: 404, message: 'Endpoint não implementado no mock' };
+    throw new ApiError(404, 'Endpoint não implementado no mock');
   }
 
   // AUTH ENDPOINTS

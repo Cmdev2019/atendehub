@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { apiClient } from './api';
 
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
 
@@ -25,15 +26,18 @@ export class WebSocketClient {
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
+    this.refreshingToken = false;
   }
 
   connect(token) {
     return new Promise((resolve, reject) => {
       try {
         this.socket = io(WS_URL, {
-          auth: {
-            token: token || localStorage.getItem('accessToken'),
-          },
+          // auth como função: avaliada a CADA tentativa de (re)conexão, então
+          // reconexões sempre usam o accessToken atual (não o do 1º connect)
+          auth: (cb) => cb({
+            token: localStorage.getItem('accessToken') || token,
+          }),
           reconnection: true,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
@@ -44,17 +48,29 @@ export class WebSocketClient {
           console.log('✅ WebSocket conectado!');
           this.isConnected = true;
           this.reconnectAttempts = 0;
+          this.refreshingToken = false;
           resolve();
         });
 
-        this.socket.on('connect_error', (error) => {
+        this.socket.on('connect_error', async (error) => {
           console.error('❌ Erro de conexão WebSocket:', error.message);
           this.isConnected = false;
-          
+
           if (this.reconnectAttempts === 0) {
             reject(error);
           }
           this.reconnectAttempts++;
+
+          // Handshake rejeitado por token ("Token não informado" / "Token
+          // inválido ou expirado"): renova via REST e reconecta com o novo
+          if (/token/i.test(error.message || '') && !this.refreshingToken) {
+            this.refreshingToken = true;
+            const refreshed = await apiClient.refreshToken();
+            this.refreshingToken = false;
+            if (refreshed && this.socket) {
+              this.socket.connect();
+            }
+          }
         });
 
         this.socket.on('disconnect', () => {
@@ -132,14 +148,6 @@ export class WebSocketClient {
   leaveConversation(conversationId) {
     this.send('leave:conversation', { conversationId });
     console.log(`📍 Saindo da conversa: ${conversationId}`);
-  }
-
-  // Indicar que está digitando
-  setTyping(conversationId, isTyping) {
-    this.send('user:typing', {
-      conversationId,
-      isTyping,
-    });
   }
 }
 

@@ -14,6 +14,7 @@ import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { DemoBanner } from "./components/DemoBanner";
 import { useConversations } from "./hooks/useConversations";
 
 const h = createElement;
@@ -100,7 +101,13 @@ function AppContent() {
     );
   }
 
-  return isAuthenticated ? h(Dashboard) : h(LoginPage);
+  // DemoBanner fora do ternário: cobre tanto o login quanto o dashboard
+  return h(
+    "div",
+    { className: "app-shell" },
+    h(DemoBanner),
+    isAuthenticated ? h(Dashboard) : h(LoginPage),
+  );
 }
 
 // App - Wrapper com AuthProvider e ThemeProvider
