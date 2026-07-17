@@ -136,15 +136,35 @@ export class EvolutionService {
   }
 
   // ── Buscar dados da instância (após conectar) ──────────────────────────────
+  // Evolution v2 retorna array plano: { name, ownerJid, profileName,
+  // profilePicUrl, connectionStatus, ... } — o número do dono vem em ownerJid.
   async fetchInstance(sessionName: string): Promise<EvolutionInstance | null> {
     try {
       const { data } = await this.http.get(`/instance/fetchInstances?instanceName=${sessionName}`);
-      // A API retorna um array
       const list = Array.isArray(data) ? data : [data];
-      return list.find((i: any) => i.instance?.instanceName === sessionName)?.instance ?? null;
+      const raw = list.find(
+        (i: any) => i?.name === sessionName || i?.instance?.instanceName === sessionName,
+      );
+      if (!raw) return null;
+
+      const inst = raw.instance ?? raw;
+      return {
+        instanceName: inst.name ?? inst.instanceName,
+        instanceId: inst.id ?? inst.instanceId,
+        status: inst.connectionStatus ?? inst.status,
+        profileName: inst.profileName ?? undefined,
+        profilePictureUrl: inst.profilePicUrl ?? inst.profilePictureUrl ?? undefined,
+        phoneNumber: this.jidToPhone(inst.ownerJid) ?? inst.phoneNumber ?? inst.number ?? undefined,
+      };
     } catch {
       return null;
     }
+  }
+
+  // "5512996572530:12@s.whatsapp.net" → "5512996572530"
+  private jidToPhone(jid?: string | null): string | undefined {
+    if (!jid) return undefined;
+    return jid.split('@')[0].split(':')[0] || undefined;
   }
 
   // ── Desconectar instância ──────────────────────────────────────────────────

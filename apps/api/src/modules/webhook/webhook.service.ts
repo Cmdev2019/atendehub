@@ -318,14 +318,19 @@ export class WebhookService {
   // ── CONNECTION_UPDATE — mudança de estado da conexão ─────────────────────
   private async handleConnectionUpdate(sessionName: string, data: any): Promise<void> {
     const state = data?.state ?? data?.connection;
-    const phone = data?.phoneNumber ?? data?.me?.id?.replace('@s.whatsapp.net', '');
+    // Evolution v2 envia o número do dono em "wuid" ("5512...@s.whatsapp.net",
+    // às vezes com sufixo de dispositivo ":12"); os demais campos são legado v1.
+    const rawJid = data?.wuid ?? data?.phoneNumber ?? data?.me?.id;
+    const phone = rawJid?.split('@')[0]?.split(':')[0] || undefined;
     const profileName = data?.profileName ?? data?.me?.name;
+    const profilePicture = data?.profilePictureUrl ?? undefined;
 
     await this.whatsappService.handleConnectionUpdate(
       sessionName,
       state,
       phone,
       profileName,
+      profilePicture,
     );
 
     // Emite evento em tempo real para a empresa
