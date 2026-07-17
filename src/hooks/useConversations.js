@@ -76,6 +76,10 @@ export function useConversations() {
   // Mensagem de erro do último envio que falhou (visível na UI)
   const [sendError, setSendError] = useState(null);
   const loadingMessagesRef = useRef(new Set());
+  // Lista atual acessível pelos handlers de socket (registrados uma única vez)
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  const fetchingConversationsRef = useRef(new Set());
 
   // Fetch conversas reais do backend
   useEffect(() => {
@@ -107,6 +111,38 @@ export function useConversations() {
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
   useEffect(() => {
+    // Rede de segurança: mensagem/evento de uma conversa que não está na
+    // lista local (ex.: conversation.created perdido durante reconexão) —
+    // busca a conversa na API e a insere no topo da fila.
+    const fetchMissingConversation = async (conversationId) => {
+      if (fetchingConversationsRef.current.has(conversationId)) return;
+      fetchingConversationsRef.current.add(conversationId);
+      try {
+        const conv = toUiConversation(await apiClient.getConversation(conversationId));
+        if (conv?.id) {
+          setConversations((prev) =>
+            prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
+          );
+        }
+      } catch (error) {
+        console.warn('⚠️ Erro ao buscar conversa nova:', error.message);
+      } finally {
+        fetchingConversationsRef.current.delete(conversationId);
+      }
+    };
+
+    // Payload: { companyId, conversation } — nova conversa entra na fila
+    // em tempo real, sem refresh
+    wsClient.on('conversation.created', (payload) => {
+      const conv = toUiConversation(payload?.conversation);
+      if (!conv?.id) return;
+
+      console.log('🆕 Nova conversa na fila', conv.id);
+      setConversations((prev) =>
+        prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
+      );
+    });
+
     // Payload: { conversationId, companyId, message }
     wsClient.on('message.new', (payload) => {
       const conversationId = payload?.conversationId;
@@ -114,6 +150,10 @@ export function useConversations() {
       if (!conversationId || !message) return;
 
       console.log('📬 Nova mensagem na conversa', conversationId);
+      if (!conversationsRef.current.some((c) => c.id === conversationId)) {
+        fetchMissingConversation(conversationId);
+        return;
+      }
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv.id !== conversationId) return conv;
@@ -123,6 +163,8 @@ export function useConversations() {
             ...conv,
             messages: [...(conv.messages || []), message],
             lastMessageAt: new Date(),
+            // Preview da fila acompanha o backend (só mensagens do cliente)
+            summary: message.type === 'customer' && message.text ? message.text : conv.summary,
           };
         }),
       );
@@ -176,6 +218,7 @@ export function useConversations() {
 
     // Cleanup
     return () => {
+      wsClient.off('conversation.created');
       wsClient.off('message.new');
       wsClient.off('message.updated');
       wsClient.off('conversation.updated');

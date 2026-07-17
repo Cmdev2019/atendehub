@@ -5,6 +5,7 @@ import { useConversations } from './useConversations';
 jest.mock('../services/api', () => ({
   apiClient: {
     getConversations: jest.fn(),
+    getConversation: jest.fn(),
     sendMessage: jest.fn(),
   },
 }));
@@ -355,6 +356,96 @@ describe('useConversations Integration Tests', () => {
 
     await waitFor(() => {
       expect(result.current.activeConversation.status).toBe('OPEN');
+    });
+  });
+
+  it('adiciona conversa nova na fila ao receber conversation.created', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    // Payload real do backend: { companyId, conversation }
+    const conversationCreatedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.created'
+    )[1];
+
+    act(() => {
+      conversationCreatedHandler({
+        companyId: 'company-1',
+        conversation: {
+          id: 'conv-nova',
+          status: 'WAITING',
+          channel: 'WHATSAPP',
+          contact: { id: 'ct-1', name: 'Paloma', phone: '5512999999999', avatarUrl: null },
+          createdAt: '2026-07-17T20:17:00.000Z',
+        },
+      });
+    });
+
+    expect(result.current.conversations).toHaveLength(2);
+    // Nova conversa entra no topo da fila, normalizada para o shape da UI
+    expect(result.current.conversations[0].id).toBe('conv-nova');
+    expect(result.current.conversations[0].contact).toBe('Paloma');
+    expect(result.current.conversations[0].channel).toBe('WhatsApp');
+
+    // Reemissão do mesmo evento não duplica
+    act(() => {
+      conversationCreatedHandler({
+        companyId: 'company-1',
+        conversation: {
+          id: 'conv-nova',
+          status: 'WAITING',
+          channel: 'WHATSAPP',
+          contact: { id: 'ct-1', name: 'Paloma', phone: '5512999999999', avatarUrl: null },
+          createdAt: '2026-07-17T20:17:00.000Z',
+        },
+      });
+    });
+    expect(result.current.conversations).toHaveLength(2);
+  });
+
+  it('busca conversa desconhecida na API ao receber message.new dela (rede de segurança)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    mockApiClient.getConversation.mockResolvedValueOnce({
+      id: 'conv-desconhecida',
+      status: 'WAITING',
+      channel: 'WHATSAPP',
+      contact: { id: 'ct-2', name: 'Natanael', phone: '5512988888888', avatarUrl: null },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    const messageNewHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'message.new'
+    )[1];
+
+    await act(async () => {
+      messageNewHandler({
+        conversationId: 'conv-desconhecida',
+        companyId: 'company-1',
+        message: { id: 'msg-9', senderType: 'CLIENT', content: 'oi', type: 'TEXT', status: 'RECEIVED', sentAt: '2026-07-17T20:17:00.000Z' },
+      });
+    });
+
+    expect(mockApiClient.getConversation).toHaveBeenCalledWith('conv-desconhecida');
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(2);
+      expect(result.current.conversations[0].id).toBe('conv-desconhecida');
+      expect(result.current.conversations[0].contact).toBe('Natanael');
     });
   });
 
