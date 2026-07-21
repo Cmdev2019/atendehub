@@ -5,13 +5,18 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
 
 ## 📌 Fontes de verdade (leia antes de trabalhar)
 
-1. **`ROADMAP_ESTABILIZACAO.md`** (raiz) — documento vivo canônico: status por
-   item, decisões e changelog. **Regras:** todo problema novo vira item com ID
-   antes de ser corrigido; todo item concluído exige evidência no changelog;
-   atualizar painel e "Próxima ação" ao fim de cada sessão.
-2. **`docs/API_CONTRACT.md`** — contrato real da API (shapes, enums, eventos
+1. **`ROADMAP_ESTABILIZACAO.md`** (raiz) — documento vivo canônico do projeto
+   como um todo: status por item, decisões e changelog. **Regras:** todo
+   problema novo vira item com ID antes de ser corrigido; todo item concluído
+   exige evidência no changelog; atualizar painel e "Próxima ação" ao fim de
+   cada sessão.
+2. **`ROADMAP_BACKEND.md`** (raiz) — documento vivo com foco exclusivo em
+   `apps/api`, Prisma/PostgreSQL e filas (Bull/Redis). Criado em 2026-07-21:
+   decisão de fechar todo o backend e banco antes de retomar o frontend.
+   Mesmas regras de documento vivo do item acima.
+3. **`docs/API_CONTRACT.md`** — contrato real da API (shapes, enums, eventos
    socket). Atualizar no mesmo commit que alterar um endpoint.
-3. `docs/archive/` — relatórios históricos; **não** são fonte de verdade.
+4. `docs/archive/` — relatórios históricos; **não** são fonte de verdade.
 
 ## Arquitetura
 

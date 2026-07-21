@@ -6,7 +6,12 @@
 > de progresso e registrar uma entrada no [Changelog](#-changelog).
 >
 > **Última atualização:** 2026-07-21 · F0-12/F0-13 corrigidos (conversas duplicadas na reconexão do WhatsApp + JID `@lid` não normalizado)
-> **Próxima ação:** Fase 3 (ativar o módulo de SLA, hoje código morto) ou Fase 4 (testes de backend, zero cobertura hoje) — a decidir com o usuário
+> **Próxima ação:** 🔀 A partir de 2026-07-21, o trabalho de Fases 3/4/6/7 (SLA,
+> testes, segurança, produção) migrou para o **`ROADMAP_BACKEND.md`**, com foco
+> exclusivo em fechar todo o backend/banco antes de retomar o front — decisão
+> do usuário para não misturar as duas frentes. Consulte aquele documento para
+> o estado atual dessas fases. Este arquivo volta a ser a frente ativa quando o
+> `ROADMAP_BACKEND.md` fechar (Fase B7 — handoff).
 
 ---
 
