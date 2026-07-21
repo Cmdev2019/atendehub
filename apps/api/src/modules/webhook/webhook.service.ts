@@ -125,13 +125,16 @@ export class WebhookService {
       return;
     }
 
-    // Extrai número limpo: "5511999999999:12@s.whatsapp.net" → "5511999999999"
-    // (":NN" é id de dispositivo e não faz parte do número — sem removê-lo,
-    // o mesmo contato vira registros duplicados)
-    const phone = key.remoteJid
-      .replace('@s.whatsapp.net', '')
-      .replace('@c.us', '')
-      .split(':')[0];
+    // Extrai identificador limpo do JID: "5511999999999:12@s.whatsapp.net" →
+    // "5511999999999" (":NN" é id de dispositivo e não faz parte do número —
+    // sem removê-lo, o mesmo contato vira registros duplicados). Genérico por
+    // domínio (@s.whatsapp.net, @c.us, @lid...) em vez de enumerar cada um —
+    // o WhatsApp introduziu @lid (identificador de privacidade, quando o
+    // remetente esconde o número) sem que essa lista fosse atualizada; o JID
+    // passava direto sem normalizar. Nota: para @lid o valor NÃO é um número
+    // discável de verdade, é um id opaco do WhatsApp — ainda assim serve como
+    // chave estável para não duplicar o contato entre mensagens do mesmo remetente.
+    const phone = this.extractPhoneFromJid(key.remoteJid);
 
     // Busca a conexão pelo sessionName para obter o companyId
     const connection = await this.prisma.whatsAppConnection.findUnique({
@@ -373,10 +376,7 @@ export class WebhookService {
     if (!connection) return;
 
     for (const c of contacts) {
-      const phone = (c.id ?? '')
-        .replace('@s.whatsapp.net', '')
-        .replace('@c.us', '')
-        .split(':')[0];
+      const phone = this.extractPhoneFromJid(c.id);
       const name = c.pushName ?? c.verifiedName ?? c.name;
 
       if (!phone || !name) continue;
@@ -471,6 +471,22 @@ export class WebhookService {
     }
 
     return { type: MessageType.TEXT, content: '' };
+  }
+
+  // ── Extrai o identificador (número ou id opaco) de um JID do WhatsApp ─────
+  // Genérico por domínio em vez de enumerar cada um: cobre @s.whatsapp.net,
+  // @c.us e @lid (identificador de privacidade — WhatsApp esconde o número
+  // real do remetente) sem precisar listar sufixos novos manualmente.
+  private extractPhoneFromJid(jid?: string | null): string {
+    if (!jid) return '';
+    const [id, domain] = jid.split('@');
+    const phone = (id ?? '').split(':')[0];
+    if (domain === 'lid') {
+      this.logger.warn(
+        `JID @lid recebido (número real oculto pelo WhatsApp): ${jid} — usando id opaco como chave do contato`,
+      );
+    }
+    return phone;
   }
 
   // ── Verifica se o tipo de mensagem contém mídia para download ─────────────

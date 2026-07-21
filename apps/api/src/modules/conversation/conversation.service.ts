@@ -53,7 +53,10 @@ export class ConversationService {
 
     const where: any = {
       companyId,
-      ...(status && { status }),
+      // Sem filtro explícito, a fila mostra só tickets ativos — sem isso,
+      // toda conversa encerrada permanece visível na Caixa de Entrada para
+      // sempre. Quem quiser ver encerradas pede status=CLOSED explicitamente.
+      ...(status ? { status } : { status: { not: ConversationStatus.CLOSED } }),
       ...(channel && { channel }),
       ...(agentId && { agentId }),
       ...(departmentId && { departmentId }),
@@ -267,17 +270,33 @@ export class ConversationService {
     whatsappConnectionId: string,
     channel: Channel = Channel.WHATSAPP,
   ) {
-    // Verifica se já existe conversa aberta para este contato + conexão
+    // Verifica se já existe conversa aberta para este contato — SEM filtrar
+    // por whatsappConnectionId: a conversa é com o CONTATO, não com uma
+    // sessão específica da conexão. Filtrar também pela conexão fazia toda
+    // conversa em aberto virar órfã (whatsappConnectionId de uma instância já
+    // apagada) sempre que o WhatsApp era desconectado/reparado — o contato
+    // ganhava uma conversa nova a cada reconexão e a antiga travava para
+    // sempre (agente não conseguia responder: "sem conexão associada").
     const existing = await this.prisma.conversation.findFirst({
       where: {
         companyId,
         contactId,
-        whatsappConnectionId,
         status: { in: [ConversationStatus.WAITING, ConversationStatus.OPEN] },
       },
+      orderBy: { createdAt: 'desc' },
     });
 
-    if (existing) return existing;
+    if (existing) {
+      // Reaponta para a conexão atual caso a sessão tenha sido reparada
+      // (senão o envio falha com "conexão não associada" numa conversa viva)
+      if (existing.whatsappConnectionId !== whatsappConnectionId) {
+        return this.prisma.conversation.update({
+          where: { id: existing.id },
+          data: { whatsappConnectionId },
+        });
+      }
+      return existing;
+    }
 
     // Cria nova conversa
     return this.prisma.conversation.create({
