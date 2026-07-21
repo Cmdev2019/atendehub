@@ -232,6 +232,10 @@ class ApiClient {
         }
         return mockApiClient.sendMessage(id, body.content);
       }
+      if (sub === 'messages' && method === 'GET') {
+        return mockApiClient.getMessages(id);
+      }
+      if (id) return mockApiClient.getConversation(id);
       return mockApiClient.getConversations();
     }
 
@@ -280,13 +284,6 @@ class ApiClient {
     }
 
     return response;
-  }
-
-  async register(data) {
-    return this.request('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
   }
 
   async logout() {

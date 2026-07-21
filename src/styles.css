@@ -371,13 +371,61 @@ button {
    MAIN CONTENT AREA
    ───────────────────────────────────────────────────────────────── */
 
+.workspace-inbox {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 300px 1fr 340px;
   gap: 0;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   METRICS - Indicadores rápidos do dashboard
+   ───────────────────────────────────────────────────────────────── */
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.metric-card span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.metric-card strong {
+  font-size: 1.5rem;
+  color: var(--text);
+}
+
+.metric-card small {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .conversation-area {

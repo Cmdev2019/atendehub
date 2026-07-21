@@ -1,5 +1,6 @@
 // Mock API - Para testes sem backend
 // Simula as respostas do API real
+import { initialConversations } from '../data/mockConversations';
 
 export const mockUsers = {
   'admin@demo.com': {
@@ -42,6 +43,12 @@ const mockDepartments = [
 const mockConnections = [
   { id: 'conn-1', name: 'Comercial', status: 'DISCONNECTED', phone: null, statusPolls: 0 },
 ];
+
+// Store de conversas em memória — mesmas fixtures usadas como estado inicial
+// do useConversations (F1-3), para que getConversations/getConversation/
+// getMessages sejam consistentes entre si em modo demonstração.
+const mockConversationsList = initialConversations.map((c) => ({ ...c, messages: [...c.messages] }));
+let mockMessageSeq = 1000;
 
 // QR de demonstração (SVG inline — não é um QR real)
 const MOCK_QR_IMAGE =
@@ -160,14 +167,42 @@ export class MockApiClient {
   async getConversations() {
     await this.simulateDelay();
     return {
-      data: [],
-      pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+      data: mockConversationsList,
+      meta: { total: mockConversationsList.length, page: 1, limit: 20, totalPages: 1 },
     };
   }
 
-  async sendMessage() {
+  async getConversation(id) {
     await this.simulateDelay();
-    return { success: true };
+    const conv = mockConversationsList.find((c) => c.id === id);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    return conv;
+  }
+
+  async getMessages(conversationId) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === conversationId);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    return {
+      data: conv.messages,
+      meta: { count: conv.messages.length, hasMore: false, nextCursor: null },
+    };
+  }
+
+  async sendMessage(conversationId, content) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === conversationId);
+    const message = {
+      id: `mock-msg-${mockMessageSeq++}`,
+      senderType: 'AGENT',
+      content: content ?? '',
+      type: 'TEXT',
+      status: 'SENT',
+      sentAt: new Date().toISOString(),
+      sender: { id: 'mock-agent', name: 'Você', avatarUrl: null, role: 'AGENT' },
+    };
+    if (conv) conv.messages.push(message);
+    return message;
   }
 
   // ── USERS ──────────────────────────────────────────────────────────────────

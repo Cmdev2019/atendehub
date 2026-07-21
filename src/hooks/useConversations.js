@@ -15,8 +15,7 @@ function formatTime(date) {
 
 // Converte mensagem do contrato da API (senderType/content/sentAt) para o
 // formato usado pelos componentes ({ type, text, time }).
-// A unificação completa do contrato é o item F1-2 do roadmap.
-function toUiMessage(message) {
+export function toUiMessage(message) {
   if (!message) return null;
   if (message.text !== undefined) return message; // já está no formato da UI
 
@@ -41,13 +40,18 @@ function toUiMessage(message) {
 }
 
 // Converte conversa do contrato da API (contact/agent/tags como objetos,
-// sem array de mensagens) para o formato usado pelos componentes.
-// A unificação completa do contrato é o item F1-2 do roadmap.
-function toUiConversation(conv) {
-  // Mock e testes já usam contact como string — passa direto
+// status em enum, mensagens ausentes na listagem) para o formato usado
+// pelos componentes ({ contact: string, agent: string, tags: string[], ... }).
+export function toUiConversation(conv) {
+  // Mock legado/testes com contact já em string — passa direto
   if (!conv || typeof conv.contact !== 'object' || conv.contact === null) {
     return conv;
   }
+
+  // A listagem real da API não inclui mensagens (carregadas sob demanda ao
+  // abrir a conversa); fixtures de demonstração podem trazê-las embutidas —
+  // presença do array é o que decide se o lazy-load dispara ou não.
+  const hasInlineMessages = Array.isArray(conv.messages);
 
   return {
     ...conv,
@@ -59,16 +63,20 @@ function toUiConversation(conv) {
     tags: (conv.tags || []).map((tag) => tag?.name ?? tag),
     timeline: [],
     summary: conv.lastMessagePreview || '',
-    // A listagem não inclui mensagens — carregadas sob demanda ao abrir a conversa
-    messages: [],
-    messagesLoaded: false,
+    messages: hasInlineMessages ? conv.messages.map(toUiMessage) : [],
+    messagesLoaded: hasInlineMessages,
   };
 }
 
+// Fixtures de demonstração já no shape UI (normalizadas uma única vez) —
+// evita rodar o normalizador a cada render e mantém initialConversations
+// no shape do contrato (fiel ao que a API real retorna).
+const initialUiConversations = initialConversations.map(toUiConversation);
+
 export function useConversations() {
   // Começar com mock data como fallback
-  const [conversations, setConversations] = useState(initialConversations);
-  const [activeId, setActiveId] = useState(initialConversations[0]?.id);
+  const [conversations, setConversations] = useState(initialUiConversations);
+  const [activeId, setActiveId] = useState(initialUiConversations[0]?.id);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   // true somente após carregar conversas REAIS — evita join/fetch com ids mock

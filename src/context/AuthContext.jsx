@@ -75,27 +75,12 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const register = useCallback(async (data) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await apiClient.register(data);
-      return response;
-    } catch (err) {
-      setError(err.message || 'Erro ao registrar');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const value = {
     user,
     loading,
     error,
     login,
     logout,
-    register,
     isAuthenticated: !!user,
   };
 

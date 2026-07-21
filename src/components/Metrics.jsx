@@ -1,13 +1,25 @@
 import { createElement as h } from 'react';
 
-const metrics = [
-  { label: 'Conversas abertas', value: '34', note: '6 urgentes' },
-  { label: 'Primeira resposta', value: '2m 41s', note: 'Meta: 5 min' },
-  { label: 'Resolvidas hoje', value: '128', note: '+18% vs. ontem' },
-  { label: 'Satisfação', value: '92%', note: '384 avaliações' },
-];
+// Indicadores calculados a partir das conversas carregadas (mesma lista da
+// fila) — sem dado fictício. "Resolvidas hoje" e "Satisfação" exigiriam um
+// endpoint agregado que o backend ainda não tem (ver B-2 no roadmap).
+function computeMetrics(conversations) {
+  const list = conversations || [];
+  const waiting = list.filter((c) => c.status === 'WAITING').length;
+  const open = list.filter((c) => c.status === 'OPEN').length;
+  const unread = list.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-export function Metrics() {
+  return [
+    { label: 'Conversas na fila', value: String(list.length), note: `${waiting} aguardando` },
+    { label: 'Em atendimento', value: String(open), note: 'status: OPEN' },
+    { label: 'Aguardando resposta', value: String(waiting), note: 'status: WAITING' },
+    { label: 'Mensagens não lidas', value: String(unread), note: `em ${list.filter((c) => c.unreadCount > 0).length} conversas` },
+  ];
+}
+
+export function Metrics({ conversations }) {
+  const metrics = computeMetrics(conversations);
+
   return h(
     'section',
     { className: 'metrics', 'aria-label': 'Indicadores rápidos' },

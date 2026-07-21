@@ -53,36 +53,41 @@ function Dashboard() {
         ? h("div", { className: "workspace workspace-settings" }, h(SettingsPanel))
         : h(
             "div",
-            { className: "workspace" },
+            { className: "workspace-inbox" },
+            h(Metrics, { conversations }),
             h(
-              "section",
-              { className: "conversation-area" },
-              h(ConversationQueue, {
-                activeId,
-                conversations,
-                onSelect: setActiveId,
-              }),
+              "div",
+              { className: "workspace" },
+              h(
+                "section",
+                { className: "conversation-area" },
+                h(ConversationQueue, {
+                  activeId,
+                  conversations,
+                  onSelect: setActiveId,
+                }),
+              ),
+              activeConversation &&
+                h(
+                  "section",
+                  { className: "chat-area" },
+                  h(ChatPanel, {
+                    conversation: activeConversation,
+                    draft,
+                    onDraftChange: setDraft,
+                    onSend: sendMessage,
+                    sendError,
+                  }),
+                ),
+              activeConversation &&
+                h(
+                  "section",
+                  { className: "details-area" },
+                  h(CustomerPanel, {
+                    conversation: activeConversation,
+                  }),
+                ),
             ),
-            activeConversation &&
-              h(
-                "section",
-                { className: "chat-area" },
-                h(ChatPanel, {
-                  conversation: activeConversation,
-                  draft,
-                  onDraftChange: setDraft,
-                  onSend: sendMessage,
-                  sendError,
-                }),
-              ),
-            activeConversation &&
-              h(
-                "section",
-                { className: "details-area" },
-                h(CustomerPanel, {
-                  conversation: activeConversation,
-                }),
-              ),
           ),
     ),
   );

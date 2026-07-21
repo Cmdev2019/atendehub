@@ -115,11 +115,52 @@ describe('Mock API Client', () => {
   });
 
   describe('getConversations', () => {
-    it('retorna array de conversas', async () => {
+    it('retorna array de conversas com wrapper {data,meta} do contrato', async () => {
       const response = await mockApiClient.getConversations();
       expect(response).toHaveProperty('data');
-      expect(response).toHaveProperty('pagination');
+      expect(response).toHaveProperty('meta');
       expect(Array.isArray(response.data)).toBe(true);
+      expect(response.data.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getConversation', () => {
+    it('retorna a conversa pelo id', async () => {
+      const list = await mockApiClient.getConversations();
+      const first = list.data[0];
+      const conv = await mockApiClient.getConversation(first.id);
+      expect(conv.id).toBe(first.id);
+    });
+
+    it('lança 404 para id inexistente', async () => {
+      await expect(mockApiClient.getConversation('nao-existe')).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('getMessages', () => {
+    it('retorna as mensagens da conversa no shape do contrato', async () => {
+      const list = await mockApiClient.getConversations();
+      const first = list.data[0];
+      const response = await mockApiClient.getMessages(first.id);
+      expect(response).toHaveProperty('data');
+      expect(response).toHaveProperty('meta');
+      expect(response.data[0]).toHaveProperty('senderType');
+      expect(response.data[0]).toHaveProperty('content');
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('persiste a mensagem na conversa e retorna no shape do contrato', async () => {
+      const list = await mockApiClient.getConversations();
+      const first = list.data[0];
+      const before = (await mockApiClient.getMessages(first.id)).data.length;
+
+      const sent = await mockApiClient.sendMessage(first.id, 'Olá do agente');
+
+      expect(sent.senderType).toBe('AGENT');
+      expect(sent.content).toBe('Olá do agente');
+      const after = (await mockApiClient.getMessages(first.id)).data.length;
+      expect(after).toBe(before + 1);
     });
   });
 });
