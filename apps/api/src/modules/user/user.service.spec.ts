@@ -4,6 +4,7 @@ import { Role } from '@prisma/client';
 import { UserService } from './user.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StorageService } from '../../shared/storage/storage.service';
 
 // Isolamento multi-tenant (B4-3) — mesma lógica do contact.service.spec.ts:
 // o que importa é que a mutação nunca roda quando o registro é de outra
@@ -21,6 +22,7 @@ const mockPrisma = {
 };
 
 const mockAuditLog = { record: jest.fn() };
+const mockStorage = { upload: jest.fn() };
 
 describe('UserService — isolamento multi-tenant', () => {
   let service: UserService;
@@ -36,6 +38,7 @@ describe('UserService — isolamento multi-tenant', () => {
         UserService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile();
 
@@ -110,6 +113,93 @@ describe('UserService — isolamento multi-tenant', () => {
       await service.update(companyA, 'user-1', { name: 'Novo Nome' }, requesterId);
 
       expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateOwnProfile', () => {
+    it('atualiza name/phone/avatarUrl do próprio usuário', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        id: 'user-1',
+        companyId: companyA,
+        role: Role.AGENT,
+        departments: [],
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', name: 'Novo Nome' });
+
+      await service.updateOwnProfile(companyA, 'user-1', { name: 'Novo Nome' });
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-1' }, data: { name: 'Novo Nome' } }),
+      );
+    });
+
+    it('nunca chama user.update quando o id não pertence à empresa do requisitante', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateOwnProfile(companyA, userOfCompanyB, { name: 'Nome Hostil' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateAvatar', () => {
+    const fakeFile = {
+      buffer: Buffer.from('fake-image-bytes'),
+      mimetype: 'image/png',
+      originalname: 'foto.png',
+      size: 16,
+    } as Express.Multer.File;
+
+    it('sobe o arquivo no storage e salva a URL retornada como avatarUrl', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        id: 'user-1',
+        companyId: companyA,
+        role: Role.AGENT,
+        departments: [],
+      });
+      mockStorage.upload.mockResolvedValueOnce({
+        url: 'http://minio/bucket/company-a/avatars/foto.png',
+        bucket: 'atendehub-media',
+        key: 'company-a/avatars/foto.png',
+        size: 16,
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', avatarUrl: 'http://minio/bucket/company-a/avatars/foto.png' });
+
+      await service.updateAvatar(companyA, 'user-1', fakeFile);
+
+      expect(mockStorage.upload).toHaveBeenCalledWith(
+        fakeFile.buffer,
+        'image/png',
+        companyA,
+        'foto.png',
+        16,
+      );
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: { avatarUrl: 'http://minio/bucket/company-a/avatars/foto.png' },
+        }),
+      );
+    });
+
+    it('rejeita arquivo vazio sem chamar o storage', async () => {
+      const emptyFile = { ...fakeFile, buffer: Buffer.alloc(0) } as Express.Multer.File;
+
+      await expect(service.updateAvatar(companyA, 'user-1', emptyFile)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockStorage.upload).not.toHaveBeenCalled();
+    });
+
+    it('nunca sobe o arquivo quando o id não pertence à empresa do requisitante', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateAvatar(companyA, userOfCompanyB, fakeFile),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorage.upload).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
 

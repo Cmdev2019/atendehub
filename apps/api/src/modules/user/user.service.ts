@@ -8,8 +8,10 @@ import {
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { StorageService } from '../../shared/storage/storage.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -34,6 +36,7 @@ export class UserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly storage: StorageService,
   ) {}
 
   // ── Listar com paginação e filtros ────────────────────────────────────────
@@ -175,6 +178,44 @@ export class UserService {
     }
 
     return updated;
+  }
+
+  // ── Auto-edição do próprio perfil (B3-1) ──────────────────────────────────
+  // Sem checagem de role: qualquer usuário autenticado pode chamar isso pra
+  // si mesmo — o DTO já exclui role/isActive, então não há como escalar
+  // privilégio por aqui. Sem auditoria (decisão B1-4: edição de
+  // nome/telefone/avatar não é ação sensível o suficiente pra v1).
+  async updateOwnProfile(companyId: string, userId: string, dto: UpdateOwnProfileDto) {
+    await this.findOne(companyId, userId);
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: dto,
+      select: USER_SELECT,
+    });
+  }
+
+  // ── Upload do próprio avatar (B3-2) ───────────────────────────────────────
+  async updateAvatar(companyId: string, userId: string, file: Express.Multer.File) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Arquivo de avatar ausente ou vazio');
+    }
+
+    await this.findOne(companyId, userId);
+
+    const uploaded = await this.storage.upload(
+      file.buffer,
+      file.mimetype,
+      companyId,
+      file.originalname,
+      file.size,
+    );
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: uploaded.url },
+      select: USER_SELECT,
+    });
   }
 
   // ── Trocar senha ──────────────────────────────────────────────────────────
