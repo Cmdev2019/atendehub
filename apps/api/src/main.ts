@@ -5,6 +5,7 @@ import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import { AppModule } from './app.module';
+import { RedisIoAdapter } from './shared/websocket/redis-io.adapter';
 
 // ── Placeholders inseguros que jamais devem ser usados em produção ────────────
 const INSECURE_PLACEHOLDERS = [
@@ -46,6 +47,13 @@ async function bootstrap() {
 
   // ── Prefixo global da API ──────────────────────────────────────────────────
   app.setGlobalPrefix('api/v1');
+
+  // ── Socket.IO com Redis Adapter (B2-6) ─────────────────────────────────────
+  // Precisa ser aplicado aqui, no IoAdapter raiz, e não dentro do gateway —
+  // ver comentário em redis-io.adapter.ts.
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   // ── Validação global de DTOs ───────────────────────────────────────────────
   app.useGlobalPipes(

@@ -13,8 +13,6 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
-import { createAdapter } from '@socket.io/redis-adapter';
-import { Redis } from 'ioredis';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -55,39 +53,10 @@ export class EventsGateway
     private readonly prisma: PrismaService,
   ) {}
 
-  async afterInit(server: Server) {
-    // ── Configura Redis Adapter para sincronizar entre múltiplas instâncias ──
-    const redisHost = this.config.get<string>('REDIS_HOST', 'localhost');
-    const redisPort = this.config.get<number>('REDIS_PORT', 6379);
-    const redisPassword = this.config.get<string>('REDIS_PASSWORD');
-
-    const pubClient = new Redis({
-      host: redisHost,
-      port: redisPort,
-      password: redisPassword,
-      maxRetriesPerRequest: null,
-    });
-
-    const subClient = pubClient.duplicate();
-
-    try {
-      // IORedis conecta automaticamente, mas podemos aguardar para logar
-      await Promise.all([
-        new Promise<void>((resolve) => pubClient.once('ready', resolve)),
-        new Promise<void>((resolve) => subClient.once('ready', resolve)),
-      ]);
-
-      server.adapter(createAdapter(pubClient, subClient));
-
-      this.logger.log(
-        `Socket.IO Redis Adapter configurado (${redisHost}:${redisPort})`,
-      );
-    } catch (err: any) {
-      this.logger.error(
-        `Falha ao conectar Redis Adapter: ${err.message}. Socket.IO funcionará apenas em single-instance.`,
-      );
-    }
-
+  afterInit(server: Server) {
+    // Redis Adapter é configurado em main.ts via RedisIoAdapter (B2-6) — este
+    // `server` aqui é o Namespace `/ws`, não o Server raiz, e Namespace não
+    // tem `.adapter()`.
     this.logger.log('Socket.IO Gateway iniciado em /ws');
 
     // ── Middleware de autenticação no handshake ────────────────────────────

@@ -12,6 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ContactService } from './contact.service';
+import { TagService } from '../tag/tag.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { ListContactsDto } from './dto/list-contacts.dto';
@@ -22,7 +23,10 @@ import { AuthUserDto } from '../auth/dto/auth-response.dto';
 @Controller('contacts')
 @UseGuards(JwtAuthGuard)
 export class ContactController {
-  constructor(private readonly contactService: ContactService) {}
+  constructor(
+    private readonly contactService: ContactService,
+    private readonly tagService: TagService,
+  ) {}
 
   // GET /api/v1/contacts?search=&channel=&isBlocked=&page=&limit=
   @Get()
@@ -56,12 +60,33 @@ export class ContactController {
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   remove(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
-    return this.contactService.remove(user.companyId, id);
+    return this.contactService.remove(user.companyId, id, user.id);
   }
 
   // PATCH /api/v1/contacts/:id/block
   @Patch(':id/block')
   toggleBlock(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
     return this.contactService.toggleBlock(user.companyId, id);
+  }
+
+  // POST /api/v1/contacts/:id/tags/:tagId
+  @Post(':id/tags/:tagId')
+  addTag(
+    @CurrentUser() user: AuthUserDto,
+    @Param('id') id: string,
+    @Param('tagId') tagId: string,
+  ) {
+    return this.tagService.assignToContact(user.companyId, id, tagId);
+  }
+
+  // DELETE /api/v1/contacts/:id/tags/:tagId
+  @Delete(':id/tags/:tagId')
+  @HttpCode(HttpStatus.OK)
+  removeTag(
+    @CurrentUser() user: AuthUserDto,
+    @Param('id') id: string,
+    @Param('tagId') tagId: string,
+  ) {
+    return this.tagService.removeFromContact(user.companyId, id, tagId);
   }
 }

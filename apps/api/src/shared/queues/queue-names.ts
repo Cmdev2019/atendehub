@@ -4,7 +4,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const QUEUE_NAMES = {
-  MESSAGE_SEND: 'message-send',
   WEBHOOK: 'webhook',
   SLA_CHECK: 'sla-check',
 } as const;

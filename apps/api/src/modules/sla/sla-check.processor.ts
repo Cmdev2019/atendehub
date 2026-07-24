@@ -1,9 +1,11 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
-import { ConversationStatus, Prisma } from '@prisma/client';
+import { ConversationStatus, Role } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 
 // ─── Job data structure ────────────────────────────────────────────────────────
@@ -33,6 +35,8 @@ export class SlaCheckProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsService: EventsService,
+    private readonly auditLog: AuditLogService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   @Process()
@@ -107,33 +111,60 @@ export class SlaCheckProcessor {
         breachedAt: now,
       });
 
-      // ── Registra auditoria ─────────────────────────────────────────────────
-      await this.prisma.auditLog.create({
-        data: {
-          companyId,
-          action: 'sla.breached',
-          entity: 'Conversation',
-          entityId: conversationId,
-          before: Prisma.JsonNull,
-          after: {
-            slaBreachedAt: now.toISOString(),
-            waitTimeSeconds,
-            maxWaitSecs,
-            queueId: conversation.queueId,
-            queueName: conversation.queue?.name,
-          },
+      // ── Registra auditoria (B1-4) ──────────────────────────────────────────
+      await this.auditLog.record({
+        companyId,
+        action: 'sla.breached',
+        entity: 'Conversation',
+        entityId: conversationId,
+        after: {
+          slaBreachedAt: now.toISOString(),
+          waitTimeSeconds,
+          maxWaitSecs,
+          queueId: conversation.queueId,
+          queueName: conversation.queue?.name,
         },
       });
 
+      // ── Notifica quem pode intervir (B1-3) ─────────────────────────────────
+      // A conversa violou o SLA porque ninguém a atribuiu ainda — não há
+      // agentId para notificar. Avisa SUPERVISOR/ADMIN/SUPER_ADMIN ativos da
+      // empresa, que são quem consegue redistribuir/assumir a conversa.
+      const responders = await this.prisma.user.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          role: { in: [Role.SUPERVISOR, Role.ADMIN, Role.SUPER_ADMIN] },
+        },
+        select: { id: true },
+      });
+
+      await Promise.all(
+        responders.map((responder) =>
+          this.notificationService.create({
+            companyId,
+            userId: responder.id,
+            type: 'sla_breach',
+            title: 'Conversa aguardando além do prazo',
+            body: `${conversation.contact?.name ?? conversation.contact?.phone ?? 'Contato'} está esperando há ${waitTimeSeconds}s (limite: ${maxWaitSecs}s)`,
+            data: { conversationId, queueId: conversation.queueId },
+          }),
+        ),
+      );
+
       this.logger.log(
-        `SLA breach registrado: conversa ${conversationId}, auditoria criada`,
+        `SLA breach registrado: conversa ${conversationId}, auditoria e ${responders.length} notificação(ões) criadas`,
       );
     } catch (err: any) {
       this.logger.error(
-        `Erro ao verificar SLA da conversa ${conversationId}: ${err.message}`,
+        `Job ${job.id} falhou ao verificar SLA da conversa ${conversationId} ` +
+          `(tentativa ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`,
         err.stack,
       );
-      // Não propaga o erro — falhas de SLA não devem parar o sistema
+      // Propaga para o Bull re-tentar (attempts/backoff globais em app.module.ts).
+      // Como o job é de disparo único (delay = maxWaitSecs), engolir o erro aqui
+      // faria uma falha transitória de banco perder o alerta de SLA para sempre.
+      throw err;
     }
   }
 }

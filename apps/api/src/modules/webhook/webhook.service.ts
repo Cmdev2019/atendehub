@@ -139,7 +139,7 @@ export class WebhookService {
     // Busca a conexão pelo sessionName para obter o companyId
     const connection = await this.prisma.whatsAppConnection.findUnique({
       where: { sessionName },
-      select: { id: true, companyId: true },
+      select: { id: true, companyId: true, departmentId: true },
     });
 
     if (!connection) {
@@ -147,7 +147,7 @@ export class WebhookService {
       return;
     }
 
-    const { companyId, id: whatsappConnectionId } = connection;
+    const { companyId, id: whatsappConnectionId, departmentId } = connection;
 
     // Upsert do contato. pushName é o nome de quem ENVIOU a mensagem:
     // em mensagens fromMe ele é o dono da conexão, não o contato —
@@ -177,6 +177,8 @@ export class WebhookService {
       companyId,
       contact.id,
       whatsappConnectionId,
+      undefined,
+      departmentId,
     );
 
     // Guarda se a conversa já existia antes do upsert

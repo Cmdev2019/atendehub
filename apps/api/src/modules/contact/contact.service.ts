@@ -8,10 +8,14 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { ListContactsDto } from './dto/list-contacts.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class ContactService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   // ── Listar contatos com paginação e filtros ───────────────────────────────
   async findAll(companyId: string, query: ListContactsDto) {
@@ -144,15 +148,25 @@ export class ContactService {
   }
 
   // ── Remover contato ───────────────────────────────────────────────────────
-  async remove(companyId: string, id: string) {
+  async remove(companyId: string, id: string, requesterId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, companyId },
-      select: { name: true },
+      select: { name: true, phone: true },
     });
 
     if (!contact) throw new NotFoundException('Contato não encontrado');
 
     await this.prisma.contact.delete({ where: { id } });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'contact.deleted',
+      entity: 'Contact',
+      entityId: id,
+      before: { name: contact.name, phone: contact.phone },
+    });
+
     return { message: `Contato "${contact.name}" removido com sucesso` };
   }
 

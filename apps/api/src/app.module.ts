@@ -10,6 +10,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { UserModule } from './modules/user/user.module';
 import { DepartmentModule } from './modules/department/department.module';
+import { QueueModule } from './modules/queue/queue.module';
+import { TagModule } from './modules/tag/tag.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
@@ -17,6 +19,9 @@ import { MessageModule } from './modules/message/message.module';
 import { NoteModule } from './modules/note/note.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { EventsModule } from './modules/events/events.module';
+import { SlaModule } from './modules/sla/sla.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -64,6 +69,10 @@ import { EventsModule } from './modules/events/events.module';
     CompanyModule,
     UserModule,
     DepartmentModule,
+    QueueModule,
+    TagModule,
+    NotificationModule,
+    AuditLogModule,
     // ── WhatsApp ─────────────────────────────────────────────────────────────
     WhatsappModule,
     // ── Atendimento ──────────────────────────────────────────────────────────
@@ -75,6 +84,8 @@ import { EventsModule } from './modules/events/events.module';
     EventsModule,
     // ── Integrações ───────────────────────────────────────────────────────────
     WebhookModule,
+    // ── SLA ──────────────────────────────────────────────────────────────────
+    SlaModule,
   ],
   providers: [
     // Aplica rate limiting globalmente. Sem isso, o ThrottlerModule.forRoot()

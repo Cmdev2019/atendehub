@@ -12,6 +12,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 // Campos seguros para retornar — nunca expõe passwordHash
 const USER_SELECT = {
@@ -30,7 +31,10 @@ const USER_SELECT = {
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   // ── Listar com paginação e filtros ────────────────────────────────────────
   async findAll(companyId: string, query: ListUsersDto) {
@@ -117,7 +121,7 @@ export class UserService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
-    return this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         companyId,
         name: dto.name,
@@ -129,21 +133,48 @@ export class UserService {
       },
       select: USER_SELECT,
     });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'user.created',
+      entity: 'User',
+      entityId: created.id,
+      after: { name: created.name, email: created.email, role: created.role },
+    });
+
+    return created;
   }
 
   // ── Atualizar usuário ─────────────────────────────────────────────────────
-  async update(companyId: string, id: string, dto: UpdateUserDto) {
-    await this.findOne(companyId, id); // garante que pertence à empresa
+  async update(companyId: string, id: string, dto: UpdateUserDto, requesterId: string) {
+    const before = await this.findOne(companyId, id); // garante que pertence à empresa
 
     if (dto.role === Role.SUPER_ADMIN) {
       throw new ForbiddenException('Não é permitido atribuir role SUPER_ADMIN');
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: USER_SELECT,
     });
+
+    // Mudança de role é a ação sensível aqui — edições de nome/telefone/avatar
+    // não entram na auditoria v1 (decisão B1-4, ver Registro de decisões)
+    if (dto.role && dto.role !== before.role) {
+      await this.auditLog.record({
+        companyId,
+        userId: requesterId,
+        action: 'user.role_changed',
+        entity: 'User',
+        entityId: id,
+        before: { role: before.role },
+        after: { role: updated.role },
+      });
+    }
+
+    return updated;
   }
 
   // ── Trocar senha ──────────────────────────────────────────────────────────
@@ -176,10 +207,22 @@ export class UserService {
 
     await this.findOne(companyId, id);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: { isActive: false },
       select: USER_SELECT,
     });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'user.deactivated',
+      entity: 'User',
+      entityId: id,
+      before: { isActive: true },
+      after: { isActive: false },
+    });
+
+    return updated;
   }
 }
