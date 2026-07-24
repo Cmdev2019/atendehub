@@ -5,12 +5,12 @@
 > trabalho (humana ou com Claude) deve atualizar os status dos itens, o painel
 > de progresso e registrar uma entrada no [Changelog](#-changelog).
 >
-> **Última atualização:** 2026-07-24 · **🏁 FASE 8 CONCLUÍDA POR COMPLETO**
-> (12/12) — backend fechado (B7) e F8-7/F8-8 concluídos na mesma sessão.
-> **Próxima ação:** só restam itens puramente de frontend deixados em
-> aberto de propósito quando o `ROADMAP_BACKEND.md` fechou: F3-4 (badge de
-> SLA na fila), metade de F6-4 (limpar `console.log` de conteúdo de
-> mensagem em `useConversations.js`) e metade de F7-1 (CI do front).
+> **Última atualização:** 2026-07-24 · Backend fechado (B7), Fase 8 concluída
+> (12/12) e agora Fase 3 também concluída (5/5, F3-4 fechou o badge de SLA).
+> **Próxima ação:** só restam 2 itens residuais, ambos parciais (metade
+> backend já ✅, metade frontend ainda aberta): F6-4 (limpar `console.log`
+> de conteúdo de mensagem em `useConversations.js:48,64`) e F7-1 (CI do
+> front — reaproveitar o padrão de `.github/workflows/api-ci.yml`).
 
 ---
 
@@ -21,13 +21,13 @@
 | [Fase 0](#-fase-0--religar-frontend--backend) | Religar frontend ↔ backend | 🔴 P0 | 13/13 | ✅ Concluída |
 | [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 11/11 | ✅ Concluída |
 | [Fase 2](#-fase-2--modo-demo-explícito-e-resiliência) | Modo demo explícito e resiliência | 🟠 P1 | 8/8 | ✅ Concluída |
-| [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 4/5 | 🔄 Em andamento (backend ✅ via B2; falta F3-4, frontend) |
+| [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 5/5 | ✅ Concluída |
 | [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 6/6 | ✅ Concluída (via B4, `ROADMAP_BACKEND.md`) |
 | [Fase 5](#-fase-5--higiene-do-repositório-e-documentação) | Higiene do repo e documentação | 🟡 P2 | 5/5 | ✅ Concluída |
 | [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 4/5 | 🔄 Em andamento (backend ✅ via B5; falta metade de F6-4, frontend) |
 | [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 4/5 | 🔄 Em andamento (backend ✅ via B6; falta metade de F7-1, CI do frontend) |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 12/12 | ✅ Concluída |
-| **Total** | | | **67/68** | |
+| **Total** | | | **68/68** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -118,7 +118,7 @@
 | F3-1 | Criar `SlaModule`: registrar `SlaCheckProcessor` como provider + `BullModule.registerQueue({ name: QUEUE_NAMES.SLA_CHECK })` + importar `EventsModule`; adicionar ao `AppModule`. **Aceite:** log do Nest mostra o processor registrado no boot. **Feito via B2-2** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/sla/sla-check.processor.ts:29-30` · `apps/api/src/app.module.ts` · `apps/api/src/shared/queues/queue-names.ts:9` | ✅ 2026-07-22 |
 | F3-2 | Produtor de jobs: quando uma conversa entra em `WAITING` numa `Queue` com `maxWaitSecs`, enfileirar `SlaCheckJobData` com `delay = maxWaitSecs * 1000`. Pontos prováveis: criação de conversa no webhook e mudança de status no `conversation.service`. **Feito via B2-3** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/webhook/webhook.processor.ts` · `apps/api/src/modules/conversation/conversation.service.ts` | ✅ 2026-07-22 |
 | F3-3 | Idempotência e cancelamento: `jobId` determinístico por conversa (evitar jobs duplicados); confirmar que atribuição antes do prazo não gera alerta (o processor reconsulta o status — validar em teste). **Feito via B2-4** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/sla/sla-check.processor.ts:46-60` | ✅ 2026-07-22 |
-| F3-4 | Frontend: ouvir `sla.breached` e destacar visualmente a conversa na fila (badge/cor). Depende de F0-2/F0-3. **Ainda pendente** — é o único item de F3 que não tem equivalente no `ROADMAP_BACKEND.md` (todo o trabalho de lá foi backend-only por decisão). Primeiro item natural pra retomar em Fase 3 quando o front voltar a ser a frente ativa (B7-3). | `src/hooks/useConversations.js` · `src/components/ConversationQueue.jsx` | ⬜ |
+| F3-4 | Frontend: ouvir `sla.breached` e destacar visualmente a conversa na fila (badge/cor). Depende de F0-2/F0-3. **Concluído:** `useConversations.js` ganhou 3 handlers novos — `sla.breached` marca `conv.slaBreached = true`; `conversation.assigned` (evento **próprio**, distinto de `conversation.updated` — o backend emite os dois separadamente em `ConversationService#assign`, e o front nunca tinha ouvido esse primeiro) limpa a flag quando um agente é atribuído (mesmo momento em que o backend cancela o job de SLA pendente); `conversation.updated` também limpa a flag quando `changes.status` sai de `WAITING` por qualquer outro caminho. `ConversationQueue.jsx` renderiza um badge "⚠ SLA" vermelho + fundo destacado no item da fila via classe `.sla-breached` nova. **Achado no caminho:** `conversation.assigned` já estava no whitelist de eventos repassados pelo `websocket.js` (`BACKEND_EVENTS`) mas **nenhum lugar do front nunca escutava**, desde sempre — descoberto ao rastrear como a UI deveria saber que uma conversa foi assumida. **Validado com Playwright real no navegador** (injeção temporária de `slaBreached:true` numa fixture do mock, revertida logo após o screenshot — sem socket real de teste disponível pra simular o breach de ponta a ponta): badge e destaque visual renderizam corretamente. | `src/hooks/useConversations.js` · `src/components/ConversationQueue.jsx` · `src/styles.css` | ✅ 2026-07-24 |
 | F3-5 | Teste E2E com SLA curto (ex.: fila com `maxWaitSecs = 10`): conversa não atribuída em 10s dispara `sla.breached`, marca `slaBreachedAt` e registra auditoria. Evidência no Changelog. **Feito via B2-5** (`ROADMAP_BACKEND.md`, 2026-07-24) — `apps/api/test/sla.e2e-spec.ts`. | seed/fila de teste | ✅ 2026-07-24 |
 
 ---
@@ -240,6 +240,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-24 | **🏁 FASE 3 CONCLUÍDA — F3-4, badge de SLA na fila.** `useConversations.js` ganhou 3 handlers de socket novos: `sla.breached` marca `conv.slaBreached`; `conversation.assigned` (evento próprio do backend, distinto de `conversation.updated` — descoberto no caminho que já era repassado pelo `websocket.js` mas nunca escutado por ninguém no front) limpa a flag ao atribuir agente; `conversation.updated` também limpa ao sair de `WAITING` por qualquer outro caminho. `ConversationQueue.jsx` renderiza badge "⚠ SLA" + destaque visual (`.sla-breached` novo em `styles.css`). Fecha a Fase 3 inteira. | F3-4 | `npm test`: 9 suites, **98/98** (3 novos) · `vite build` → OK · validação visual real com Playwright (injeção temporária de fixture, revertida) |
 | 2026-07-24 | **🏁 FASE 8 CONCLUÍDA — F8-8, filas por setor + vínculo conexão↔setor.** Nova seção "Filas de distribuição" em Configurações (ADMIN+): CRUD completo de `Queue` (nome, estratégia, tempo máx. de espera, mensagem de saudação, setor vinculado), ativar/desativar. `WhatsappSection` ganhou seletor de setor na criação de conexão, com o vínculo exibido na lista. | F8-8 | `npm test`: 9 suites, 95/95 (inalterado) · `vite build` → OK · validação real com Playwright (criar/editar/desativar fila, criar conexão com setor vinculado — tudo refletido corretamente na UI) |
 | 2026-07-24 | **F8-7 — perfil próprio (nome/telefone/avatar/senha), primeiro item de frontend desde a retomada da Fase 8.** Nova seção "Meu perfil" em Configurações (visível a qualquer usuário, não só admin): edição de nome/telefone, upload de avatar (multipart, restrito a imagem) e troca de senha, todas usando endpoints já prontos do backend (B3, `ROADMAP_BACKEND.md`). `AuthContext.updateUser()` novo pra refletir a edição no Topbar sem precisar de novo login. **Achado e corrigido no caminho:** bug real no mock de `refreshToken()` (token sem id do usuário embutido, quebrando `getCurrentUser()` após o 1º refresh) — só apareceu ao validar de verdade no navegador, não em `npm test`; corrigido com teste de regressão novo. | F8-7 | `npm test`: 9 suites, **95/95** (1 novo) · `vite build` → OK · validação real com Playwright (login mock → editar perfil → upload de avatar → trocar senha, sem erro de console novo) |
 | 2026-07-24 | **🏁 BACKEND FECHADO — B7 (handoff), todo o `ROADMAP_BACKEND.md` de B1 a B7 (28/31, só B3 ficou pendente antes de fechar e foi concluído na mesma sessão).** Sessão contínua fechou as Fases B5 (segurança pré-produção), B6 (backend pronto para produção), B3 (perfil de usuário) e B7 (handoff) inteiras — detalhe completo de cada item em `ROADMAP_BACKEND.md`. Refletido aqui: Fases 3/4/6/7 deste documento tiveram seus itens de backend marcados ✅ com referência ao item B-equivalente (F3-1/2/3/5→B2, F4-1..6→B4, F6-1..3/5→B5, F7-2..5→B6/B2-6); **3 itens ficam deliberadamente abertos** por serem puramente de frontend (fora do escopo backend-only da B-fase): F3-4 (badge visual de SLA na fila), metade de F6-4 (`console.log` de conteúdo de mensagem em `useConversations.js:48,64`) e metade de F7-1 (CI do front). `docs/API_CONTRACT.md` atualizado com os endpoints novos (tags/queues/notifications/audit-log já estavam de B1; adicionado agora `PATCH /users/me`, `POST /users/me/avatar`, `GET /health/ready`). Handoff (B7-2) validado com `prisma migrate reset --force` + seed do zero (autorizado pelo usuário — havia tráfego real de teste no banco de dev), `npx jest` 164/164, `tsc --noEmit` limpo, `docker compose up` nominal (postgres/redis/minio/evolution healthy), checklist de segurança da B5 revisado item a item. | F3-1, F3-2, F3-3, F3-5, F4-1..F4-6, F6-1, F6-2, F6-3, F6-5, F7-2..F7-5 | `ROADMAP_BACKEND.md` — changelog completo de 2026-07-24 (Fases B3, B5, B6, B7) |

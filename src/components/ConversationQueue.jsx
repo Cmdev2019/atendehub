@@ -45,10 +45,10 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
             'button',
             {
               key: conv.id,
-              className: `queue-item${activeId === conv.id ? ' active' : ''}`,
+              className: `queue-item${activeId === conv.id ? ' active' : ''}${conv.slaBreached ? ' sla-breached' : ''}`,
               type: 'button',
               onClick: () => onSelect(conv.id),
-              title: conv.contact,
+              title: conv.slaBreached ? `${conv.contact} — SLA de espera estourado` : conv.contact,
             },
             h('div', { className: 'queue-item-avatar' },
               conv.avatarUrl
@@ -57,7 +57,18 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
             h(
               'div',
               { className: 'queue-item-content' },
-              h('div', { className: 'queue-item-name' }, conv.contact),
+              h(
+                'div',
+                { className: 'queue-item-name' },
+                conv.contact,
+                conv.slaBreached &&
+                  h(
+                    'span',
+                    { className: 'queue-item-sla-badge' },
+                    h(Icon, { name: 'warning', size: 11 }),
+                    ' SLA',
+                  ),
+              ),
               h('div', { className: 'queue-item-preview' },
                 (conv.messages && conv.messages[conv.messages.length - 1]?.text) ||
                 conv.summary ||

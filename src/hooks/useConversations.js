@@ -218,8 +218,56 @@ export function useConversations() {
 
       console.log('🔄 Conversa atualizada', conversationId);
       setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== conversationId) return conv;
+          const next = { ...conv, ...(changes ?? {}) };
+          // Saiu de WAITING por qualquer caminho (não só atribuição de
+          // agente, ver conversation.assigned abaixo) — o alerta de SLA
+          // deixa de fazer sentido.
+          if (changes?.status && changes.status !== 'WAITING') {
+            next.slaBreached = false;
+          }
+          return next;
+        }),
+      );
+    });
+
+    // Payload: { companyId, conversationId, agentId, departmentId, agent }
+    // Emitido por PATCH /conversations/:id/assign — distinto de
+    // conversation.updated (o backend usa um evento próprio pra atribuição).
+    wsClient.on('conversation.assigned', (payload) => {
+      const { conversationId, agentId, agent } = payload ?? {};
+      if (!conversationId) return;
+
+      setConversations((prev) =>
         prev.map((conv) =>
-          conv.id === conversationId ? { ...conv, ...(changes ?? {}) } : conv,
+          conv.id === conversationId
+            ? {
+                ...conv,
+                agent: agent?.name || null,
+                // Atribuir agente sempre encerra a espera — o backend já
+                // cancela o job de SLA pendente nesse momento
+                // (ConversationService#assign).
+                slaBreached: agentId ? false : conv.slaBreached,
+              }
+            : conv,
+        ),
+      );
+    });
+
+    // Payload: { companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }
+    // Destaque visual na fila (F3-4) — a conversa segue WAITING além do
+    // maxWaitSecs da fila; some ao ser atribuída ou sair de WAITING (acima).
+    wsClient.on('sla.breached', (payload) => {
+      const conversationId = payload?.conversationId;
+      if (!conversationId) return;
+
+      console.log('⚠️ SLA estourado na conversa', conversationId);
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === conversationId
+            ? { ...conv, slaBreached: true, slaBreachedAt: payload.breachedAt }
+            : conv,
         ),
       );
     });
@@ -230,6 +278,8 @@ export function useConversations() {
       wsClient.off('message.new');
       wsClient.off('message.updated');
       wsClient.off('conversation.updated');
+      wsClient.off('conversation.assigned');
+      wsClient.off('sla.breached');
     };
   }, []);
 

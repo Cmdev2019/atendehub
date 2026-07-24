@@ -359,6 +359,99 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  it('marca slaBreached ao receber sla.breached do WebSocket (F3-4)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+    });
+
+    // Payload real do backend: { companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }
+    const slaBreachedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'sla.breached'
+    )[1];
+
+    act(() => {
+      slaBreachedHandler({
+        companyId: 'company-1',
+        conversationId: '1',
+        waitTimeSeconds: 320,
+        maxWaitSecs: 300,
+        breachedAt: '2026-07-24T12:00:00.000Z',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversations[0].slaBreached).toBe(true);
+    });
+  });
+
+  it('limpa slaBreached ao receber conversation.assigned com agentId (F3-4)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', status: 'WAITING', slaBreached: true, messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations[0].slaBreached).toBe(true);
+    });
+
+    // Payload real do backend: { companyId, conversationId, agentId, departmentId, agent }
+    const assignedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.assigned'
+    )[1];
+
+    act(() => {
+      assignedHandler({
+        companyId: 'company-1',
+        conversationId: '1',
+        agentId: 'agent-1',
+        agent: { id: 'agent-1', name: 'Ana', avatarUrl: null },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversations[0].slaBreached).toBe(false);
+      expect(result.current.conversations[0].agent).toBe('Ana');
+    });
+  });
+
+  it('limpa slaBreached ao receber conversation.updated com status fora de WAITING (F3-4)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', status: 'WAITING', slaBreached: true, messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations[0].slaBreached).toBe(true);
+    });
+
+    const conversationUpdatedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.updated'
+    )[1];
+
+    act(() => {
+      conversationUpdatedHandler({
+        conversationId: '1',
+        companyId: 'company-1',
+        changes: { status: 'CLOSED' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversations[0].slaBreached).toBe(false);
+    });
+  });
+
   it('adiciona conversa nova na fila ao receber conversation.created', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [] }],

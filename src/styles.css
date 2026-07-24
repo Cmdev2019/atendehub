@@ -544,6 +544,27 @@ button {
   padding-left: 5px;
 }
 
+/* SLA de espera estourado (evento sla.breached, F3-4) — some quando a
+   conversa é atribuída ou muda de status (ver useConversations.js) */
+.queue-item.sla-breached {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.queue-item.sla-breached.active {
+  border-left-color: #dc2626;
+}
+
+.queue-item-sla-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #b91c1c;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .queue-item-avatar {
   width: 40px;
   height: 40px;
