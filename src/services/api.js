@@ -1,6 +1,17 @@
 // API Service - Cliente HTTP para backend com fallback para mock (somente em dev)
 import { mockApiClient } from './apiMock';
 
+// Converte um File em data URL — usado só no fallback mock do upload de
+// avatar (sem backend/MinIO real, a "URL" vira o próprio base64 da imagem)
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 // Mock nunca é permitido fora de desenvolvimento: em produção uma API fora
@@ -242,6 +253,20 @@ class ApiClient {
     if (resource === 'users') {
       if (!id && method === 'GET') return mockApiClient.getUsers();
       if (!id && method === 'POST') return mockApiClient.createUser(body);
+      if (id === 'me' && sub === 'avatar' && method === 'POST') {
+        const file = options.body instanceof FormData ? options.body.get('file') : null;
+        if (!file) throw new ApiError(400, 'Arquivo de avatar ausente ou vazio');
+        const dataUrl = await fileToDataUrl(file);
+        const currentUser = await mockApiClient.getCurrentUser();
+        return mockApiClient.uploadAvatar(currentUser.id, dataUrl);
+      }
+      if (id === 'me' && !sub && method === 'PATCH') {
+        const currentUser = await mockApiClient.getCurrentUser();
+        return mockApiClient.updateOwnProfile(currentUser.id, body);
+      }
+      if (id && sub === 'password' && method === 'PATCH') {
+        return mockApiClient.changePassword(id, body);
+      }
       if (id && method === 'PATCH') return mockApiClient.updateUser(id, body);
       if (id && method === 'DELETE') return mockApiClient.deleteUser(id);
     }
@@ -383,6 +408,30 @@ class ApiClient {
 
   async deleteUser(id) {
     return this.request(`/users/${id}`, { method: 'DELETE' });
+  }
+
+  // Auto-edição do próprio perfil (F8-7) — nunca aceita role/isActive
+  async updateOwnProfile(data) {
+    return this.request('/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async uploadAvatar(file) {
+    const form = new FormData();
+    form.append('file', file, file.name || 'avatar.png');
+    return this.request('/users/me/avatar', {
+      method: 'POST',
+      body: form,
+    });
+  }
+
+  async changePassword(id, data) {
+    return this.request(`/users/${id}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   }
 
   // DEPARTMENTS (grupos/setores)

@@ -114,6 +114,21 @@ describe('Mock API Client', () => {
     });
   });
 
+  describe('refreshToken', () => {
+    it('preserva a identidade do usuário — getCurrentUser continua funcionando após o refresh', async () => {
+      // Regressão: o token gerado pelo refresh não embutia o id do usuário
+      // (`token_<ts>` em vez de `token_<id>_<ts>`), quebrando getCurrentUser()
+      // com "Usuário não encontrado" depois do 1º refresh — descoberto ao
+      // implementar o perfil próprio (F8-7), que depende de getCurrentUser()
+      // pra resolver "quem sou eu" nas rotas /users/me.
+      await mockApiClient.login('admin@demo.com', 'Admin@123');
+      await mockApiClient.refreshToken();
+
+      const user = await mockApiClient.getCurrentUser();
+      expect(user.email).toBe('admin@demo.com');
+    });
+  });
+
   describe('getConversations', () => {
     it('retorna array de conversas com wrapper {data,meta} do contrato', async () => {
       const response = await mockApiClient.getConversations();

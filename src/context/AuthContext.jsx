@@ -62,6 +62,13 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Atualiza o usuário em memória sem precisar de novo login/refresh —
+  // usado após editar o próprio perfil ou trocar o avatar (F8-7), pra
+  // Topbar/Sidebar refletirem a mudança na hora.
+  const updateUser = useCallback((patch) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       // Desconectar WebSocket primeiro
@@ -81,6 +88,7 @@ export function AuthProvider({ children }) {
     error,
     login,
     logout,
+    updateUser,
     isAuthenticated: !!user,
   };
 

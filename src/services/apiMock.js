@@ -159,7 +159,13 @@ export class MockApiClient {
 
   async refreshToken() {
     await this.simulateDelay();
-    const newToken = `token_${Date.now()}`;
+    // Preserva o id do usuário embutido no token (formato `token_<id>_<ts>`,
+    // igual ao login) — sem isso, getCurrentUser() (usado por qualquer
+    // rota "/me") quebra com "Usuário não encontrado" após o 1º refresh.
+    // O socket em modo mock reconecta com token inválido e dispara vários
+    // refreshes automáticos, então esse bug aparecia rápido na prática.
+    const userId = this.token?.split('_')[1];
+    const newToken = userId ? `token_${userId}_${Date.now()}` : `token_${Date.now()}`;
     this.setToken(newToken);
     return { accessToken: newToken };
   }
@@ -246,6 +252,36 @@ export class MockApiClient {
       d.users = d.users.filter((u) => u.id !== id);
     });
     return { success: true };
+  }
+
+  // ── Perfil próprio (F8-7) ───────────────────────────────────────────────────
+  // mockUsersList (editável por admin) e mockUsers (dict de login, chave por
+  // e-mail) são estruturas separadas — atualiza as duas pra getCurrentUser()
+  // continuar consistente depois de um refresh de página.
+  async updateOwnProfile(id, data) {
+    await this.simulateDelay();
+    const user = mockUsersList.find((u) => u.id === id);
+    if (!user) throw { status: 404, message: 'Usuário não encontrado' };
+    Object.assign(user, data);
+    const loginEntry = Object.values(mockUsers).find((u) => u.id === id);
+    if (loginEntry) Object.assign(loginEntry, data);
+    return user;
+  }
+
+  async uploadAvatar(id, dataUrl) {
+    return this.updateOwnProfile(id, { avatarUrl: dataUrl });
+  }
+
+  async changePassword(id, data) {
+    await this.simulateDelay();
+    const user = mockUsersList.find((u) => u.id === id);
+    if (!user) throw { status: 404, message: 'Usuário não encontrado' };
+    if (!data?.currentPassword) {
+      throw { status: 400, message: 'Senha atual incorreta' };
+    }
+    // Mock não guarda hash de senha real — simula sucesso sempre que a senha
+    // atual foi informada (validação de força já ocorre no form do front)
+    return { message: 'Senha atualizada com sucesso' };
   }
 
   // ── DEPARTMENTS ────────────────────────────────────────────────────────────

@@ -408,6 +408,171 @@ function UsersSection({ canManage }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seção: Meu perfil (F8-7) — visível a qualquer usuário autenticado
+// ─────────────────────────────────────────────────────────────────────────────
+function getInitials(name) {
+  return (name || '?')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function ProfileSection() {
+  const { user, updateUser } = useAuth();
+  const [form, setForm] = useState({ name: user?.name ?? '', phone: user?.phone ?? '' });
+  const [profileError, setProfileError] = useState(null);
+  const [profileSuccess, setProfileSuccess] = useState(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+
+  const [avatarError, setAvatarError] = useState(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '' });
+  const [pwError, setPwError] = useState(null);
+  const [pwSuccess, setPwSuccess] = useState(null);
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+    try {
+      const updated = await apiClient.updateOwnProfile({
+        name: form.name.trim(),
+        phone: form.phone.trim() || undefined,
+      });
+      updateUser(updated);
+      setProfileSuccess('Perfil atualizado.');
+    } catch (err) {
+      setProfileError(errMsg(err));
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const pickAvatar = () => fileInputRef.current?.click();
+
+  const onAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois
+    if (!file) return;
+
+    setAvatarBusy(true);
+    setAvatarError(null);
+    try {
+      const updated = await apiClient.uploadAvatar(file);
+      updateUser(updated);
+    } catch (err) {
+      setAvatarError(errMsg(err));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const setPwField = (field) => (e) => setPwForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const submitPasswordChange = async (e) => {
+    e.preventDefault();
+    setPwBusy(true);
+    setPwError(null);
+    setPwSuccess(null);
+    try {
+      await apiClient.changePassword(user.id, pwForm);
+      setPwForm({ currentPassword: '', newPassword: '' });
+      setPwSuccess('Senha atualizada com sucesso.');
+    } catch (err) {
+      setPwError(errMsg(err));
+    } finally {
+      setPwBusy(false);
+    }
+  };
+
+  return h(
+    'div',
+    { className: 'settings-section' },
+    h('h3', null, h(Icon, { name: 'user', size: 17 }), ' Meu perfil'),
+    h('p', { className: 'settings-hint' }, 'Seus dados pessoais e foto de perfil.'),
+
+    profileError && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${profileError}`),
+    profileSuccess && h('div', { className: 'settings-success', role: 'status' }, h(Icon, { name: 'check', size: 15 }), ` ${profileSuccess}`),
+
+    h(
+      'div',
+      { className: 'settings-avatar-row' },
+      h(
+        'div',
+        { className: 'settings-avatar' },
+        user?.avatarUrl
+          ? h('img', { src: user.avatarUrl, alt: '', className: 'avatar-img' })
+          : getInitials(user?.name),
+      ),
+      h(
+        'div',
+        null,
+        h('input', {
+          ref: fileInputRef,
+          type: 'file',
+          accept: 'image/*',
+          style: { display: 'none' },
+          onChange: onAvatarChange,
+        }),
+        h(
+          'button',
+          { className: 'settings-btn', type: 'button', disabled: avatarBusy, onClick: pickAvatar },
+          h(Icon, { name: 'camera', size: 14 }),
+          avatarBusy ? ' Enviando…' : ' Trocar foto',
+        ),
+        avatarError && h('div', { className: 'settings-error', role: 'alert', style: { marginTop: 8 } }, h(Icon, { name: 'warning', size: 15 }), ` ${avatarError}`),
+      ),
+    ),
+
+    h(
+      'form',
+      { className: 'settings-form-grid', onSubmit: saveProfile },
+      h('input', {
+        className: 'settings-input', placeholder: 'Nome completo', required: true,
+        maxLength: 120, value: form.name,
+        onChange: (e) => setForm((f) => ({ ...f, name: e.target.value })),
+      }),
+      h('input', {
+        className: 'settings-input', placeholder: 'Telefone (opcional)',
+        value: form.phone,
+        onChange: (e) => setForm((f) => ({ ...f, phone: e.target.value })),
+      }),
+      h('button', { className: 'settings-btn primary', type: 'submit', disabled: profileBusy || !form.name.trim() },
+        h(Icon, { name: 'check', size: 14 }), ' Salvar'),
+    ),
+
+    h('hr', { className: 'settings-divider' }),
+
+    h('h3', null, h(Icon, { name: 'lock', size: 17 }), ' Alterar senha'),
+    pwError && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${pwError}`),
+    pwSuccess && h('div', { className: 'settings-success', role: 'status' }, h(Icon, { name: 'check', size: 15 }), ` ${pwSuccess}`),
+
+    h(
+      'form',
+      { className: 'settings-form-grid', onSubmit: submitPasswordChange },
+      h('input', {
+        className: 'settings-input', type: 'password', placeholder: 'Senha atual',
+        required: true, value: pwForm.currentPassword, onChange: setPwField('currentPassword'),
+      }),
+      h('input', {
+        className: 'settings-input', type: 'password',
+        placeholder: 'Nova senha (mín. 8, com maiúscula, minúscula e número)',
+        required: true, minLength: 8, value: pwForm.newPassword, onChange: setPwField('newPassword'),
+      }),
+      h('button', { className: 'settings-btn primary', type: 'submit', disabled: pwBusy },
+        h(Icon, { name: 'lock', size: 14 }), ' Atualizar senha'),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Seção: Grupos (setores/departamentos)
 // ─────────────────────────────────────────────────────────────────────────────
 function GroupsSection() {
@@ -613,6 +778,7 @@ export function SettingsPanel() {
   const canViewUsers = canManage || role === 'SUPERVISOR';
 
   const sections = [
+    { id: 'profile', label: 'Meu perfil', icon: 'user', visible: true },
     { id: 'appearance', label: 'Aparência', icon: 'palette', visible: true },
     { id: 'whatsapp', label: 'Conexões WhatsApp', icon: 'smartphone', visible: canManage },
     { id: 'users', label: 'Usuários e níveis', icon: 'user', visible: canViewUsers },
@@ -645,6 +811,7 @@ export function SettingsPanel() {
     h(
       'div',
       { className: 'settings-content' },
+      active === 'profile' && h(ProfileSection),
       active === 'appearance' && h(AppearanceSection),
       active === 'whatsapp' && canManage && h(WhatsappSection),
       active === 'users' && canViewUsers && h(UsersSection, { canManage }),
