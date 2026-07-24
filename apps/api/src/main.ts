@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import * as compression from 'compression';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './shared/websocket/redis-io.adapter';
+import { createWinstonLogger } from './shared/logging/winston.logger';
+import { RequestIdMiddleware } from './shared/logging/request-id.middleware';
 
 // ── Placeholders inseguros que jamais devem ser usados em produção ────────────
 const INSECURE_PLACEHOLDERS = [
@@ -19,16 +21,20 @@ const INSECURE_PLACEHOLDERS = [
 async function bootstrap() {
   // 'debug' inclui dados de payload (ex.: telefone do contato em cada
   // mensagem processada no webhook) — nunca em produção, mesmo que alguém
-  // ligue debug manualmente depois via variável de ambiente do Nest.
+  // tente ligar via variável de ambiente depois (o nível já vem travado
+  // aqui, ver winston.logger.ts).
   const isProduction = process.env.NODE_ENV === 'production';
-  const logLevels = isProduction
-    ? (['error', 'warn', 'log'] as const)
-    : (['error', 'warn', 'log', 'debug'] as const);
 
   const app = await NestFactory.create(AppModule, {
-    logger: [...logLevels],
+    logger: createWinstonLogger(isProduction),
     bodyParser: false, // registrado manualmente abaixo com limites por rota
   });
+
+  // ── Request ID (B6-3) ───────────────────────────────────────────────────────
+  // Primeiro middleware da cadeia — todo log emitido depois daqui (incluindo
+  // dentro do body parser, guards, services) já enxerga o mesmo requestId.
+  const requestIdMiddleware = new RequestIdMiddleware();
+  app.use((req: any, res: any, next: any) => requestIdMiddleware.use(req, res, next));
 
   // ── Body parser com limite por rota ────────────────────────────────────────
   // Webhooks da Evolution chegam com mídia embutida em base64 (webhookBase64)

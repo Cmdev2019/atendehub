@@ -1,4 +1,4 @@
-import { Process, Processor } from '@nestjs/bull';
+import { OnQueueFailed, OnQueueStalled, Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { WebhookService } from './webhook.service';
@@ -49,5 +49,21 @@ export class WebhookProcessor {
       // Propaga o erro para que o Bull registre a falha e tente novamente
       throw err;
     }
+  }
+
+  // ── Observabilidade (B6-3) ──────────────────────────────────────────────────
+  // Distinto do catch acima: dispara uma vez quando o job esgota todas as
+  // tentativas (falha definitiva) ou fica parado (worker morreu no meio do
+  // processamento) — não por tentativa individual.
+  @OnQueueFailed()
+  onFailed(job: Job<WebhookJobData>, err: Error): void {
+    this.logger.error(
+      `Job ${job.id} falhou definitivamente após ${job.attemptsMade} tentativa(s): ${err.message}`,
+    );
+  }
+
+  @OnQueueStalled()
+  onStalled(job: Job<WebhookJobData>): void {
+    this.logger.warn(`Job ${job.id} travado (stalled) — worker pode ter caído no meio do processamento`);
   }
 }

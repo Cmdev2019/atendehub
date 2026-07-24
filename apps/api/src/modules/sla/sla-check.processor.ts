@@ -1,4 +1,4 @@
-import { Process, Processor } from '@nestjs/bull';
+import { OnQueueFailed, OnQueueStalled, Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { ConversationStatus, Role } from '@prisma/client';
@@ -166,5 +166,23 @@ export class SlaCheckProcessor {
       // faria uma falha transitória de banco perder o alerta de SLA para sempre.
       throw err;
     }
+  }
+
+  // ── Observabilidade (B6-3) ──────────────────────────────────────────────────
+  // Aqui importa mais que no webhook: um job de SLA que falha definitivamente
+  // é um alerta de SLA que nunca chegou a ninguém — silenciosamente.
+  @OnQueueFailed()
+  onFailed(job: Job<SlaCheckJobData>, err: Error): void {
+    this.logger.error(
+      `Job ${job.id} (conversa ${job.data.conversationId}) falhou definitivamente após ` +
+        `${job.attemptsMade} tentativa(s): ${err.message}`,
+    );
+  }
+
+  @OnQueueStalled()
+  onStalled(job: Job<SlaCheckJobData>): void {
+    this.logger.warn(
+      `Job ${job.id} (conversa ${job.data.conversationId}) travado (stalled)`,
+    );
   }
 }

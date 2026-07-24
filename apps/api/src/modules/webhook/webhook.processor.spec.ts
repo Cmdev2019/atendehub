@@ -34,4 +34,17 @@ describe('WebhookProcessor', () => {
 
     await expect(processor.handleWebhookEvent(job)).rejects.toThrow('DB fora do ar');
   });
+
+  // B6-3: observabilidade de jobs falhos/travados
+  describe('onFailed / onStalled', () => {
+    it('não lança ao registrar um job que falhou definitivamente', () => {
+      const job = { id: 3, attemptsMade: 3 } as any;
+      expect(() => processor.onFailed(job, new Error('esgotou tentativas'))).not.toThrow();
+    });
+
+    it('não lança ao registrar um job travado', () => {
+      const job = { id: 4 } as any;
+      expect(() => processor.onStalled(job)).not.toThrow();
+    });
+  });
 });

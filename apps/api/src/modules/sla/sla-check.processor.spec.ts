@@ -108,4 +108,15 @@ describe('SlaCheckProcessor', () => {
 
     await expect(processor.handleSlaCheck(makeJob())).rejects.toThrow('conexão perdida');
   });
+
+  // B6-3: observabilidade de jobs falhos/travados
+  describe('onFailed / onStalled', () => {
+    it('não lança ao registrar um job de SLA que falhou definitivamente', () => {
+      expect(() => processor.onFailed(makeJob(), new Error('esgotou tentativas'))).not.toThrow();
+    });
+
+    it('não lança ao registrar um job de SLA travado', () => {
+      expect(() => processor.onStalled(makeJob())).not.toThrow();
+    });
+  });
 });
