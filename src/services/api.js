@@ -284,6 +284,13 @@ class ApiClient {
       if (id && method === 'DELETE') return mockApiClient.deleteDepartment(id);
     }
 
+    if (resource === 'queues') {
+      if (!id && method === 'GET') return mockApiClient.getQueues();
+      if (!id && method === 'POST') return mockApiClient.createQueue(body);
+      if (id && method === 'PATCH') return mockApiClient.updateQueue(id, body);
+      if (id && method === 'DELETE') return mockApiClient.deleteQueue(id);
+    }
+
     if (resource === 'whatsapp') {
       if (!id && method === 'GET') return mockApiClient.getWhatsappConnections();
       if (!id && method === 'POST') return mockApiClient.createWhatsappConnection(body);
@@ -472,6 +479,29 @@ class ApiClient {
     return this.request(`/departments/${departmentId}/users/${userId}`, {
       method: 'DELETE',
     });
+  }
+
+  // QUEUES (filas de distribuição)
+  async getQueues() {
+    return this.request('/queues', { method: 'GET' });
+  }
+
+  async createQueue(data) {
+    return this.request('/queues', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateQueue(id, data) {
+    return this.request(`/queues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteQueue(id) {
+    return this.request(`/queues/${id}`, { method: 'DELETE' });
   }
 
   // WHATSAPP (conexões via QR Code)

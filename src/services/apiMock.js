@@ -41,7 +41,15 @@ const mockDepartments = [
 ];
 
 const mockConnections = [
-  { id: 'conn-1', name: 'Comercial', status: 'DISCONNECTED', phone: null, statusPolls: 0 },
+  { id: 'conn-1', name: 'Comercial', status: 'DISCONNECTED', phone: null, statusPolls: 0, departmentId: null },
+];
+
+const mockQueues = [
+  {
+    id: 'queue-1', name: 'Comercial', strategy: 'ROUND_ROBIN', maxWaitSecs: 300,
+    greetingMsg: 'Olá! Em instantes um atendente vai te responder.',
+    departmentId: 'dept-1', isActive: true,
+  },
 ];
 
 // Store de conversas em memória — mesmas fixtures usadas como estado inicial
@@ -68,6 +76,15 @@ const stripCount = (dept) => ({
   ...dept,
   _count: { users: dept.users.length },
 });
+
+const withQueueRelations = (queue) => {
+  const dept = mockDepartments.find((d) => d.id === queue.departmentId);
+  return {
+    ...queue,
+    department: dept ? { id: dept.id, name: dept.name, color: dept.color } : null,
+    _count: { conversations: 0 },
+  };
+};
 
 export class MockApiClient {
   constructor() {
@@ -337,9 +354,13 @@ export class MockApiClient {
 
   async createWhatsappConnection(data) {
     await this.simulateDelay();
-    const conn = { id: nextId('conn'), name: data.name, status: 'DISCONNECTED', phone: null, statusPolls: 0 };
+    const conn = {
+      id: nextId('conn'), name: data.name, status: 'DISCONNECTED', phone: null,
+      statusPolls: 0, departmentId: data.departmentId || null,
+    };
     mockConnections.push(conn);
-    return { id: conn.id, name: conn.name, status: conn.status, phone: conn.phone };
+    const { statusPolls, ...rest } = conn;
+    return rest;
   }
 
   async getWhatsappQrCode(id) {
@@ -380,6 +401,46 @@ export class MockApiClient {
     const idx = mockConnections.findIndex((c) => c.id === id);
     if (idx === -1) throw { status: 404, message: 'Conexão não encontrada' };
     mockConnections.splice(idx, 1);
+    return { success: true };
+  }
+
+  // ── QUEUES (filas de distribuição, F8-8) ────────────────────────────────────
+  async getQueues() {
+    await this.simulateDelay();
+    return { data: mockQueues.map(withQueueRelations) };
+  }
+
+  async createQueue(data) {
+    await this.simulateDelay();
+    if (mockQueues.some((q) => q.name === data.name)) {
+      throw { status: 409, message: 'Já existe uma fila com este nome' };
+    }
+    const queue = {
+      id: nextId('queue'),
+      name: data.name,
+      strategy: data.strategy || 'ROUND_ROBIN',
+      maxWaitSecs: data.maxWaitSecs || 300,
+      greetingMsg: data.greetingMsg || null,
+      departmentId: data.departmentId || null,
+      isActive: true,
+    };
+    mockQueues.push(queue);
+    return withQueueRelations(queue);
+  }
+
+  async updateQueue(id, data) {
+    await this.simulateDelay();
+    const queue = mockQueues.find((q) => q.id === id);
+    if (!queue) throw { status: 404, message: 'Fila não encontrada' };
+    Object.assign(queue, data);
+    return withQueueRelations(queue);
+  }
+
+  async deleteQueue(id) {
+    await this.simulateDelay();
+    const idx = mockQueues.findIndex((q) => q.id === id);
+    if (idx === -1) throw { status: 404, message: 'Fila não encontrada' };
+    mockQueues.splice(idx, 1);
     return { success: true };
   }
 }

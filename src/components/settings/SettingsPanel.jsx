@@ -16,6 +16,13 @@ export const ROLE_LABELS = {
 // Níveis atribuíveis pela tela (SUPER_ADMIN é interno do sistema)
 const ASSIGNABLE_ROLES = ['AGENT', 'SUPERVISOR', 'ADMIN'];
 
+const QUEUE_STRATEGY_LABELS = {
+  ROUND_ROBIN: 'Round-robin (distribui igualmente)',
+  MANUAL: 'Manual (atendente escolhe)',
+  LEAST_BUSY: 'Menos ocupado primeiro',
+};
+const QUEUE_STRATEGIES = ['ROUND_ROBIN', 'MANUAL', 'LEAST_BUSY'];
+
 const CONNECTION_STATUS_LABELS = {
   CONNECTED: { label: 'Conectado', tone: 'ok' },
   CONNECTING: { label: 'Conectando…', tone: 'pending' },
@@ -63,7 +70,9 @@ function AppearanceSection() {
 // ─────────────────────────────────────────────────────────────────────────────
 function WhatsappSection() {
   const [connections, setConnections] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [name, setName] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   // { connectionId, image } — QR atualmente exibido
@@ -72,7 +81,12 @@ function WhatsappSection() {
 
   const load = useCallback(async () => {
     try {
-      setConnections(unwrap(await apiClient.getWhatsappConnections()));
+      const [conns, deps] = await Promise.all([
+        apiClient.getWhatsappConnections(),
+        apiClient.getDepartments().catch(() => []),
+      ]);
+      setConnections(unwrap(conns));
+      setDepartments(unwrap(deps));
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -128,8 +142,12 @@ function WhatsappSection() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const created = await apiClient.createWhatsappConnection({ name: name.trim() });
+      const created = await apiClient.createWhatsappConnection({
+        name: name.trim(),
+        departmentId: departmentId || undefined,
+      });
       setName('');
+      setDepartmentId('');
       await load();
       if (created?.id) await generateQr(created.id);
     } catch (err) {
@@ -200,6 +218,17 @@ function WhatsappSection() {
         maxLength: 60,
         onChange: (e) => setName(e.target.value),
       }),
+      h(
+        'select',
+        {
+          className: 'settings-input',
+          value: departmentId,
+          onChange: (e) => setDepartmentId(e.target.value),
+          title: 'Setor (opcional) — vincula a fila do setor às conversas dessa conexão',
+        },
+        h('option', { value: '' }, 'Sem setor'),
+        departments.map((d) => h('option', { key: d.id, value: d.id }, d.name)),
+      ),
       h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !name.trim() },
         h(Icon, { name: 'plus', size: 14 }), ' Criar conexão'),
     ),
@@ -220,6 +249,8 @@ function WhatsappSection() {
                 h('div', { className: 'settings-row-title' }, conn.name),
                 h('div', { className: 'settings-hint' },
                   conn.phone ? h('span', null, h(Icon, { name: 'phone', size: 12 }), ` ${conn.phone}`) : 'Sem número pareado'),
+                h('div', { className: 'settings-hint' },
+                  departments.find((d) => d.id === conn.departmentId)?.name ?? 'Sem setor'),
               ),
               h('span', { className: `settings-badge ${st.tone}` }, st.label),
               h(
@@ -573,6 +604,185 @@ function ProfileSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seção: Filas de distribuição (F8-8)
+// ─────────────────────────────────────────────────────────────────────────────
+function QueuesSection() {
+  const [queues, setQueues] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const emptyForm = { name: '', strategy: 'ROUND_ROBIN', maxWaitSecs: 300, greetingMsg: '', departmentId: '' };
+  const [form, setForm] = useState(emptyForm);
+  // Fila sendo editada (null = formulário de criação)
+  const [editingId, setEditingId] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [qs, deps] = await Promise.all([
+        apiClient.getQueues(),
+        apiClient.getDepartments().catch(() => []),
+      ]);
+      setQueues(unwrap(qs));
+      setDepartments(unwrap(deps));
+      setError(null);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const startCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+  };
+
+  const startEdit = (queue) => {
+    setEditingId(queue.id);
+    setForm({
+      name: queue.name,
+      strategy: queue.strategy,
+      maxWaitSecs: queue.maxWaitSecs,
+      greetingMsg: queue.greetingMsg || '',
+      departmentId: queue.departmentId || '',
+    });
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setBusy(true);
+    setError(null);
+    const payload = {
+      name: form.name.trim(),
+      strategy: form.strategy,
+      maxWaitSecs: Number(form.maxWaitSecs) || 300,
+      greetingMsg: form.greetingMsg.trim() || undefined,
+      departmentId: form.departmentId || undefined,
+    };
+    try {
+      if (editingId) {
+        await apiClient.updateQueue(editingId, payload);
+      } else {
+        await apiClient.createQueue(payload);
+      }
+      setForm(emptyForm);
+      setEditingId(null);
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (queue) => {
+    try {
+      await apiClient.updateQueue(queue.id, { isActive: !queue.isActive });
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  const remove = async (queue) => {
+    if (!confirm(`Excluir a fila "${queue.name}"?`)) return;
+    try {
+      await apiClient.deleteQueue(queue.id);
+      if (editingId === queue.id) startCreate();
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  return h(
+    'div',
+    { className: 'settings-section' },
+    h('h3', null, h(Icon, { name: 'clock', size: 17 }), ' Filas de distribuição'),
+    h('p', { className: 'settings-hint' },
+      'Cada fila define como as conversas de um setor são distribuídas e quanto tempo ' +
+      'de espera é tolerado antes de alertar (SLA).'),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
+
+    h(
+      'form',
+      { className: 'settings-form-grid', onSubmit: submit },
+      h('input', {
+        className: 'settings-input', placeholder: 'Nome da fila (ex.: Comercial)', required: true,
+        maxLength: 80, value: form.name, onChange: setField('name'),
+      }),
+      h(
+        'select',
+        { className: 'settings-input', value: form.strategy, onChange: setField('strategy') },
+        QUEUE_STRATEGIES.map((s) => h('option', { key: s, value: s }, QUEUE_STRATEGY_LABELS[s])),
+      ),
+      h('input', {
+        className: 'settings-input', type: 'number', min: 1, placeholder: 'Tempo máx. de espera (segundos)',
+        value: form.maxWaitSecs, onChange: setField('maxWaitSecs'),
+      }),
+      h(
+        'select',
+        { className: 'settings-input', value: form.departmentId, onChange: setField('departmentId') },
+        h('option', { value: '' }, 'Sem setor'),
+        departments.map((d) => h('option', { key: d.id, value: d.id }, d.name)),
+      ),
+      h('input', {
+        className: 'settings-input', placeholder: 'Mensagem de saudação (opcional)',
+        maxLength: 500, value: form.greetingMsg, onChange: setField('greetingMsg'),
+      }),
+      h(
+        'div',
+        { style: { display: 'flex', gap: 8 } },
+        h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !form.name.trim() },
+          h(Icon, { name: 'check', size: 14 }), editingId ? ' Salvar alterações' : ' Criar fila'),
+        editingId && h('button', { className: 'settings-btn', type: 'button', onClick: startCreate },
+          h(Icon, { name: 'x', size: 14 }), ' Cancelar'),
+      ),
+    ),
+
+    h(
+      'div',
+      { className: 'settings-list' },
+      queues.length === 0
+        ? h('p', { className: 'settings-hint' }, 'Nenhuma fila criada ainda.')
+        : queues.map((queue) =>
+            h(
+              'div',
+              { key: queue.id, className: `settings-item${queue.isActive === false ? ' inactive' : ''}` },
+              h(
+                'div',
+                { className: 'settings-item-main' },
+                h('div', { className: 'settings-row-title' }, queue.name),
+                h('div', { className: 'settings-hint' },
+                  `${QUEUE_STRATEGY_LABELS[queue.strategy] ?? queue.strategy} · ` +
+                  `espera máx. ${queue.maxWaitSecs}s · ${queue.department?.name ?? 'sem setor'}`),
+              ),
+              h('span', { className: `settings-badge ${queue.isActive === false ? 'off' : 'ok'}` },
+                queue.isActive === false ? 'Inativa' : 'Ativa'),
+              h(
+                'div',
+                { className: 'settings-item-actions' },
+                h('button', {
+                  className: 'settings-btn', type: 'button', onClick: () => startEdit(queue),
+                }, h(Icon, { name: 'settings', size: 14 }), ' Editar'),
+                h('button', {
+                  className: 'settings-btn', type: 'button', onClick: () => toggleActive(queue),
+                  title: queue.isActive === false ? 'Reativar fila' : 'Desativar fila',
+                }, h(Icon, { name: queue.isActive === false ? 'play' : 'pause', size: 14 })),
+                h('button', {
+                  className: 'settings-btn danger', type: 'button', onClick: () => remove(queue),
+                }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
+              ),
+            ),
+          ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Seção: Grupos (setores/departamentos)
 // ─────────────────────────────────────────────────────────────────────────────
 function GroupsSection() {
@@ -783,6 +993,7 @@ export function SettingsPanel() {
     { id: 'whatsapp', label: 'Conexões WhatsApp', icon: 'smartphone', visible: canManage },
     { id: 'users', label: 'Usuários e níveis', icon: 'user', visible: canViewUsers },
     { id: 'groups', label: 'Grupos (setores)', icon: 'users', visible: canManage },
+    { id: 'queues', label: 'Filas de distribuição', icon: 'clock', visible: canManage },
   ].filter((s) => s.visible);
 
   const [active, setActive] = useState(sections[0]?.id ?? 'appearance');
@@ -816,6 +1027,7 @@ export function SettingsPanel() {
       active === 'whatsapp' && canManage && h(WhatsappSection),
       active === 'users' && canViewUsers && h(UsersSection, { canManage }),
       active === 'groups' && canManage && h(GroupsSection),
+      active === 'queues' && canManage && h(QueuesSection),
     ),
   );
 }
