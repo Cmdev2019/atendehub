@@ -22,7 +22,7 @@ Há **três formatos** de resposta de listagem (atenção ao integrar):
 |---|---|---|
 | Paginação offset | `GET /conversations`, `GET /contacts`, `GET /users` | `{ data: [...], meta: { total, page, limit, totalPages } }` |
 | Paginação cursor | `GET /conversations/:id/messages` | `{ data: [...], meta: { count, hasMore, nextCursor } }` |
-| Array puro | `GET /whatsapp`, `GET /departments`, `GET .../notes` | `[...]` (sem wrapper) |
+| Array puro | `GET /whatsapp`, `GET /departments`, `GET /queues`, `GET /tags`, `GET .../notes` | `[...]` (sem wrapper) |
 
 Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 
@@ -119,6 +119,9 @@ Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `metadata`, `updat
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`.
 
+### `POST /conversations/:id/tags/:tagId` · `DELETE /conversations/:id/tags/:tagId`
+Atribui/remove uma tag existente da conversa (B1-1). 404 se a tag ou a conversa não pertencerem à empresa do usuário.
+
 ---
 
 ## Messages — `/conversations/:conversationId/messages`
@@ -179,7 +182,10 @@ Wrapper: `{ data, meta }`. Ordenação: `name asc`.
 + `metadata`, `updatedAt`, `tags[]` e as 10 conversas mais recentes.
 
 ### `POST /contacts` · `PATCH /contacts/:id` · `DELETE /contacts/:id` · `PATCH /contacts/:id/block`
-CRUD padrão; block alterna `isBlocked`.
+CRUD padrão; block alterna `isBlocked`. `DELETE` registra auditoria (`contact.deleted`).
+
+### `POST /contacts/:id/tags/:tagId` · `DELETE /contacts/:id/tags/:tagId`
+Atribui/remove uma tag existente do contato (B1-1). 404 se a tag ou o contato não pertencerem à empresa do usuário.
 
 ---
 
@@ -221,6 +227,69 @@ Item: `{ id, name, description, color, isActive, createdAt, _count: { users, con
 ### `PATCH /departments/:id` · `DELETE /departments/:id`
 ### `POST /departments/:id/users` — `{ userId }` → retorna o department com `users[]` atualizado
 ### `DELETE /departments/:id/users/:userId` — idem
+
+---
+
+## Queues (filas de distribuição) — `/queues`
+
+### `GET /queues` → **array puro**
+Item: `{ id, name, strategy, maxWaitSecs, greetingMsg, departmentId, isActive, createdAt, updatedAt, department: {id,name,color} | null, _count: { conversations } }`
+
+### `GET /queues/:id` — mesmo shape do item da lista
+
+### `POST /queues` — `{ name (único na empresa), strategy? (ROUND_ROBIN|MANUAL|LEAST_BUSY, default ROUND_ROBIN), maxWaitSecs? (segundos, default 300), greetingMsg?, departmentId? }`
+`departmentId`, se informado, precisa pertencer à mesma empresa (404 se não pertencer).
+
+### `PATCH /queues/:id` — campos parciais (incl. `isActive`) · `DELETE /queues/:id`
+`DELETE` falha com 400 se a fila tiver conversas associadas.
+
+**Vínculo automático (B1-2):** ao chegar uma mensagem nova de um contato sem
+conversa aberta, se a `WhatsAppConnection` tiver `departmentId` e existir uma
+`Queue` ativa para esse departamento, a conversa nasce com `departmentId` e
+`queueId` já preenchidos (usada pela Fase B2 para o SLA). Sem fila ativa no
+departamento, a conversa nasce como hoje (`departmentId`/`queueId` nulos).
+
+---
+
+## Tags — `/tags`
+
+### `GET /tags` → **array puro**
+Item: `{ id, name, color, _count: { conversations, contacts } }`
+
+### `POST /tags` — `{ name (único na empresa, ≤50), color? (hex) }` · requer `SUPERVISOR+`
+### `PATCH /tags/:id` · `DELETE /tags/:id` — requer `SUPERVISOR+`
+`DELETE` desvincula automaticamente de conversas/contatos (relação N:N implícita do Prisma, sem bloqueio).
+
+Atribuir/remover tag em conversas e contatos é feito pelas rotas dos próprios
+recursos: `POST/DELETE /conversations/:id/tags/:tagId` e
+`POST/DELETE /contacts/:id/tags/:tagId` (ver seções acima).
+
+---
+
+## Notifications — `/notifications`
+
+### `GET /notifications` — Query: `unreadOnly?` · `page` · `limit`
+Item: `{ id, companyId, userId, type, title, body, data, readAt, createdAt }` — sempre só as do próprio usuário logado.
+Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
+
+### `PATCH /notifications/:id/read` · `PATCH /notifications/read-all`
+Marca uma ou todas as notificações do usuário logado como lidas. 404 se o `id` for de outro usuário (mesmo dentro da empresa).
+
+**Pontos de criação (B1-3):** conversa atribuída a um agente (`type: "conversation_assigned"`) e SLA violado, disparado para todo `SUPERVISOR+` ativo da empresa já que a conversa está sem agente nesse momento (`type: "sla_breach"`).
+
+---
+
+## Audit Logs — `/audit-logs`
+
+### `GET /audit-logs` — Query: `entity?` · `entityId?` · `userId?` · `page` · `limit` · requer `ADMIN+`
+Item: `{ id, companyId, userId, action, entity, entityId, before, after, ip, userAgent, createdAt, user: {id,name,email} | null }`
+Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
+
+**Ações registradas na v1 (B1-4)**, decisão consciente de escopo mínimo — sem interceptor global, cada service chama `AuditLogService.record()` explicitamente para a ação que já considera sensível:
+- `user.created`, `user.role_changed` (não loga edição de nome/telefone/avatar), `user.deactivated`
+- `contact.deleted`
+- `conversation.assigned` (loga a mudança real de `agentId`, incluindo desatribuição)
+- `sla.breached` (já existia antes da B1-4, migrado para usar `AuditLogService`)
 
 ---
 
