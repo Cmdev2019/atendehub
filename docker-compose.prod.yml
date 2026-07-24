@@ -74,38 +74,24 @@ services:
         limits:
           memory: 1g
 
-  # ── Next.js Web (build da imagem do front) ───────────────────────────────────
-  web:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    container_name: atendehub_web
-    restart: always
-    depends_on:
-      - api
-    ports:
-      - "3000:3000"
-    env_file: .env
-    networks:
-      - atendehub_net
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-
-  # ── Nginx (reverse proxy + SSL) ──────────────────────────────────────────────
+  # ── Nginx: build estático do front (Vite+React) + proxy reverso da API ──────
+  # Sem container "web" separado — o front não roda servidor Node em produção,
+  # é um build estático que o próprio nginx serve direto (ver F5-3/B6-2).
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
+      args:
+        VITE_API_URL: "${VITE_API_URL:?VITE_API_URL obrigatório em produção, ex. https://api.atendehub.com/api/v1}"
+        VITE_WS_URL: "${VITE_WS_URL:?VITE_WS_URL obrigatório em produção, ex. https://api.atendehub.com}"
     container_name: atendehub_nginx
     restart: always
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infra/nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - api
-      - web
     networks:
       - atendehub_net
