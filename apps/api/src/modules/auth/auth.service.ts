@@ -74,7 +74,9 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`Login: ${user.email} (${user.companyId})`);
+    // Nunca logar o e-mail (PII) — id já é suficiente para correlacionar
+    // com o banco se necessário investigar.
+    this.logger.log(`Login: user=${user.id} company=${user.companyId}`);
 
     return tokens;
   }

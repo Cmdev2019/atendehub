@@ -7,6 +7,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -28,6 +29,7 @@ import { RolesGuard } from './guards/roles.guard';
   providers: [
     AuthService,
     TokenBlacklistService,
+    RefreshTokenCleanupService,
     LocalStrategy,
     JwtStrategy,
 
