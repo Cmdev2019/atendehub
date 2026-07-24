@@ -5,13 +5,19 @@
 > trabalho (humana ou com Claude) deve atualizar os status dos itens, o painel
 > de progresso e registrar uma entrada no [Changelog](#-changelog).
 >
-> **Última atualização:** 2026-07-21 · F0-12/F0-13 corrigidos (conversas duplicadas na reconexão do WhatsApp + JID `@lid` não normalizado)
-> **Próxima ação:** 🔀 A partir de 2026-07-21, o trabalho de Fases 3/4/6/7 (SLA,
-> testes, segurança, produção) migrou para o **`ROADMAP_BACKEND.md`**, com foco
-> exclusivo em fechar todo o backend/banco antes de retomar o front — decisão
-> do usuário para não misturar as duas frentes. Consulte aquele documento para
-> o estado atual dessas fases. Este arquivo volta a ser a frente ativa quando o
-> `ROADMAP_BACKEND.md` fechar (Fase B7 — handoff).
+> **Última atualização:** 2026-07-24 · **🏁 Backend fechado (B7 — handoff).**
+> Fases 3/4/6/7 atualizadas aqui com o resultado de B2/B4/B5/B6 do
+> `ROADMAP_BACKEND.md` (28/31 dos itens de lá concluídos; só falta B3, P2,
+> perfil de usuário — já também concluído — e o próprio B7). Este arquivo
+> volta a ser a frente ativa.
+> **Próxima ação:** retomar o front (Fase 8, em andamento, 10/12) com o
+> contrato 100% estável (`docs/API_CONTRACT.md` atualizado com tags, queues,
+> notifications, audit-log, perfil próprio/avatar e `/health/ready`). Itens
+> remanescentes puramente de frontend, deixados abertos de propósito nas
+> Fases 3/6/7 (não fazem parte do `ROADMAP_BACKEND.md`): F3-4 (badge de SLA
+> na fila), metade de F6-4 (limpar `console.log` de conteúdo de mensagem em
+> `useConversations.js`) e metade de F7-1 (CI do front). Fase 8 continua
+> sendo a fila de trabalho principal.
 
 ---
 
@@ -22,13 +28,13 @@
 | [Fase 0](#-fase-0--religar-frontend--backend) | Religar frontend ↔ backend | 🔴 P0 | 13/13 | ✅ Concluída |
 | [Fase 1](#-fase-1--contrato-de-dados-único) | Contrato de dados único | 🔴 P1 | 11/11 | ✅ Concluída |
 | [Fase 2](#-fase-2--modo-demo-explícito-e-resiliência) | Modo demo explícito e resiliência | 🟠 P1 | 8/8 | ✅ Concluída |
-| [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 0/5 | ⬜ Não iniciada |
-| [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 0/6 | ⬜ Não iniciada |
+| [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 4/5 | 🔄 Em andamento (backend ✅ via B2; falta F3-4, frontend) |
+| [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 6/6 | ✅ Concluída (via B4, `ROADMAP_BACKEND.md`) |
 | [Fase 5](#-fase-5--higiene-do-repositório-e-documentação) | Higiene do repo e documentação | 🟡 P2 | 5/5 | ✅ Concluída |
-| [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 0/5 | ⬜ Não iniciada |
-| [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 0/5 | ⬜ Não iniciada |
+| [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 4/5 | 🔄 Em andamento (backend ✅ via B5; falta metade de F6-4, frontend) |
+| [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 4/5 | 🔄 Em andamento (backend ✅ via B6; falta metade de F7-1, CI do frontend) |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 10/12 | 🔄 Em andamento |
-| **Total** | | | **47/68** | |
+| **Total** | | | **65/68** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -116,11 +122,11 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F3-1 | Criar `SlaModule`: registrar `SlaCheckProcessor` como provider + `BullModule.registerQueue({ name: QUEUE_NAMES.SLA_CHECK })` + importar `EventsModule`; adicionar ao `AppModule`. **Aceite:** log do Nest mostra o processor registrado no boot. | `apps/api/src/modules/sla/sla-check.processor.ts:29-30` · `apps/api/src/app.module.ts` · `apps/api/src/shared/queues/queue-names.ts:9` | ⬜ |
-| F3-2 | Produtor de jobs: quando uma conversa entra em `WAITING` numa `Queue` com `maxWaitSecs`, enfileirar `SlaCheckJobData` com `delay = maxWaitSecs * 1000`. Pontos prováveis: criação de conversa no webhook e mudança de status no `conversation.service`. | `apps/api/src/modules/webhook/webhook.processor.ts` · `apps/api/src/modules/conversation/conversation.service.ts` | ⬜ |
-| F3-3 | Idempotência e cancelamento: `jobId` determinístico por conversa (evitar jobs duplicados); confirmar que atribuição antes do prazo não gera alerta (o processor reconsulta o status — validar em teste). | `apps/api/src/modules/sla/sla-check.processor.ts:46-60` | ⬜ |
-| F3-4 | Frontend: ouvir `sla.breached` e destacar visualmente a conversa na fila (badge/cor). Depende de F0-2/F0-3. | `src/hooks/useConversations.js` · `src/components/ConversationQueue.jsx` | ⬜ |
-| F3-5 | Teste E2E com SLA curto (ex.: fila com `maxWaitSecs = 10`): conversa não atribuída em 10s dispara `sla.breached`, marca `slaBreachedAt` e registra auditoria. Evidência no Changelog. | seed/fila de teste | ⬜ |
+| F3-1 | Criar `SlaModule`: registrar `SlaCheckProcessor` como provider + `BullModule.registerQueue({ name: QUEUE_NAMES.SLA_CHECK })` + importar `EventsModule`; adicionar ao `AppModule`. **Aceite:** log do Nest mostra o processor registrado no boot. **Feito via B2-2** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/sla/sla-check.processor.ts:29-30` · `apps/api/src/app.module.ts` · `apps/api/src/shared/queues/queue-names.ts:9` | ✅ 2026-07-22 |
+| F3-2 | Produtor de jobs: quando uma conversa entra em `WAITING` numa `Queue` com `maxWaitSecs`, enfileirar `SlaCheckJobData` com `delay = maxWaitSecs * 1000`. Pontos prováveis: criação de conversa no webhook e mudança de status no `conversation.service`. **Feito via B2-3** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/webhook/webhook.processor.ts` · `apps/api/src/modules/conversation/conversation.service.ts` | ✅ 2026-07-22 |
+| F3-3 | Idempotência e cancelamento: `jobId` determinístico por conversa (evitar jobs duplicados); confirmar que atribuição antes do prazo não gera alerta (o processor reconsulta o status — validar em teste). **Feito via B2-4** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/sla/sla-check.processor.ts:46-60` | ✅ 2026-07-22 |
+| F3-4 | Frontend: ouvir `sla.breached` e destacar visualmente a conversa na fila (badge/cor). Depende de F0-2/F0-3. **Ainda pendente** — é o único item de F3 que não tem equivalente no `ROADMAP_BACKEND.md` (todo o trabalho de lá foi backend-only por decisão). Primeiro item natural pra retomar em Fase 3 quando o front voltar a ser a frente ativa (B7-3). | `src/hooks/useConversations.js` · `src/components/ConversationQueue.jsx` | ⬜ |
+| F3-5 | Teste E2E com SLA curto (ex.: fila com `maxWaitSecs = 10`): conversa não atribuída em 10s dispara `sla.breached`, marca `slaBreachedAt` e registra auditoria. Evidência no Changelog. **Feito via B2-5** (`ROADMAP_BACKEND.md`, 2026-07-24) — `apps/api/test/sla.e2e-spec.ts`. | seed/fila de teste | ✅ 2026-07-24 |
 
 ---
 
@@ -131,12 +137,12 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F4-1 | Primeiro spec rodando (smoke de bootstrap do Jest + ts-jest já configurados). **Aceite:** `cd apps/api && npm test` executa e passa. | `apps/api/jest.config.js` · `apps/api/test/` (vazio hoje) | ⬜ |
-| F4-2 | Auth: `auth.service` (login, refresh, logout, senha errada, usuário inativo), `roles.guard`, `token-blacklist.service`. | `apps/api/src/modules/auth/` | ⬜ |
-| F4-3 | Isolamento multi-tenant: testes de regressão garantindo que conversation/contact/user **sempre** filtram por `companyId` (vazamento entre tenants é o pior bug possível num SaaS). | `apps/api/src/modules/conversation/conversation.service.ts` · `contact.service.ts` · `user.service.ts` | ⬜ |
-| F4-4 | Webhook: sem `EVOLUTION_API_KEY` → 500 fail-closed; apikey inválida → 403; normalização `messages.upsert` → `MESSAGES_UPSERT`; job enfileirado com payload correto. | `apps/api/src/modules/webhook/webhook.controller.ts` | ⬜ |
-| F4-5 | Envio de mensagem: `send-message.service` + `message-send.processor` (retry/backoff, transições de `MessageStatus`, falha da Evolution API). | `apps/api/src/modules/message/` | ⬜ |
-| F4-6 | Meta de cobertura ≥ 70% nos módulos auth, webhook e conversation (`npm run test:cov`). Ajustar meta em Decisões se necessário. | `apps/api/jest.config.js` | ⬜ |
+| F4-1 | Primeiro spec rodando (smoke de bootstrap do Jest + ts-jest já configurados). **Aceite:** `cd apps/api && npm test` executa e passa. **Feito via B4-1** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/jest.config.js` · `apps/api/test/` (vazio hoje) | ✅ 2026-07-22 |
+| F4-2 | Auth: `auth.service` (login, refresh, logout, senha errada, usuário inativo), `roles.guard`, `token-blacklist.service`. **Feito via B4-2** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/auth/` | ✅ 2026-07-22 |
+| F4-3 | Isolamento multi-tenant: testes de regressão garantindo que conversation/contact/user **sempre** filtram por `companyId` (vazamento entre tenants é o pior bug possível num SaaS). **Feito via B4-3** (`ROADMAP_BACKEND.md`, 2026-07-22, cobrindo também os módulos novos de B1: tag/queue/notification/audit-log). | `apps/api/src/modules/conversation/conversation.service.ts` · `contact.service.ts` · `user.service.ts` | ✅ 2026-07-22 |
+| F4-4 | Webhook: sem `EVOLUTION_API_KEY` → 500 fail-closed; apikey inválida → 403; normalização `messages.upsert` → `MESSAGES_UPSERT`; job enfileirado com payload correto. **Feito via B4-4** (`ROADMAP_BACKEND.md`, 2026-07-24). | `apps/api/src/modules/webhook/webhook.controller.ts` | ✅ 2026-07-24 |
+| F4-5 | Envio de mensagem: `send-message.service` + `message-send.processor` (retry/backoff, transições de `MessageStatus`, falha da Evolution API). **Feito via B4-5** (`ROADMAP_BACKEND.md`, 2026-07-24) — nota: `message-send.processor` foi removido por decisão B2-1 (envio ficou síncrono), então o teste cobre `send-message.service` sem fila por trás. | `apps/api/src/modules/message/` | ✅ 2026-07-24 |
+| F4-6 | Meta de cobertura ≥ 70% nos módulos auth, webhook e conversation (`npm run test:cov`). Ajustar meta em Decisões se necessário. **Feito via B4-7** (`ROADMAP_BACKEND.md`, 2026-07-24) — meta cumprida em todos os módulos-alvo (auth, webhook, conversation, sla + os novos de B1). | `apps/api/jest.config.js` | ✅ 2026-07-24 |
 
 ---
 
@@ -161,11 +167,11 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F6-1 | Estratégia de tokens: access/refresh em `localStorage` é vulnerável a XSS. Migrar para cookie `httpOnly` + proteção CSRF, **ou** registrar formalmente o trade-off aceito em Decisões (com mitigações: CSP, sanitização). | `src/services/api.js:32-45` | ⬜ |
-| F6-2 | Rotação de segredos de produção: garantir que nenhum default do compose (postgres `atendehub_secret`, redis `redis_secret`, minio, `evolution_api_key_dev`) chegue a produção; checklist no `.env.example` + revisão do `docker-compose.prod.yml`. | `docker-compose.yml` · `docker-compose.prod.yml` · `apps/api/.env.example` | ⬜ |
-| F6-3 | Health readiness: expandir F0-1 com checagem de dependências (PostgreSQL, Redis) num endpoint `/health/ready` separado do liveness leve — para orquestração/nginx. | backend (HealthModule) | ⬜ |
-| F6-4 | Higiene de logs: remover `console.log` que expõe conteúdo de mensagens no navegador e revisar logs do backend para não vazar payloads/PII em produção. | `src/hooks/useConversations.js:48,64` · `src/services/*.js` · backend (winston) | ⬜ |
-| F6-5 | Revisão final de CORS (`CORS_ORIGINS` de produção), rate limits (`THROTTLE_*`) e headers (helmet) com os domínios reais. | `apps/api/src/main.ts:31-36` · `apps/api/src/app.module.ts:23-32` | ⬜ |
+| F6-1 | Estratégia de tokens: access/refresh em `localStorage` é vulnerável a XSS. Migrar para cookie `httpOnly` + proteção CSRF, **ou** registrar formalmente o trade-off aceito em Decisões (com mitigações: CSP, sanitização). **Decidido via B5-1** (`ROADMAP_BACKEND.md`, 2026-07-24): mantém `localStorage` — migrar exigiria reescrever o cliente HTTP/WS do front no meio da pausa; trade-off registrado formalmente. Parte prática do lado backend (limpeza de refresh tokens acumulados) feita junto. | `src/services/api.js:32-45` | ✅ 2026-07-24 |
+| F6-2 | Rotação de segredos de produção: garantir que nenhum default do compose (postgres `atendehub_secret`, redis `redis_secret`, minio, `evolution_api_key_dev`) chegue a produção; checklist no `.env.example` + revisão do `docker-compose.prod.yml`. **Feito via B5-2** (`ROADMAP_BACKEND.md`, 2026-07-24) — redis/minio/evolution agora exigem a variável (`${VAR:?...}`), sem fallback pro valor de dev. | `docker-compose.yml` · `docker-compose.prod.yml` · `apps/api/.env.example` | ✅ 2026-07-24 |
+| F6-3 | Health readiness: expandir F0-1 com checagem de dependências (PostgreSQL, Redis) num endpoint `/health/ready` separado do liveness leve — para orquestração/nginx. **Feito via B5-3** (`ROADMAP_BACKEND.md`, 2026-07-24) — validado com Postgres/Redis reais. | backend (HealthModule) | ✅ 2026-07-24 |
+| F6-4 | Higiene de logs: remover `console.log` que expõe conteúdo de mensagens no navegador e revisar logs do backend para não vazar payloads/PII em produção. **Lado backend feito via B5-4** (`ROADMAP_BACKEND.md`, 2026-07-24) — nível `debug` (vazava telefone) desligado em produção, login parou de logar e-mail. **Lado frontend ainda pendente:** `console.log` em `src/hooks/useConversations.js:48,64` não foi tocado nesta rodada (fora do escopo backend-only da B5) — revisar quando o front voltar a ser a frente ativa. | `src/hooks/useConversations.js:48,64` · `src/services/*.js` · backend (winston) | 🔄 parcial (backend ✅, frontend ⬜) |
+| F6-5 | Revisão final de CORS (`CORS_ORIGINS` de produção), rate limits (`THROTTLE_*`) e headers (helmet) com os domínios reais. **Feito via B5-5** (`ROADMAP_BACKEND.md`, 2026-07-24) — boot falha (fail-hard) em produção/staging se `CORS_ORIGINS` estiver ausente ou for `*`. | `apps/api/src/main.ts:31-36` · `apps/api/src/app.module.ts:23-32` | ✅ 2026-07-24 |
 
 ---
 
@@ -173,11 +179,11 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F7-1 | CI (GitHub Actions): lint + `tsc --noEmit` + testes front e back em cada push/PR. **Aceite:** pipeline verde no repositório `Cmdev2019/atendehub`. | `.github/workflows/` (novo) | ⬜ |
-| F7-2 | Builds de produção validados: `vite build` + `nest build` sem warnings críticos; revisão do `docker-compose.prod.yml` + nginx servindo front e proxy da API/WS. | `docker-compose.prod.yml` · `infra/nginx/nginx.conf` | ⬜ |
-| F7-3 | Observabilidade mínima: winston estruturado (JSON) com request-id, métricas básicas das filas Bull (jobs falhos/atrasados). | `apps/api/src/main.ts` · nest-winston | ⬜ |
-| F7-4 | Runbook: passos de deploy, rollback, reset de filas e troubleshooting comum, em `docs/RUNBOOK.md`. | `docs/` | ⬜ |
-| F7-5 | **[Descoberto em 2026-07-15]** O Redis Adapter do Socket.IO nunca é aplicado: em gateway com namespace (`/ws`), o `server` recebido em `afterInit` é o **Namespace**, não o `Server` — `server.adapter(...)` falha com `server.adapter is not a function` (visível no log de boot). Hoje o Socket.IO funciona apenas single-instance; o `TESTE_REDIS_ADAPTER.md` está incorreto. Corrigir aplicando o adapter no nível do `IoAdapter` (custom adapter em `main.ts`). | `apps/api/src/modules/events/events.gateway.ts:58-89` · `apps/api/src/main.ts` | ⬜ |
+| F7-1 | CI (GitHub Actions): lint + `tsc --noEmit` + testes front e back em cada push/PR. **Aceite:** pipeline verde no repositório `Cmdev2019/atendehub`. **Lado backend feito via B6-1** (`ROADMAP_BACKEND.md`, 2026-07-24) — `.github/workflows/api-ci.yml`, também resolveu o BL-1 (eslint.config.js nunca existiu). **Lado frontend ainda pendente:** nenhum workflow cobre `npm test`/build do front na raiz — abrir quando o front voltar a ser a frente ativa (pode reaproveitar o mesmo padrão do `api-ci.yml`). | `.github/workflows/` (novo) | 🔄 parcial (backend ✅, frontend ⬜) |
+| F7-2 | Builds de produção validados: `vite build` + `nest build` sem warnings críticos; revisão do `docker-compose.prod.yml` + nginx servindo front e proxy da API/WS. **Feito via B6-2** (`ROADMAP_BACKEND.md`, 2026-07-24) — `apps/api/Dockerfile` (novo) e `infra/nginx/Dockerfile` (novo, builda o `vite build` real e serve estático); eliminado o container `web` obsoleto (residual do plano Next.js pré-F5-3). Validado com builds reais no Docker. | `docker-compose.prod.yml` · `infra/nginx/nginx.conf` | ✅ 2026-07-24 |
+| F7-3 | Observabilidade mínima: winston estruturado (JSON) com request-id, métricas básicas das filas Bull (jobs falhos/atrasados). **Feito via B6-3** (`ROADMAP_BACKEND.md`, 2026-07-24) — validado com tráfego real de webhook. | `apps/api/src/main.ts` · nest-winston | ✅ 2026-07-24 |
+| F7-4 | Runbook: passos de deploy, rollback, reset de filas e troubleshooting comum, em `docs/RUNBOOK.md`. **Feito via B6-4** (`ROADMAP_BACKEND.md`, 2026-07-24). | `docs/` | ✅ 2026-07-24 |
+| F7-5 | **[Descoberto em 2026-07-15]** O Redis Adapter do Socket.IO nunca é aplicado: em gateway com namespace (`/ws`), o `server` recebido em `afterInit` é o **Namespace**, não o `Server` — `server.adapter(...)` falha com `server.adapter is not a function` (visível no log de boot). Hoje o Socket.IO funciona apenas single-instance; o `TESTE_REDIS_ADAPTER.md` está incorreto. Corrigir aplicando o adapter no nível do `IoAdapter` (custom adapter em `main.ts`). **Feito via B2-6** (`ROADMAP_BACKEND.md`, 2026-07-22). | `apps/api/src/modules/events/events.gateway.ts:58-89` · `apps/api/src/main.ts` | ✅ 2026-07-22 |
 
 ---
 
@@ -241,6 +247,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-24 | **🏁 BACKEND FECHADO — B7 (handoff), todo o `ROADMAP_BACKEND.md` de B1 a B7 (28/31, só B3 ficou pendente antes de fechar e foi concluído na mesma sessão).** Sessão contínua fechou as Fases B5 (segurança pré-produção), B6 (backend pronto para produção), B3 (perfil de usuário) e B7 (handoff) inteiras — detalhe completo de cada item em `ROADMAP_BACKEND.md`. Refletido aqui: Fases 3/4/6/7 deste documento tiveram seus itens de backend marcados ✅ com referência ao item B-equivalente (F3-1/2/3/5→B2, F4-1..6→B4, F6-1..3/5→B5, F7-2..5→B6/B2-6); **3 itens ficam deliberadamente abertos** por serem puramente de frontend (fora do escopo backend-only da B-fase): F3-4 (badge visual de SLA na fila), metade de F6-4 (`console.log` de conteúdo de mensagem em `useConversations.js:48,64`) e metade de F7-1 (CI do front). `docs/API_CONTRACT.md` atualizado com os endpoints novos (tags/queues/notifications/audit-log já estavam de B1; adicionado agora `PATCH /users/me`, `POST /users/me/avatar`, `GET /health/ready`). Handoff (B7-2) validado com `prisma migrate reset --force` + seed do zero (autorizado pelo usuário — havia tráfego real de teste no banco de dev), `npx jest` 164/164, `tsc --noEmit` limpo, `docker compose up` nominal (postgres/redis/minio/evolution healthy), checklist de segurança da B5 revisado item a item. | F3-1, F3-2, F3-3, F3-5, F4-1..F4-6, F6-1, F6-2, F6-3, F6-5, F7-2..F7-5 | `ROADMAP_BACKEND.md` — changelog completo de 2026-07-24 (Fases B3, B5, B6, B7) |
 | 2026-07-21 | **Investigação pedida pelo usuário: "erros de codificação, conversas duplicadas, checkup geral".** Codificação: **sem problema encontrado** — Postgres `server_encoding`/`client_encoding` UTF8, HTTP `Content-Type: application/json; charset=utf-8`, `index.html` com `<meta charset="utf-8">`, nenhum arquivo com BOM, zero mensagens/contatos com padrão de mojibake (`Ã©`, `â€`, `Â.`) numa varredura do banco inteiro. Integridade referencial: zero mensagens ou anexos órfãos. **Conversas duplicadas: bug real confirmado** (F0-12) — 5 contatos com 2-3 conversas `WAITING`/`OPEN` simultâneas no banco, causadas por `upsertFromWebhook` reaproveitar conversa filtrando também por `whatsappConnectionId` (toda vez que a conexão é recriada, contatos com conversa aberta ganham uma nova e a antiga fica órfã e travada). Corrigido na origem (reaproveita por contato, reaponta a conexão) + 6 conversas órfãs fechadas no banco + `GET /conversations` passou a excluir `CLOSED` por padrão (efeito colateral que fazia as fechadas continuarem visíveis). No caminho, tráfego real ao vivo expôs um bug novo (F0-13): JID `@lid` do WhatsApp (número oculto por privacidade) não era normalizado, criando contato com nome/telefone literal `"...@lid"` — corrigido com extração genérica por domínio. Observação (não é bug, registrada para a Fase 6): usuário admin acumulou 42 refresh tokens (30 ainda válidos) sem nenhuma limpeza — não fechado nesta sessão. | F0-12 ✅ · F0-13 ✅ | `SELECT` de duplicatas → 5 contatos afetados antes / 0 depois · `tsc --noEmit` → exit 0 · `curl /conversations` autenticado → 14 conversas, nomes únicos, sem duplicata · `curl /conversations?status=CLOSED` → 6 (as fechadas continuam acessíveis explicitamente) · `npx jest` (front, não afetado) → 94/94 |
 | 2026-07-21 | **🏁 FASE 1 CONCLUÍDA — contrato de dados único (pedido do usuário: revisar o projeto, corrigir inconsistências e fechar a fase em andamento).** Ambiente religado do zero (Docker Desktop estava parado) — postgres/redis/minio/evolution healthy, API e front relançados em janelas próprias, `tsc --noEmit`/`jest` conferidos limpos ANTES de mexer em qualquer código (baseline 76/76). Quatro itens fechados: **F1-4** `register()` removido (código morto, rota inexistente no back, nenhuma UI chamava); **F1-3** `mockConversations.js` reescrito no shape exato do contrato (contact/agent/department/tags como objetos, enums reais, mensagens no shape de mensagem da API) — descobriu e corrigiu um bug latente no `requestMock`: `GET /conversations/:id` e `.../messages` caíam ambos em `getConversations()` (a listagem inteira), inofensivo até então só porque o mock antigo nunca disparava lazy-load; **F1-2** `Metrics` — descoberta de que o componente nunca era renderizado (import morto em `main.js`) e nunca teve CSS; reescrito para calcular indicadores reais (total/OPEN/WAITING/não lidas) a partir da lista de conversas, removendo os 2 cards sem fonte de dado real (Primeira resposta, Satisfação); **F1-6** normalizadores exportados + 11 testes novos dedicados, `Metrics.test.js` novo, `api.test.js` alinhado ao wrapper `{data,meta}`. Validado contra o backend real: `GET /conversations` com usuário logado retornou 12 conversas reais no shape exatamente esperado pelo normalizador (contact aninhado, avatarUrl do WhatsApp, tags[], _count). | F1-2 ✅ · F1-3 ✅ · F1-4 ✅ · F1-6 ✅ | `npx jest` → **94/94** (18 novos) · `vite build` → OK · `tsc --noEmit` (apps/api) → exit 0 · `curl /conversations` autenticado → 12 conversas reais, shape conferido campo a campo |
 | 2026-07-17 | **Conversas novas em tempo real na fila (reportado pelo usuário como "conversas não pareadas" — era pendência do F1-2).** Diagnóstico via monitoramento: pareamento e pipeline saudáveis (mensagens no banco, respostas `DELIVERED`), mas o front não tratava `conversation.created` e o `message.new` de conversa fora da lista era descartado em silêncio — conversa de contato novo só aparecia após F5. Corrigido no `useConversations`: handler de `conversation.created` (insere no topo, com dedupe), rede de segurança no `message.new` (busca `GET /conversations/:id` para conversa desconhecida, com guard anti-corrida) e preview da fila atualizado com mensagens do cliente. | F1-2 (parcial) | `npx jest` → **76/76** (2 novos) · webhook simulado de contato novo → conversa criada no banco + eventos emitidos (dados de teste removidos após a validação) |

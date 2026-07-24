@@ -2,12 +2,15 @@
 
 > **Fonte da verdade:** este documento descreve o contrato REAL do backend NestJS
 > (`apps/api`), extraído dos controllers, DTOs e dos `select` do Prisma em
-> 2026-07-16 (item F1-1 do roadmap). Componentes do frontend, mock
-> (`src/services/apiMock.js`) e testes devem seguir **exatamente** estes shapes.
-> Ao alterar um endpoint no backend, atualize este arquivo no mesmo commit.
+> 2026-07-16 (item F1-1 do roadmap), mantido atualizado durante as Fases
+> B1-B3 do `ROADMAP_BACKEND.md` (tags, queues, notifications, audit-log,
+> perfil próprio/avatar, `/health/ready` — última revisão 2026-07-24, item
+> B7-1). Componentes do frontend, mock (`src/services/apiMock.js`) e testes
+> devem seguir **exatamente** estes shapes. Ao alterar um endpoint no
+> backend, atualize este arquivo no mesmo commit.
 
 - **Base URL:** `http://localhost:3001/api/v1` (config: `VITE_API_URL` no front, `API_PREFIX`/porta no back)
-- **Autenticação:** `Authorization: Bearer <accessToken>` em todas as rotas, exceto `/health`, `/auth/login`, `/auth/refresh` e `/webhooks/evolution`
+- **Autenticação:** `Authorization: Bearer <accessToken>` em todas as rotas, exceto `/health`, `/health/ready`, `/auth/login`, `/auth/refresh` e `/webhooks/evolution`
 - **Validação:** `ValidationPipe` global com `whitelist` + `forbidNonWhitelisted` — **campos extras no body retornam 400**
 - **Rate limit global:** `THROTTLE_LIMIT` req / `THROTTLE_TTL` s (default 100/60s) por IP
 - **Erros:** formato padrão do NestJS — `{ "statusCode": number, "message": string | string[], "error": string }`
@@ -208,9 +211,25 @@ Wrapper: `{ data, meta }`.
 }
 ```
 
-### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`)
+### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`), requer `ADMIN`
 ### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (próprio usuário)
 ### `DELETE /users/:id`
+
+### `PATCH /users/me` (B3-1) — auto-edição do próprio perfil, sem exigir `ADMIN`
+```jsonc
+{ "name?": "até 120", "phone?": "...", "avatarUrl?": "URL válida" }
+```
+Só estes 3 campos existem no DTO — `role`/`isActive` não fazem parte do shape
+aceito, então o `ValidationPipe` (`forbidNonWhitelisted`) rejeita com 400
+antes de qualquer checagem de negócio. Retorna o `USER_SELECT` atualizado.
+**Atenção de rota:** precisa ser chamado antes de `PATCH /users/:id` na
+declaração do controller — "me" seria interpretado como `:id` senão.
+
+### `POST /users/me/avatar` (B3-2) — multipart, campo `file`
+Só aceita `image/*`, limite 5MB (menor que os 16MB de `messages/media` —
+é uma foto de perfil). Sobe pro MinIO via `StorageService` (mesmo padrão de
+`messages/media`) e atualiza `avatarUrl`. Retorna `201` com o `USER_SELECT`
+atualizado (`avatarUrl` já apontando pra URL pública do MinIO).
 
 ---
 
@@ -314,7 +333,14 @@ Autor: `{ id, name, avatarUrl }`. Notas nunca vão para o WhatsApp.
 `GET /company/me` · `PATCH /company/me` — dados da empresa do usuário logado.
 
 ## Health — `/health` (público, sem throttle)
-`GET` → `{ "status": "ok", "timestamp": "...", "uptime": <segundos> }`
+`GET` (liveness — não toca dependência) → `{ "status": "ok", "timestamp": "...", "uptime": <segundos> }`
+
+### `GET /health/ready` (B5-3/B6-3) — readiness, checa PostgreSQL e Redis de verdade
+`200 { "status": "ok", "checks": { "database": "up", "redis": "up" }, "timestamp": "..." }`
+quando os dois respondem; `503` com o mesmo shape (`status: "unavailable"`,
+detalhando qual dependência caiu) caso contrário. Pensado pra orquestração/
+nginx decidirem se a instância deve receber tráfego — o `GET /health` acima
+não serve pra isso (não checa nada além do processo estar de pé).
 
 ## Webhooks — `/webhooks/evolution` (público com apikey)
 `POST` consumido pela Evolution API. Autenticação: header `apikey` comparado
