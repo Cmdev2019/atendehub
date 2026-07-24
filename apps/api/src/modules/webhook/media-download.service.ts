@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { Readable } from 'stream';
 import { StorageService, UploadResult } from '../../shared/storage/storage.service';
 
 export interface MediaDownloadResult {

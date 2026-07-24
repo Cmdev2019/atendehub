@@ -181,7 +181,7 @@ export class EventsGateway
 
   // ── Evento: ping / keepalive ──────────────────────────────────────────────
   @SubscribeMessage('ping')
-  handlePing(@ConnectedSocket() socket: AuthenticatedSocket) {
+  handlePing() {
     return { pong: true, timestamp: Date.now() };
   }
 
