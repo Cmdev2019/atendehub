@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { initialConversations } from '../data/mockConversations';
 import { apiClient } from '../services/api';
 import { wsClient } from '../services/websocket';
@@ -73,12 +73,24 @@ export function toUiConversation(conv) {
 // no shape do contrato (fiel ao que a API real retorna).
 const initialUiConversations = initialConversations.map(toUiConversation);
 
+// Zerado — só passa a refletir dado real após o 1º fetch bem-sucedido
+// (B-2: métricas agregadas, independentes da paginação da fila).
+const emptyStats = {
+  totalActive: 0,
+  waiting: 0,
+  open: 0,
+  resolvedToday: 0,
+  unreadCount: 0,
+  unreadConversations: 0,
+};
+
 export function useConversations() {
   // Começar com mock data como fallback
   const [conversations, setConversations] = useState(initialUiConversations);
   const [activeId, setActiveId] = useState(initialUiConversations[0]?.id);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState(emptyStats);
   // true somente após carregar conversas REAIS — evita join/fetch com ids mock
   const [loadedFromApi, setLoadedFromApi] = useState(false);
   // Mensagem de erro do último envio que falhou (visível na UI)
@@ -116,6 +128,21 @@ export function useConversations() {
     fetchConversations();
   }, []);
 
+  // Métricas agregadas (B-2) — endpoint próprio, independente da paginação
+  // da fila (ver fetchStats reusado nos handlers de socket abaixo).
+  const fetchStats = useCallback(async () => {
+    try {
+      const result = await apiClient.getConversationStats();
+      if (result) setStats(result);
+    } catch (error) {
+      console.warn('⚠️ Erro ao buscar métricas:', error.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
   useEffect(() => {
@@ -149,6 +176,7 @@ export function useConversations() {
       setConversations((prev) =>
         prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
       );
+      fetchStats();
     });
 
     // Payload: { conversationId, companyId, message }
@@ -176,6 +204,8 @@ export function useConversations() {
           };
         }),
       );
+      // Mensagem de cliente pode incrementar unreadCount no backend
+      fetchStats();
     });
 
     // Payload: { conversationId, messageId, attachment } — o download da mídia
@@ -230,6 +260,7 @@ export function useConversations() {
           return next;
         }),
       );
+      fetchStats();
     });
 
     // Payload: { companyId, conversationId, agentId, departmentId, agent }
@@ -253,6 +284,7 @@ export function useConversations() {
             : conv,
         ),
       );
+      fetchStats();
     });
 
     // Payload: { companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }
@@ -460,5 +492,6 @@ export function useConversations() {
     sendMessage,
     sendError,
     loading,
+    stats,
   };
 }

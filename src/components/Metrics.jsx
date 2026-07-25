@@ -1,29 +1,27 @@
 import { createElement as h } from 'react';
 
-// Indicadores calculados a partir das conversas carregadas (mesma lista da
-// fila) — sem dado fictício. "Resolvidas hoje" e "Satisfação" exigiriam um
-// endpoint agregado que o backend ainda não tem (ver B-2 no roadmap).
-function computeMetrics(conversations) {
-  const list = conversations || [];
-  const waiting = list.filter((c) => c.status === 'WAITING').length;
-  const open = list.filter((c) => c.status === 'OPEN').length;
-  const unread = list.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-
+// Indicadores vêm do endpoint agregado GET /conversations/stats (B-2) —
+// contagens reais da empresa inteira, independentes da paginação da fila
+// (ver useConversations.js#fetchStats). "Satisfação" segue fora por não
+// existir CSAT no produto (ver decisão registrada no roadmap).
+function toCards(stats) {
+  const s = stats || {};
   return [
-    { label: 'Conversas na fila', value: String(list.length), note: `${waiting} aguardando` },
-    { label: 'Em atendimento', value: String(open), note: 'status: OPEN' },
-    { label: 'Aguardando resposta', value: String(waiting), note: 'status: WAITING' },
-    { label: 'Mensagens não lidas', value: String(unread), note: `em ${list.filter((c) => c.unreadCount > 0).length} conversas` },
+    { label: 'Conversas ativas', value: String(s.totalActive ?? 0), note: `${s.waiting ?? 0} aguardando` },
+    { label: 'Em atendimento', value: String(s.open ?? 0), note: 'status: OPEN' },
+    { label: 'Aguardando resposta', value: String(s.waiting ?? 0), note: 'status: WAITING' },
+    { label: 'Resolvidas hoje', value: String(s.resolvedToday ?? 0), note: 'desde 00:00' },
+    { label: 'Mensagens não lidas', value: String(s.unreadCount ?? 0), note: `em ${s.unreadConversations ?? 0} conversa(s)` },
   ];
 }
 
-export function Metrics({ conversations }) {
-  const metrics = computeMetrics(conversations);
+export function Metrics({ stats }) {
+  const cards = toCards(stats);
 
   return h(
     'section',
     { className: 'metrics', 'aria-label': 'Indicadores rápidos' },
-    metrics.map(({ label, value, note }) =>
+    cards.map(({ label, value, note }) =>
       h(
         'article',
         { key: label, className: 'metric-card' },

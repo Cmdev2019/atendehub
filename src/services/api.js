@@ -236,6 +236,7 @@ class ApiClient {
     }
 
     if (resource === 'conversations') {
+      if (id === 'stats') return mockApiClient.getConversationStats();
       if (sub === 'messages' && method === 'POST') {
         // subId === 'media' → envio de mídia; no mock vira texto ilustrativo
         if (subId === 'media') {
@@ -359,6 +360,12 @@ class ApiClient {
 
   async getConversation(id) {
     return this.request(`/conversations/${id}`, { method: 'GET' });
+  }
+
+  // Métricas agregadas (B-2) — contagens reais da empresa, independentes
+  // da paginação da fila
+  async getConversationStats() {
+    return this.request('/conversations/stats', { method: 'GET' });
   }
 
   async getMessages(conversationId, limit = 50) {

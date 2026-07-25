@@ -36,6 +36,7 @@ function Dashboard() {
     activeConversation,
     sendMessage,
     sendError,
+    stats,
   } = useConversations();
 
   return h(
@@ -54,7 +55,7 @@ function Dashboard() {
         : h(
             "div",
             { className: "workspace-inbox" },
-            h(Metrics, { conversations }),
+            h(Metrics, { stats }),
             h(
               "div",
               { className: "workspace" },

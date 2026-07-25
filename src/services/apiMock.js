@@ -202,6 +202,26 @@ export class MockApiClient {
     return conv;
   }
 
+  // Métricas agregadas (B-2) — mesmo shape do endpoint real, calculado sobre
+  // o store de conversas do mock (não paginado, como o real também não é).
+  async getConversationStats() {
+    await this.simulateDelay();
+    const active = mockConversationsList.filter((c) => c.status !== 'CLOSED');
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    return {
+      totalActive: active.length,
+      waiting: active.filter((c) => c.status === 'WAITING').length,
+      open: active.filter((c) => c.status === 'OPEN').length,
+      resolvedToday: mockConversationsList.filter(
+        (c) => c.resolvedAt && new Date(c.resolvedAt) >= startOfToday,
+      ).length,
+      unreadCount: active.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+      unreadConversations: active.filter((c) => (c.unreadCount || 0) > 0).length,
+    };
+  }
+
   async getMessages(conversationId) {
     await this.simulateDelay();
     const conv = mockConversationsList.find((c) => c.id === conversationId);

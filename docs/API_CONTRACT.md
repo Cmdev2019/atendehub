@@ -110,6 +110,22 @@ Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `department
 // Ordenação: lastMessageAt desc, createdAt desc
 ```
 
+### `GET /conversations/stats` (B-2) — métricas agregadas da empresa
+Contagens reais via `count`/`aggregate` do Prisma, **independentes de paginação**
+(diferente do `data[]` de `GET /conversations`, que só reflete a página carregada).
+**Atenção de rota:** declarado antes de `GET /:id` no controller — "stats" seria
+interpretado como `:id` senão.
+```jsonc
+{
+  "totalActive": 18,       // status != CLOSED
+  "waiting": 5,            // status = WAITING
+  "open": 9,               // status = OPEN
+  "resolvedToday": 3,      // resolvedAt >= hoje 00:00 (qualquer status)
+  "unreadCount": 12,       // soma de unreadCount nas conversas ativas
+  "unreadConversations": 4 // quantas conversas ativas têm unreadCount > 0
+}
+```
+
 ### `GET /conversations/:id`
 Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `metadata`, `updatedAt` e contato/agente expandidos.
 

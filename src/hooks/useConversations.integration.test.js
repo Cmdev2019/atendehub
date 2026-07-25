@@ -6,6 +6,7 @@ jest.mock('../services/api', () => ({
   apiClient: {
     getConversations: jest.fn(),
     getConversation: jest.fn(),
+    getConversationStats: jest.fn(),
     sendMessage: jest.fn(),
   },
 }));
@@ -43,6 +44,63 @@ describe('useConversations Integration Tests', () => {
     expect(result.current).toHaveProperty('activeId');
     expect(result.current).toHaveProperty('draft');
     expect(result.current).toHaveProperty('sendMessage');
+    expect(result.current).toHaveProperty('stats');
+  });
+
+  it('busca stats agregado (B-2) ao montar e expõe no retorno do hook', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data: [], pagination: {} });
+    mockApiClient.getConversationStats.mockResolvedValueOnce({
+      totalActive: 7,
+      waiting: 3,
+      open: 4,
+      resolvedToday: 1,
+      unreadCount: 9,
+      unreadConversations: 2,
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.stats.totalActive).toBe(7);
+    });
+    expect(result.current.stats.unreadCount).toBe(9);
+  });
+
+  it('refaz o fetch de stats ao receber conversation.created (mantém métricas atualizadas)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    mockApiClient.getConversationStats
+      .mockResolvedValueOnce({ totalActive: 1, waiting: 1, open: 0, resolvedToday: 0, unreadCount: 0, unreadConversations: 0 })
+      .mockResolvedValueOnce({ totalActive: 2, waiting: 2, open: 0, resolvedToday: 0, unreadCount: 0, unreadConversations: 0 });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.stats.totalActive).toBe(1);
+    });
+
+    const conversationCreatedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.created'
+    )[1];
+
+    act(() => {
+      conversationCreatedHandler({
+        companyId: 'company-1',
+        conversation: {
+          id: 'conv-nova',
+          status: 'WAITING',
+          channel: 'WHATSAPP',
+          contact: { id: 'ct-1', name: 'Paloma', phone: '5512999999999', avatarUrl: null },
+          createdAt: '2026-07-24T20:17:00.000Z',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.stats.totalActive).toBe(2);
+    });
   });
 
   it('carrega conversas do API ao montar', async () => {

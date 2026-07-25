@@ -129,6 +129,46 @@ export class ConversationService {
     };
   }
 
+  // ── Métricas agregadas (B-2) — contagens reais da empresa inteira, ────────
+  // independentes de paginação (a listagem em findAll() só reflete a página
+  // carregada no front, que passou a paginar de verdade em B-4).
+  async getStats(companyId: string) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const activeWhere = { companyId, status: { not: ConversationStatus.CLOSED } };
+
+    const [totalActive, waiting, open, resolvedToday, unreadAgg, unreadConversations] =
+      await Promise.all([
+        this.prisma.conversation.count({ where: activeWhere }),
+        this.prisma.conversation.count({
+          where: { ...activeWhere, status: ConversationStatus.WAITING },
+        }),
+        this.prisma.conversation.count({
+          where: { ...activeWhere, status: ConversationStatus.OPEN },
+        }),
+        this.prisma.conversation.count({
+          where: { companyId, resolvedAt: { gte: startOfToday } },
+        }),
+        this.prisma.conversation.aggregate({
+          where: activeWhere,
+          _sum: { unreadCount: true },
+        }),
+        this.prisma.conversation.count({
+          where: { ...activeWhere, unreadCount: { gt: 0 } },
+        }),
+      ]);
+
+    return {
+      totalActive,
+      waiting,
+      open,
+      resolvedToday,
+      unreadCount: unreadAgg._sum.unreadCount ?? 0,
+      unreadConversations,
+    };
+  }
+
   // ── Buscar conversa por ID com detalhes completos ─────────────────────────
   async findOne(companyId: string, id: string) {
     const conversation = await this.prisma.conversation.findFirst({

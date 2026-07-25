@@ -3,27 +3,31 @@ import { createElement as h } from 'react';
 import { Metrics } from './Metrics';
 
 describe('Metrics', () => {
-  it('calcula os indicadores a partir das conversas reais (não mais fixos)', () => {
-    const conversations = [
-      { id: '1', status: 'WAITING', unreadCount: 2 },
-      { id: '2', status: 'OPEN', unreadCount: 0 },
-      { id: '3', status: 'WAITING', unreadCount: 1 },
-      { id: '4', status: 'RESOLVED', unreadCount: 0 },
-    ];
+  it('renderiza os indicadores a partir do stats agregado (B-2)', () => {
+    const stats = {
+      totalActive: 4,
+      waiting: 2,
+      open: 1,
+      resolvedToday: 3,
+      unreadCount: 5,
+      unreadConversations: 2,
+    };
 
-    render(h(Metrics, { conversations }));
+    render(h(Metrics, { stats }));
 
-    expect(screen.getByText('4')).toBeInTheDocument(); // total na fila
-    expect(screen.getByText('1')).toBeInTheDocument(); // em atendimento (OPEN)
-    expect(screen.getByText('2')).toBeInTheDocument(); // aguardando (WAITING) e não lidas coincidem aqui
+    expect(screen.getByText('4')).toBeInTheDocument(); // conversas ativas
+    expect(screen.getByText('1')).toBeInTheDocument(); // em atendimento
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0); // aguardando / unreadConversations
+    expect(screen.getByText('3')).toBeInTheDocument(); // resolvidas hoje
+    expect(screen.getByText('5')).toBeInTheDocument(); // não lidas
   });
 
-  it('não quebra e mostra zeros sem conversas', () => {
-    render(h(Metrics, { conversations: [] }));
+  it('não quebra e mostra zeros sem stats', () => {
+    render(h(Metrics, { stats: {} }));
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
-  it('lida com conversations undefined sem lançar erro', () => {
+  it('lida com stats undefined sem lançar erro', () => {
     expect(() => render(h(Metrics))).not.toThrow();
   });
 });

@@ -34,6 +34,14 @@ export class ConversationController {
     return this.conversationService.findAll(user.companyId, query);
   }
 
+  // GET /api/v1/conversations/stats
+  // Precisa vir ANTES de GET /:id na declaração — senão "stats" seria
+  // interpretado como o :id (rotas Express casam na ordem declarada).
+  @Get('stats')
+  getStats(@CurrentUser() user: AuthUserDto) {
+    return this.conversationService.getStats(user.companyId);
+  }
+
   // GET /api/v1/conversations/:id
   @Get(':id')
   findOne(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
