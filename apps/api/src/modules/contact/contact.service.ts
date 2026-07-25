@@ -201,6 +201,81 @@ export class ContactService {
     };
   }
 
+  // ── Exportar dados do titular (B-30/LGPD — direito de portabilidade) ──────
+  // Reúne tudo que a empresa guarda sobre o contato — dados cadastrais, tags
+  // e o histórico completo de conversas com mensagens/anexos — num único
+  // JSON estruturado (formato comum, legível por máquina, art. 18 §5º da
+  // LGPD). Sem paginação de propósito: é uma exportação pontual sob demanda
+  // de um `ADMIN`, não uma listagem de uso corrente.
+  async exportData(companyId: string, id: string, requesterId: string) {
+    const contact = await this.prisma.contact.findFirst({
+      where: { id, companyId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        avatarUrl: true,
+        channel: true,
+        isBlocked: true,
+        metadata: true,
+        anonymizedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        tags: { select: { id: true, name: true, color: true } },
+      },
+    });
+
+    if (!contact) throw new NotFoundException('Contato não encontrado');
+    if (contact.anonymizedAt) {
+      throw new BadRequestException(
+        'Este contato já foi anonimizado — não há dados pessoais para exportar',
+      );
+    }
+
+    const conversations = await this.prisma.conversation.findMany({
+      where: { contactId: id, companyId },
+      select: {
+        id: true,
+        status: true,
+        channel: true,
+        createdAt: true,
+        resolvedAt: true,
+        closedAt: true,
+        agent: { select: { id: true, name: true } },
+        messages: {
+          where: { isDeleted: false },
+          select: {
+            id: true,
+            senderType: true,
+            content: true,
+            type: true,
+            status: true,
+            sentAt: true,
+            deliveredAt: true,
+            readAt: true,
+            sender: { select: { id: true, name: true } },
+            attachments: {
+              select: { id: true, url: true, mimeType: true, fileName: true, size: true },
+            },
+          },
+          orderBy: { sentAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'contact.exported',
+      entity: 'Contact',
+      entityId: id,
+    });
+
+    return { contact, conversations, exportedAt: new Date() };
+  }
+
   // ── Bloquear / desbloquear ────────────────────────────────────────────────
   async toggleBlock(companyId: string, id: string) {
     const contact = await this.findOne(companyId, id);

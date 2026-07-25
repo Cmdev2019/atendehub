@@ -69,6 +69,16 @@ export class ContactController {
     return this.contactService.remove(user.companyId, id, user.id);
   }
 
+  // GET /api/v1/contacts/:id/export
+  // Portabilidade de dados do titular (B-30/LGPD) — contato + tags + todas as
+  // conversas e mensagens, num único JSON. Restrito a ADMIN+ (mesmo nível de
+  // DELETE — é acesso amplo a PII, não uma consulta corriqueira).
+  @Get(':id/export')
+  @Roles(Role.ADMIN)
+  exportData(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
+    return this.contactService.exportData(user.companyId, id, user.id);
+  }
+
   // PATCH /api/v1/contacts/:id/block
   @Patch(':id/block')
   toggleBlock(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {

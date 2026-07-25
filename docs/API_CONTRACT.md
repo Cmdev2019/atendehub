@@ -250,6 +250,9 @@ CRUD padrão; block alterna `isBlocked`. `PATCH` recusa com 400 se o contato já
 ### `DELETE /contacts/:id` — requer `ADMIN+`
 **Não é hard delete.** É anonimização (direito de exclusão do titular — B-17/LGPD): `name`/`phone`/`email`/`avatarUrl`/`metadata` são substituídos (`name` vira `"Contato removido"`, `phone` vira `anonimizado-<id>` pra não colidir com o índice único `companyId+phone`) e `anonymizedAt` é preenchido — o registro e seu histórico de conversas/mensagens permanecem intactos (a relação `Conversation.contact` não tem cascade; hard delete quebraria com violação de FK pra qualquer contato com conversa). Recusa com 400 se já estiver anonimizado. Auditoria: `contact.anonymized` (era `contact.deleted`). Resposta: `{ message, anonymizedAt }`.
 
+### `GET /contacts/:id/export` — requer `ADMIN+`
+Portabilidade de dados do titular (B-30/LGPD, art. 18 §5º). Devolve `{ contact, conversations, exportedAt }` num único JSON: `contact` no mesmo shape de `GET /contacts/:id` (+ `tags[]`); `conversations[]` traz **todas** as conversas do contato (sem paginação — é exportação pontual, não listagem de uso corrente), cada uma com `agent: {id,name}|null` e `messages[]` completo em ordem cronológica (`senderType`, `content`, `type`, `status`, `sentAt`/`deliveredAt`/`readAt`, `sender`, `attachments[]` com `url`/`mimeType`/`fileName`/`size`). Recusa com 400 se o contato já foi anonimizado (não há mais PII pra exportar). Auditoria: `contact.exported`.
+
 ### `POST /contacts/:id/tags/:tagId` · `DELETE /contacts/:id/tags/:tagId`
 Atribui/remove uma tag existente do contato (B1-1). 404 se a tag ou o contato não pertencerem à empresa do usuário.
 

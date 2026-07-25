@@ -22,6 +22,9 @@ const mockPrisma = {
     delete: jest.fn(),
     upsert: jest.fn(),
   },
+  conversation: {
+    findMany: jest.fn(),
+  },
 };
 
 const mockAuditLog = { record: jest.fn() };
@@ -160,6 +163,55 @@ describe('ContactService — isolamento multi-tenant', () => {
         }),
       );
       expect(result.anonymizedAt).toEqual(new Date('2026-07-25'));
+    });
+  });
+
+  // B-30/LGPD: portabilidade — contato + conversas + mensagens num único JSON
+  describe('exportData', () => {
+    it('não encontra um contato que pertence a outra empresa', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.exportData(companyA, contactOfCompanyB, requesterId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.conversation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('recusa exportar um contato já anonimizado — não há PII pra devolver', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        id: 'contact-1', anonymizedAt: new Date(), tags: [],
+      });
+
+      await expect(service.exportData(companyA, 'contact-1', requesterId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrisma.conversation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('busca conversas filtrando por companyId + contactId, e registra auditoria', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        id: 'contact-1', name: 'Fulano', phone: '5511999999999', anonymizedAt: null, tags: [],
+      });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([
+        { id: 'conv-1', messages: [] },
+      ]);
+
+      const result = await service.exportData(companyA, 'contact-1', requesterId);
+
+      expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { contactId: 'contact-1', companyId: companyA } }),
+      );
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: companyA,
+          userId: requesterId,
+          action: 'contact.exported',
+          entity: 'Contact',
+          entityId: 'contact-1',
+        }),
+      );
+      expect(result.conversations).toHaveLength(1);
+      expect(result.exportedAt).toBeInstanceOf(Date);
     });
   });
 
