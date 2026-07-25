@@ -4,7 +4,7 @@ import {
   ConflictException,
   Logger,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -302,14 +302,19 @@ export class AuthService {
 
     const expiresIn = this.parseExpiry(jwtExpiresIn);
 
+    // `expiresIn` do jsonwebtoken (via @types/jsonwebtoken) passou a exigir o
+    // tipo literal `StringValue` da lib `ms` ("15m", "7d"...) em vez de
+    // `string` genérico — JWT_EXPIRES_IN/JWT_REFRESH_EXPIRES_IN já seguem
+    // esse formato (validado por `parseExpiry` logo abaixo), o cast só
+    // relaxa a checagem estática, sem mudar o valor passado em runtime.
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: jwtSecret,
-        expiresIn: jwtExpiresIn,
+        expiresIn: jwtExpiresIn as JwtSignOptions['expiresIn'],
       }),
       this.jwtService.signAsync(payload, {
         secret: jwtRefreshSecret,
-        expiresIn: jwtRefreshExpires,
+        expiresIn: jwtRefreshExpires as JwtSignOptions['expiresIn'],
       }),
     ]);
 
