@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -10,12 +11,16 @@ import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { ListContactsDto } from './dto/list-contacts.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StorageService } from '../../shared/storage/storage.service';
 
 @Injectable()
 export class ContactService {
+  private readonly logger = new Logger(ContactService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly storage: StorageService,
   ) {}
 
   // ── Listar contatos com paginação e filtros ───────────────────────────────
@@ -186,6 +191,15 @@ export class ContactService {
       select: { anonymizedAt: true },
     });
 
+    // B-29/LGPD: a PII do Postgres já foi removida acima — a mídia (foto,
+    // áudio, documento) das conversas do contato ainda vive no MinIO e
+    // precisa ser purgada também, senão o "esquecimento" fica só parcial
+    // (a URL pública continua servindo o arquivo). Best-effort de propósito:
+    // uma falha aqui (MinIO fora do ar, objeto já ausente) não desfaz a
+    // anonimização, que é a parte legalmente obrigatória — fica registrada
+    // na auditoria pra follow-up manual.
+    const mediaResult = await this.purgeMedia(companyId, id);
+
     await this.auditLog.record({
       companyId,
       userId: requesterId,
@@ -193,12 +207,43 @@ export class ContactService {
       entity: 'Contact',
       entityId: id,
       before: { name: contact.name, phone: contact.phone, email: contact.email },
+      after: { mediaPurged: mediaResult.purged, mediaFailed: mediaResult.failed },
     });
 
     return {
       message: 'Contato anonimizado com sucesso — histórico de conversas preservado',
       anonymizedAt: anonymized.anonymizedAt,
+      media: mediaResult,
     };
+  }
+
+  // ── Purga mídia do MinIO ao anonimizar (B-29/LGPD) ────────────────────────
+  // Apaga o objeto no MinIO e a linha de `Attachment` de cada anexo das
+  // conversas do contato. Best-effort por item: uma falha isolada (objeto já
+  // removido, MinIO fora do ar) não interrompe as demais.
+  private async purgeMedia(companyId: string, contactId: string) {
+    const attachments = await this.prisma.attachment.findMany({
+      where: { message: { conversation: { contactId, companyId } } },
+      select: { id: true, url: true },
+    });
+
+    let purged = 0;
+    let failed = 0;
+
+    for (const attachment of attachments) {
+      try {
+        await this.storage.deleteByUrl(attachment.url);
+        await this.prisma.attachment.delete({ where: { id: attachment.id } });
+        purged += 1;
+      } catch (err: any) {
+        failed += 1;
+        this.logger.error(
+          `Falha ao purgar mídia do contato ${contactId} (attachment ${attachment.id}): ${err.message}`,
+        );
+      }
+    }
+
+    return { purged, failed };
   }
 
   // ── Exportar dados do titular (B-30/LGPD — direito de portabilidade) ──────

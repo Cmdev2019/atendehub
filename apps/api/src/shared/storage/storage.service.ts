@@ -150,6 +150,20 @@ export class StorageService implements OnModuleInit {
     await this.client.removeObject(this.bucket, key);
   }
 
+  /**
+   * Deleta um objeto a partir da URL pública salva em `Attachment.url`
+   * (formato `${publicUrl}/${bucket}/${key}`, ver `upload()`). Usado pra
+   * purgar mídia de um contato anonimizado (B-29/LGPD) — a tabela só guarda
+   * a URL completa, não a key isolada.
+   */
+  async deleteByUrl(url: string): Promise<void> {
+    const prefix = `${this.publicUrl}/${this.bucket}/`;
+    if (!url.startsWith(prefix)) {
+      throw new Error(`URL fora do bucket esperado (${this.bucket}): ${url}`);
+    }
+    await this.delete(url.slice(prefix.length));
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   private getFolder(mimeType: string): string {

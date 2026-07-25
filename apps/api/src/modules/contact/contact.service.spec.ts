@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContactService } from './contact.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StorageService } from '../../shared/storage/storage.service';
 
 // Isolamento multi-tenant (B4-3): o risco real aqui não é "companyId errado
 // devolve os dados certos" (óbvio) — é um dev remover/quebrar o filtro
@@ -25,9 +26,14 @@ const mockPrisma = {
   conversation: {
     findMany: jest.fn(),
   },
+  attachment: {
+    findMany: jest.fn(),
+    delete: jest.fn(),
+  },
 };
 
 const mockAuditLog = { record: jest.fn() };
+const mockStorage = { deleteByUrl: jest.fn() };
 
 describe('ContactService — isolamento multi-tenant', () => {
   let service: ContactService;
@@ -37,12 +43,14 @@ describe('ContactService — isolamento multi-tenant', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrisma.attachment.findMany.mockResolvedValue([]); // sem mídia por padrão
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContactService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile();
 
@@ -160,9 +168,59 @@ describe('ContactService — isolamento multi-tenant', () => {
           entity: 'Contact',
           entityId: 'contact-1',
           before: { name: 'Fulano', phone: '5511999999999', email: 'fulano@example.com' },
+          after: { mediaPurged: 0, mediaFailed: 0 },
         }),
       );
       expect(result.anonymizedAt).toEqual(new Date('2026-07-25'));
+      expect(result.media).toEqual({ purged: 0, failed: 0 });
+    });
+
+    // B-29/LGPD: a PII sozinha no Postgres não basta — a mídia (foto, áudio,
+    // documento) das conversas do contato precisa sumir do MinIO também.
+    it('purga do MinIO e apaga a linha de Attachment de cada anexo das conversas do contato', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        name: 'Fulano', phone: '5511999999999', email: null, anonymizedAt: null,
+      });
+      mockPrisma.contact.update.mockResolvedValueOnce({ anonymizedAt: new Date() });
+      mockPrisma.attachment.findMany.mockReset().mockResolvedValueOnce([
+        { id: 'att-1', url: 'http://minio/bucket/company-a/images/a.jpg' },
+        { id: 'att-2', url: 'http://minio/bucket/company-a/audios/b.ogg' },
+      ]);
+      mockStorage.deleteByUrl.mockResolvedValue(undefined);
+
+      const result = await service.remove(companyA, 'contact-1', requesterId);
+
+      expect(mockPrisma.attachment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { message: { conversation: { contactId: 'contact-1', companyId: companyA } } },
+        }),
+      );
+      expect(mockStorage.deleteByUrl).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.attachment.delete).toHaveBeenCalledWith({ where: { id: 'att-1' } });
+      expect(mockPrisma.attachment.delete).toHaveBeenCalledWith({ where: { id: 'att-2' } });
+      expect(result.media).toEqual({ purged: 2, failed: 0 });
+    });
+
+    it('não deixa uma falha isolada no MinIO travar a anonimização nem as demais purgas', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        name: 'Fulano', phone: '5511999999999', email: null, anonymizedAt: null,
+      });
+      mockPrisma.contact.update.mockResolvedValueOnce({ anonymizedAt: new Date() });
+      mockPrisma.attachment.findMany.mockReset().mockResolvedValueOnce([
+        { id: 'att-1', url: 'http://minio/bucket/company-a/images/a.jpg' },
+        { id: 'att-2', url: 'http://minio/bucket/company-a/audios/b.ogg' },
+      ]);
+      mockStorage.deleteByUrl
+        .mockRejectedValueOnce(new Error('MinIO fora do ar'))
+        .mockResolvedValueOnce(undefined);
+
+      const result = await service.remove(companyA, 'contact-1', requesterId);
+
+      // a anonimização (já feita antes da purga) não é desfeita por uma falha aqui
+      expect(mockPrisma.contact.update).toHaveBeenCalled();
+      expect(mockPrisma.attachment.delete).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.attachment.delete).toHaveBeenCalledWith({ where: { id: 'att-2' } });
+      expect(result.media).toEqual({ purged: 1, failed: 1 });
     });
   });
 
