@@ -1,0 +1,47 @@
+name: Web CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.js'
+      - 'jest.config.js'
+      - 'jest.setup.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/web-ci.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.js'
+      - 'jest.config.js'
+      - 'jest.setup.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/web-ci.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

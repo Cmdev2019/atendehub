@@ -5,12 +5,13 @@
 > trabalho (humana ou com Claude) deve atualizar os status dos itens, o painel
 > de progresso e registrar uma entrada no [Changelog](#-changelog).
 >
-> **Última atualização:** 2026-07-24 · Backend fechado (B7), Fase 8 concluída
-> (12/12) e agora Fase 3 também concluída (5/5, F3-4 fechou o badge de SLA).
-> **Próxima ação:** só restam 2 itens residuais, ambos parciais (metade
-> backend já ✅, metade frontend ainda aberta): F6-4 (limpar `console.log`
-> de conteúdo de mensagem em `useConversations.js:48,64`) e F7-1 (CI do
-> front — reaproveitar o padrão de `.github/workflows/api-ci.yml`).
+> **Última atualização:** 2026-07-24 · **🏁🏁🏁 DOCUMENTO FECHADO POR COMPLETO
+> — 70/70, todas as 9 fases (0-8) concluídas.**
+> **Próxima ação:** não há itens abertos nas fases numeradas. Consultar o
+> [Backlog](#-backlog) para o que vem depois — B-2 (métricas reais), B-4
+> (paginação/scroll infinito) e B-5 (tags do `docker-compose.yml`, já
+> mitigado pela convenção de subir serviços nominalmente) seguem sem
+> priorização de fase.
 
 ---
 
@@ -24,10 +25,10 @@
 | [Fase 3](#-fase-3--ativar-o-módulo-de-sla) | Ativar o módulo de SLA | 🟠 P1 | 5/5 | ✅ Concluída |
 | [Fase 4](#-fase-4--testes-no-backend) | Testes no backend | 🟠 P1→P2 | 6/6 | ✅ Concluída (via B4, `ROADMAP_BACKEND.md`) |
 | [Fase 5](#-fase-5--higiene-do-repositório-e-documentação) | Higiene do repo e documentação | 🟡 P2 | 5/5 | ✅ Concluída |
-| [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 4/5 | 🔄 Em andamento (backend ✅ via B5; falta metade de F6-4, frontend) |
-| [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 4/5 | 🔄 Em andamento (backend ✅ via B6; falta metade de F7-1, CI do frontend) |
+| [Fase 6](#-fase-6--hardening-de-segurança-pré-produção) | Hardening de segurança | 🟡 P2 | 5/5 | ✅ Concluída |
+| [Fase 7](#-fase-7--pronto-para-produção) | Pronto para produção | 🟢 P3 | 5/5 | ✅ Concluída |
 | [Fase 8](#-fase-8--administração--configurações) | Administração & Configurações | 🟠 P1 | 12/12 | ✅ Concluída |
-| **Total** | | | **68/68** | |
+| **Total** | | | **70/70** | |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -163,7 +164,7 @@
 | F6-1 | Estratégia de tokens: access/refresh em `localStorage` é vulnerável a XSS. Migrar para cookie `httpOnly` + proteção CSRF, **ou** registrar formalmente o trade-off aceito em Decisões (com mitigações: CSP, sanitização). **Decidido via B5-1** (`ROADMAP_BACKEND.md`, 2026-07-24): mantém `localStorage` — migrar exigiria reescrever o cliente HTTP/WS do front no meio da pausa; trade-off registrado formalmente. Parte prática do lado backend (limpeza de refresh tokens acumulados) feita junto. | `src/services/api.js:32-45` | ✅ 2026-07-24 |
 | F6-2 | Rotação de segredos de produção: garantir que nenhum default do compose (postgres `atendehub_secret`, redis `redis_secret`, minio, `evolution_api_key_dev`) chegue a produção; checklist no `.env.example` + revisão do `docker-compose.prod.yml`. **Feito via B5-2** (`ROADMAP_BACKEND.md`, 2026-07-24) — redis/minio/evolution agora exigem a variável (`${VAR:?...}`), sem fallback pro valor de dev. | `docker-compose.yml` · `docker-compose.prod.yml` · `apps/api/.env.example` | ✅ 2026-07-24 |
 | F6-3 | Health readiness: expandir F0-1 com checagem de dependências (PostgreSQL, Redis) num endpoint `/health/ready` separado do liveness leve — para orquestração/nginx. **Feito via B5-3** (`ROADMAP_BACKEND.md`, 2026-07-24) — validado com Postgres/Redis reais. | backend (HealthModule) | ✅ 2026-07-24 |
-| F6-4 | Higiene de logs: remover `console.log` que expõe conteúdo de mensagens no navegador e revisar logs do backend para não vazar payloads/PII em produção. **Lado backend feito via B5-4** (`ROADMAP_BACKEND.md`, 2026-07-24) — nível `debug` (vazava telefone) desligado em produção, login parou de logar e-mail. **Lado frontend ainda pendente:** `console.log` em `src/hooks/useConversations.js:48,64` não foi tocado nesta rodada (fora do escopo backend-only da B5) — revisar quando o front voltar a ser a frente ativa. | `src/hooks/useConversations.js:48,64` · `src/services/*.js` · backend (winston) | 🔄 parcial (backend ✅, frontend ⬜) |
+| F6-4 | Higiene de logs: remover `console.log` que expõe conteúdo de mensagens no navegador e revisar logs do backend para não vazar payloads/PII em produção. **Lado backend feito via B5-4** (`ROADMAP_BACKEND.md`, 2026-07-24) — nível `debug` (vazava telefone) desligado em produção, login parou de logar e-mail. **Lado frontend: já estava resolvido, sem nunca ter sido fechado no roadmap.** Os `console.log` de `useConversations.js:48,64` citados na referência original não existem mais nessa forma — o `git log -S` mostra que o log que imprimia a mensagem inteira (`console.log('📬 Nova mensagem recebida:', message)`, incluindo `.text`/`.content`) foi trocado para logar só o `conversationId` no commit `ba110ee`, bem antes desta sessão, como efeito colateral de um refactor não relacionado a este item. Varredura em 2026-07-24 confirma: zero ocorrências de `console.*` logando conteúdo de mensagem/draft em todo `src/` (`components/`, `hooks/`, `services/`, `context/`) — todos os `console.*` restantes logam só id/status/mensagem de erro genérica. | `src/hooks/useConversations.js` · `src/services/*.js` · backend (winston) | ✅ 2026-07-24 |
 | F6-5 | Revisão final de CORS (`CORS_ORIGINS` de produção), rate limits (`THROTTLE_*`) e headers (helmet) com os domínios reais. **Feito via B5-5** (`ROADMAP_BACKEND.md`, 2026-07-24) — boot falha (fail-hard) em produção/staging se `CORS_ORIGINS` estiver ausente ou for `*`. | `apps/api/src/main.ts:31-36` · `apps/api/src/app.module.ts:23-32` | ✅ 2026-07-24 |
 
 ---
@@ -172,7 +173,7 @@
 
 | ID | Item | Referências | Status |
 |---|---|---|---|
-| F7-1 | CI (GitHub Actions): lint + `tsc --noEmit` + testes front e back em cada push/PR. **Aceite:** pipeline verde no repositório `Cmdev2019/atendehub`. **Lado backend feito via B6-1** (`ROADMAP_BACKEND.md`, 2026-07-24) — `.github/workflows/api-ci.yml`, também resolveu o BL-1 (eslint.config.js nunca existiu). **Lado frontend ainda pendente:** nenhum workflow cobre `npm test`/build do front na raiz — abrir quando o front voltar a ser a frente ativa (pode reaproveitar o mesmo padrão do `api-ci.yml`). | `.github/workflows/` (novo) | 🔄 parcial (backend ✅, frontend ⬜) |
+| F7-1 | CI (GitHub Actions): lint + `tsc --noEmit` + testes front e back em cada push/PR. **Aceite:** pipeline verde no repositório `Cmdev2019/atendehub`. **Lado backend feito via B6-1** (`ROADMAP_BACKEND.md`, 2026-07-24) — `.github/workflows/api-ci.yml`, também resolveu o BL-1 (eslint.config.js nunca existiu). **Lado frontend concluído:** novo `.github/workflows/web-ci.yml` — `npm ci` → `npm test` → `npm run build`, disparado em push/PR que tocam `src/**`/`public/**`/`index.html`/`vite.config.js`/configs de teste/`package.json` (raiz, não `apps/**` — evita rodar em mudanças só de backend). Sem passo de lint: o front nunca teve `eslint` configurado (diferente do backend, que tinha a dependência instalada só sem config — aqui não há nem a dependência); adicionar lint ao front é escopo novo, não parte deste item. Sem `tsc --noEmit`: o front é JavaScript puro, sem TypeScript. | `.github/workflows/web-ci.yml` (novo) | ✅ 2026-07-24 |
 | F7-2 | Builds de produção validados: `vite build` + `nest build` sem warnings críticos; revisão do `docker-compose.prod.yml` + nginx servindo front e proxy da API/WS. **Feito via B6-2** (`ROADMAP_BACKEND.md`, 2026-07-24) — `apps/api/Dockerfile` (novo) e `infra/nginx/Dockerfile` (novo, builda o `vite build` real e serve estático); eliminado o container `web` obsoleto (residual do plano Next.js pré-F5-3). Validado com builds reais no Docker. | `docker-compose.prod.yml` · `infra/nginx/nginx.conf` | ✅ 2026-07-24 |
 | F7-3 | Observabilidade mínima: winston estruturado (JSON) com request-id, métricas básicas das filas Bull (jobs falhos/atrasados). **Feito via B6-3** (`ROADMAP_BACKEND.md`, 2026-07-24) — validado com tráfego real de webhook. | `apps/api/src/main.ts` · nest-winston | ✅ 2026-07-24 |
 | F7-4 | Runbook: passos de deploy, rollback, reset de filas e troubleshooting comum, em `docs/RUNBOOK.md`. **Feito via B6-4** (`ROADMAP_BACKEND.md`, 2026-07-24). | `docs/` | ✅ 2026-07-24 |
@@ -240,6 +241,7 @@ Itens identificados mas ainda não priorizados em fase. Ao priorizar, mover para
 
 | Data | O que foi feito | Itens | Evidência |
 |---|---|---|---|
+| 2026-07-24 | **🏁🏁 ROADMAP_ESTABILIZACAO.md FECHADO POR COMPLETO — 70/70 (Fases 6 e 7 concluídas: F6-4 e F7-1).** F6-4: o lado frontend já estava resolvido sem nunca ter sido fechado no roadmap — `git log -S` confirma que o `console.log` que imprimia a mensagem inteira foi trocado por um log só do `conversationId` no commit `ba110ee`, bem antes desta sessão; varredura em todo `src/` (2026-07-24) confirma zero `console.*` logando conteúdo de mensagem hoje. F7-1: novo `.github/workflows/web-ci.yml` (`npm ci` → `npm test` → `npm run build`), com `paths` restritos a arquivos do front (nunca dispara em mudança só de `apps/**`); sem lint (front nunca teve ESLint configurado, nem a dependência) nem `tsc` (JS puro). **Correção incidental:** o somatório do painel de status estava incorreto há um tempo — a soma real dos denominadores de todas as fases é 70, não 68 (provável resíduo de quando alguma fase teve a contagem de itens ajustada sem recalcular o total); corrigido agora que todas as fases fecharam e a conta ficou fácil de conferir. | F6-4, F7-1 | `npm test`: 9 suites, 98/98 (inalterado) · `vite build` → OK · sequência do `web-ci.yml` rodada manualmente e idêntica local |
 | 2026-07-24 | **🏁 FASE 3 CONCLUÍDA — F3-4, badge de SLA na fila.** `useConversations.js` ganhou 3 handlers de socket novos: `sla.breached` marca `conv.slaBreached`; `conversation.assigned` (evento próprio do backend, distinto de `conversation.updated` — descoberto no caminho que já era repassado pelo `websocket.js` mas nunca escutado por ninguém no front) limpa a flag ao atribuir agente; `conversation.updated` também limpa ao sair de `WAITING` por qualquer outro caminho. `ConversationQueue.jsx` renderiza badge "⚠ SLA" + destaque visual (`.sla-breached` novo em `styles.css`). Fecha a Fase 3 inteira. | F3-4 | `npm test`: 9 suites, **98/98** (3 novos) · `vite build` → OK · validação visual real com Playwright (injeção temporária de fixture, revertida) |
 | 2026-07-24 | **🏁 FASE 8 CONCLUÍDA — F8-8, filas por setor + vínculo conexão↔setor.** Nova seção "Filas de distribuição" em Configurações (ADMIN+): CRUD completo de `Queue` (nome, estratégia, tempo máx. de espera, mensagem de saudação, setor vinculado), ativar/desativar. `WhatsappSection` ganhou seletor de setor na criação de conexão, com o vínculo exibido na lista. | F8-8 | `npm test`: 9 suites, 95/95 (inalterado) · `vite build` → OK · validação real com Playwright (criar/editar/desativar fila, criar conexão com setor vinculado — tudo refletido corretamente na UI) |
 | 2026-07-24 | **F8-7 — perfil próprio (nome/telefone/avatar/senha), primeiro item de frontend desde a retomada da Fase 8.** Nova seção "Meu perfil" em Configurações (visível a qualquer usuário, não só admin): edição de nome/telefone, upload de avatar (multipart, restrito a imagem) e troca de senha, todas usando endpoints já prontos do backend (B3, `ROADMAP_BACKEND.md`). `AuthContext.updateUser()` novo pra refletir a edição no Topbar sem precisar de novo login. **Achado e corrigido no caminho:** bug real no mock de `refreshToken()` (token sem id do usuário embutido, quebrando `getCurrentUser()` após o 1º refresh) — só apareceu ao validar de verdade no navegador, não em `npm test`; corrigido com teste de regressão novo. | F8-7 | `npm test`: 9 suites, **95/95** (1 novo) · `vite build` → OK · validação real com Playwright (login mock → editar perfil → upload de avatar → trocar senha, sem erro de console novo) |
