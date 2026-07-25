@@ -36,11 +36,6 @@ services:
         limits:
           memory: 512m
 
-  minio_init:
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER obrigatório em produção}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD obrigatório em produção}
-
   evolution:
     restart: always
     environment:

@@ -68,15 +68,13 @@ toda chamada API→Evolution responde 401).
 ### 2. Infraestrutura
 
 ```bash
-docker compose up -d postgres redis minio evolution
+docker compose up -d
 ```
 
-> ⚠️ Não use `docker compose up -d` sem listar os serviços: o container
-> auxiliar `minio_init` referencia uma tag que saiu do Docker Hub e aborta o
-> pull (item B-5 do roadmap). O bucket é criado pela própria API no boot.
-
 Sobe: PostgreSQL (`:5432`), Redis (`:6379`), MinIO (`:9000` API / `:9001` console)
-e Evolution API (`:8080`).
+e Evolution API (`:8080`). O bucket `atendehub-media` e a política de leitura
+pública são criados pela própria API no boot (`StorageService`) — não há
+container auxiliar de setup do MinIO.
 
 ### 3. Backend
 

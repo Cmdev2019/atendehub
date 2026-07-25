@@ -68,22 +68,12 @@ services:
     networks:
       - atendehub_net
 
-  # ── MinIO Init — cria bucket padrão na primeira inicialização ───────────────
-  minio_init:
-    image: minio/mc:RELEASE.2025-06-13T11-33-47Z
-    container_name: atendehub_minio_init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-atendehub_minio} ${MINIO_ROOT_PASSWORD:-minio_secret_123};
-        mc mb --ignore-existing local/atendehub-media;
-        mc anonymous set download local/atendehub-media;
-        echo 'Bucket atendehub-media criado.';
-      "
-    networks:
-      - atendehub_net
+  # Bucket "atendehub-media" e política de leitura pública são criados pela
+  # própria API no boot (StorageService#onModuleInit — makeBucket +
+  # setBucketPolicy) — não precisa de container auxiliar (B-5, removido
+  # 2026-07-24: usava minio/mc:RELEASE.2025-06-13T11-33-47Z, tag que saiu do
+  # Docker Hub e travava o `docker compose up`; era redundante mesmo antes
+  # disso, já que a API faz exatamente o mesmo trabalho).
 
   # ── Evolution API v2 (camada WhatsApp / Baileys) ─────────────────────────────
   evolution:

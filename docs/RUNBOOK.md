@@ -58,9 +58,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api \
   npm run db:migrate:prod
 
-# 4. Subir (nominalmente — nunca "up -d" sem listar, ver pitfall do minio_init)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d \
-  postgres redis minio minio_init evolution api nginx
+# 4. Subir
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 # 5. Confirmar saúde
 curl -f https://api.SEUDOMINIO.com/api/v1/health/ready

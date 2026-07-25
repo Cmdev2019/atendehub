@@ -51,21 +51,19 @@ npm run db:migrate   # prisma migrate dev
 npm run db:seed      # seed (senha do admin é ALEATÓRIA → .seed-credentials-*.txt)
 npm run db:studio    # Prisma Studio :5555
 
-# Infra (na raiz) — NÃO use `docker compose up -d` sem listar serviços (B-5)
-docker compose up -d postgres redis minio evolution
+# Infra (na raiz)
+docker compose up -d         # postgres, redis, minio, evolution
 ```
 
 ## Pitfalls conhecidos (custaram sessões de debug)
 
 1. **`.env` da raiz** precisa de `EVOLUTION_API_KEY` idêntica à de
    `apps/api/.env` — o compose lê a da raiz; sem ela, API→Evolution = 401.
-2. **`minio_init`** do compose tem tag que saiu do Docker Hub — suba os
-   serviços nominalmente; o bucket é criado pela API no boot.
-3. **Mídia do WhatsApp é criptografada** — baixar a URL `.enc` direto salva
+2. **Mídia do WhatsApp é criptografada** — baixar a URL `.enc` direto salva
    lixo; sempre usar `getBase64FromMediaMessage` da Evolution.
-4. **Evolution não resolve `localhost:9000`** — mídia enviada a ela vai em
+3. **Evolution não resolve `localhost:9000`** — mídia enviada a ela vai em
    base64; a URL do MinIO é só para o painel.
-5. Em dev no Windows, API e front rodam em janelas próprias minimizadas
+4. Em dev no Windows, API e front rodam em janelas próprias minimizadas
    ("AtendeHub API" / "AtendeHub Front") para sobreviverem à sessão.
 
 ## Convenções
