@@ -303,11 +303,15 @@ function WhatsappSection() {
 // Seção: Usuários (criação + níveis de acesso)
 // ─────────────────────────────────────────────────────────────────────────────
 function UsersSection({ canManage }) {
+  const { user: currentUser } = useAuth();
   const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'AGENT' });
+  // Senha temporária gerada pelo reset administrativo (B-26) — só existe em
+  // memória, nunca é logada nem persistida; some ao fechar ou trocar de tela.
+  const [resetResult, setResetResult] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -365,6 +369,20 @@ function UsersSection({ canManage }) {
     }
   };
 
+  const resetPassword = async (u) => {
+    if (!(await confirm(
+      `Gerar uma senha temporária nova para "${u.name}"? A senha atual dela deixa de funcionar imediatamente.`,
+      { danger: true },
+    ))) return;
+    try {
+      const { temporaryPassword } = await apiClient.resetUserPassword(u.id);
+      setResetResult({ userName: u.name, temporaryPassword });
+      setError(null);
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
   return h(
     'div',
     { className: 'settings-section' },
@@ -372,6 +390,19 @@ function UsersSection({ canManage }) {
     h('p', { className: 'settings-hint' },
       'Níveis: Usuário comum (atende conversas) · Líder de setor (supervisiona) · Administrador (gerencia tudo).'),
     error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
+
+    resetResult && h(
+      'div',
+      { className: 'settings-success', role: 'status' },
+      h(Icon, { name: 'lock', size: 15 }),
+      ` Senha temporária de ${resetResult.userName}: `,
+      h('strong', null, resetResult.temporaryPassword),
+      ' — repasse com segurança, ela some desta tela ao fechar.',
+      h('button', {
+        className: 'settings-btn compact', type: 'button',
+        onClick: () => setResetResult(null),
+      }, 'Ok, entendi'),
+    ),
 
     canManage && h(
       'form',
@@ -427,6 +458,10 @@ function UsersSection({ canManage }) {
           canManage && h(
             'div',
             { className: 'settings-item-actions' },
+            u.id !== currentUser?.id && h('button', {
+              className: 'settings-btn', type: 'button', onClick: () => resetPassword(u),
+              title: 'Gerar senha temporária para este usuário',
+            }, h(Icon, { name: 'lock', size: 14 }), ' Resetar senha'),
             h('button', {
               className: 'settings-btn', type: 'button', onClick: () => toggleActive(u),
               title: u.isActive === false ? 'Reativar usuário' : 'Desativar usuário',

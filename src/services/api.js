@@ -273,6 +273,9 @@ class ApiClient {
       if (id && sub === 'password' && method === 'PATCH') {
         return mockApiClient.changePassword(id, body);
       }
+      if (id && sub === 'reset-password' && method === 'POST') {
+        return mockApiClient.resetUserPassword(id);
+      }
       if (id && method === 'PATCH') return mockApiClient.updateUser(id, body);
       if (id && method === 'DELETE') return mockApiClient.deleteUser(id);
     }
@@ -493,6 +496,12 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  // Reset administrativo de senha (B-26) — ADMIN gera senha temporária pra
+  // outro usuário travado; retorna { temporaryPassword } só nesta chamada
+  async resetUserPassword(id) {
+    return this.request(`/users/${id}/reset-password`, { method: 'POST' });
   }
 
   // DEPARTMENTS (grupos/setores)

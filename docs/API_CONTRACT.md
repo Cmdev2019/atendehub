@@ -275,6 +275,20 @@ Wrapper: `{ data, meta }`.
 ### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (próprio usuário)
 ### `DELETE /users/:id`
 
+### `POST /users/:id/reset-password` (B-26) — requer `ADMIN`
+Reset administrativo mínimo, sem SMTP: gera uma senha temporária aleatória
+(12 caracteres, já satisfaz a política — maiúscula/minúscula/número) para
+outro usuário da própria empresa, sem precisar saber a senha atual. Corpo
+vazio. Responde `200 { temporaryPassword }` — a senha em texto puro só
+existe nesta resposta, nunca é logada nem persistida fora do hash; quem
+chamou precisa repassá-la ao usuário por fora (verbal, chat interno, etc).
+`400` se `id` for o próprio requisitante (use `PATCH /users/:id/password`
+pra trocar a própria senha). Registra `user.password_reset` em auditoria.
+**Limitação conhecida:** não resolve o caso do único `ADMIN` da empresa se
+trancar sozinho fora dela — ele precisaria estar autenticado para chamar
+isto. Cobre o caso mais comum: `AGENT`/`SUPERVISOR` esqueceu a senha e há
+um `ADMIN` ativo disponível.
+
 ### `PATCH /users/me` (B3-1) — auto-edição do próprio perfil, sem exigir `ADMIN`
 ```jsonc
 { "name?": "até 120", "phone?": "...", "avatarUrl?": "URL válida" }

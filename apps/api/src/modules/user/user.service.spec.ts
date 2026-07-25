@@ -300,6 +300,53 @@ describe('UserService — isolamento multi-tenant', () => {
     });
   });
 
+  describe('resetPassword', () => {
+    it('recusa quando o ADMIN tenta resetar a própria senha por aqui', async () => {
+      await expect(
+        service.resetPassword(companyA, 'user-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('nunca reseta a senha de um usuário de outra empresa', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null); // findOne interno não acha
+
+      await expect(
+        service.resetPassword(companyA, userOfCompanyB, requesterId),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('gera senha temporária que satisfaz a política, hasheia e registra auditoria', async () => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hash-fake');
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        id: 'user-1',
+        companyId: companyA,
+        role: Role.AGENT,
+        departments: [],
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
+
+      const result = await service.resetPassword(companyA, 'user-1', requesterId);
+
+      expect(result.temporaryPassword).toMatch(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/);
+      expect(bcrypt.hash).toHaveBeenCalledWith(result.temporaryPassword, 12);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { passwordHash: 'hash-fake' },
+      });
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user.password_reset',
+          companyId: companyA,
+          userId: requesterId,
+          entityId: 'user-1',
+        }),
+      );
+    });
+  });
+
   describe('remove', () => {
     it('nunca chama user.update para um usuário de outra empresa', async () => {
       mockPrisma.user.findFirst.mockResolvedValueOnce(null); // findOne interno não acha

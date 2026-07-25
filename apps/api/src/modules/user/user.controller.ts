@@ -108,6 +108,14 @@ export class UserController {
     return this.userService.changePassword(user.companyId, id, dto);
   }
 
+  // POST /api/v1/users/:id/reset-password
+  @Post(':id/reset-password')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  resetPassword(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
+    return this.userService.resetPassword(user.companyId, id, user.id);
+  }
+
   // DELETE /api/v1/users/:id
   @Delete(':id')
   @Roles(Role.ADMIN)

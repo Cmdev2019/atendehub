@@ -383,6 +383,16 @@ export class MockApiClient {
     return { message: 'Senha atualizada com sucesso' };
   }
 
+  // Reset administrativo de senha (B-26) — mock não guarda hash nenhum;
+  // só devolve uma senha temporária plausível pra exercitar a UI de exibição
+  async resetUserPassword(id) {
+    await this.simulateDelay();
+    const user = mockUsersList.find((u) => u.id === id);
+    if (!user) throw { status: 404, message: 'Usuário não encontrado' };
+    const temporaryPassword = `Trocar${Math.floor(1000 + Math.random() * 9000)}`;
+    return { temporaryPassword };
+  }
+
   // ── DEPARTMENTS ────────────────────────────────────────────────────────────
   async getDepartments() {
     await this.simulateDelay();

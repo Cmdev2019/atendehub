@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -15,6 +16,27 @@ import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+
+// Gera senha temporária que já satisfaz a política de senha do produto
+// (ChangePasswordDto: mín. 8, 1 maiúscula, 1 minúscula, 1 número) — sem
+// caracteres ambíguos (0/O, 1/I/l) pra facilitar digitação manual do reset.
+function generateTemporaryPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const all = upper + lower + digits;
+  const pick = (charset: string) => charset[crypto.randomInt(charset.length)];
+
+  const chars = [pick(upper), pick(lower), pick(digits)];
+  while (chars.length < 12) chars.push(pick(all));
+
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return chars.join('');
+}
 
 // Campos seguros para retornar — nunca expõe passwordHash
 const USER_SELECT = {
@@ -240,6 +262,41 @@ export class UserService {
     });
 
     return { message: 'Senha atualizada com sucesso' };
+  }
+
+  // ── Reset administrativo de senha (B-26, paliativo sem SMTP) ──────────────
+  // ADMIN gera senha temporária pra um usuário travado da própria empresa,
+  // sem precisar saber a senha atual. Não resolve o ADMIN único da empresa
+  // se trancar sozinho fora dela (precisaria estar autenticado pra chamar
+  // isto) — cobre o caso mais comum: AGENT/SUPERVISOR esqueceu a senha e há
+  // um ADMIN ativo por perto. A senha só existe em texto puro no retorno
+  // desta chamada — nunca é logada nem persistida fora do hash.
+  async resetPassword(companyId: string, id: string, requesterId: string) {
+    if (id === requesterId) {
+      throw new BadRequestException(
+        'Para trocar a própria senha, use a troca de senha em Meu perfil',
+      );
+    }
+
+    await this.findOne(companyId, id); // garante que pertence à empresa
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+    });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'user.password_reset',
+      entity: 'User',
+      entityId: id,
+    });
+
+    return { temporaryPassword };
   }
 
   // ── Desativar usuário (soft delete) ───────────────────────────────────────
