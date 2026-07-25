@@ -86,6 +86,85 @@ produção:
    removida), nunca editar/apagar uma migration já aplicada em produção.
 3. Só depois voltar o código.
 
+## Backup e restore (B-10)
+
+Dois alvos: **PostgreSQL** (dado principal — empresas, conversas, mensagens,
+usuários; perda é irreversível) e **MinIO** (mídias do WhatsApp — fotos,
+áudios, documentos; perda é inconveniente, mas não paralisa o produto).
+Comandos abaixo testados de verdade contra o ambiente local desta sessão
+(dump restaurado num banco separado, contagem de linhas conferida igual;
+tarball do MinIO extraído e validado).
+
+### PostgreSQL
+
+O mesmo Postgres hospeda **dois bancos**: `atendehub` (a API, prioridade —
+schema custom `atendehub`, não `public`) e `evolution` (sessões/instâncias
+do WhatsApp via Evolution API — perder esse banco não é catastrófico, o
+WhatsApp é re-pareado via QR; ainda assim, incluído abaixo por completude).
+
+**Backup** (formato `-Fc`, comprimido e restaurável seletivamente com `pg_restore`):
+```bash
+mkdir -p backups
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d atendehub -Fc \
+  > "backups/atendehub_$(date +%Y%m%d_%H%M%S).dump"
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d evolution -Fc \
+  > "backups/evolution_$(date +%Y%m%d_%H%M%S).dump"
+```
+No Git Bash/Windows, redirecionar a saída (`>`) para um arquivo do host
+evita problemas de conversão de caminho POSIX↔Windows do `-f` do próprio
+`pg_dump` dentro do container.
+
+**Restore** — banco novo/vazio (servidor novo, disaster recovery):
+```bash
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d postgres \
+  -c "CREATE DATABASE atendehub;"
+cat backups/atendehub_XXXXXXXX.dump | \
+  docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d atendehub --no-owner --no-privileges
+```
+**Restore por cima de um banco com dado vivo** (ex.: corrupção parcial, não
+disaster recovery total): usar `--clean --if-exists` no `pg_restore` — isso
+**apaga** as tabelas existentes antes de recriar. Rodar num banco de teste
+primeiro (`... -d atendehub_verificacao`) pra conferir a contagem de linhas
+antes de apontar pro banco real; nunca restaurar direto em cima de produção
+sem essa checagem.
+
+Depois de restaurar: `npx prisma migrate deploy` (dentro do container `api`)
+antes de subir a API — o dump é só o dado, não garante que o schema bate com
+a versão do código que vai rodar.
+
+### MinIO (bucket `atendehub-media`)
+
+Nível de fidelidade: cópia do volume Docker (`atendehub_minio_data`) via
+container Alpine descartável — mais simples que `mc mirror` (o projeto já
+apanhou de `minio/mc` uma vez, B-5: a tag da imagem sumiu do Docker Hub no
+meio de um `docker compose up`) e suficiente porque mídia do WhatsApp é
+escrita uma vez e nunca alterada depois.
+
+```bash
+mkdir -p backups
+docker run --rm -v atendehub_minio_data:/data -v "$(pwd)/backups":/backup alpine \
+  tar czf /backup/minio_data_$(date +%Y%m%d_%H%M%S).tar.gz -C /data .
+```
+> No Git Bash/Windows, prefixar com `MSYS_NO_PATHCONV=1` se o comando falhar
+> com caminho tipo `C:/Program Files/Git/data` — o Git Bash tenta "corrigir"
+> os caminhos `/data`/`/backup` (que são caminhos **dentro do container**,
+> não do Windows) antes de repassar pro Docker.
+
+**Ressalva honesta:** isso é uma cópia de arquivo, não um backup S3-nativo —
+tirado com o MinIO rodando ao vivo, existe uma janela (pequena, mas real)
+de pegar um arquivo no meio da escrita se um upload estiver em andamento
+naquele instante exato. Pra backup crítico/agendado, rodar em horário de
+baixo tráfego é suficiente pra esse porte de projeto; não vale a
+complexidade de pausar o container só por causa disso.
+
+**Restore:**
+```bash
+docker volume create atendehub_minio_data   # se o volume não existir mais
+docker run --rm -v atendehub_minio_data:/data -v "$(pwd)/backups":/backup alpine \
+  tar xzf /backup/minio_data_XXXXXXXX.tar.gz -C /data
+docker compose up -d minio
+```
+
 ## Reset de filas (Bull/Redis)
 
 As duas filas do projeto são `webhook` e `sla-check` (a fila de envio de

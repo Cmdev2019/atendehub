@@ -91,6 +91,42 @@ describe('Validators', () => {
     });
   });
 
+  // B-9: nome da empresa no auto-cadastro
+  describe('companyName', () => {
+    it('retorna erro se vazio', () => {
+      expect(validators.companyName('')).toBe('Nome da empresa é obrigatório');
+    });
+
+    it('retorna erro se muito curto', () => {
+      expect(validators.companyName('A')).toBe('Nome da empresa deve ter no mínimo 2 caracteres');
+    });
+
+    it('retorna null se válido', () => {
+      expect(validators.companyName('Café & Cia')).toBeNull();
+    });
+  });
+
+  // B-9: mesma política de senha do backend (CreateUserDto/RegisterCompanyDto)
+  describe('passwordPolicy', () => {
+    it('retorna erro se vazia', () => {
+      expect(validators.passwordPolicy('')).toBe('Senha é obrigatória');
+    });
+
+    it('retorna erro se menor que 8 caracteres', () => {
+      expect(validators.passwordPolicy('Abc123')).toBe('Senha deve ter no mínimo 8 caracteres');
+    });
+
+    it('retorna erro sem maiúscula/minúscula/número', () => {
+      expect(validators.passwordPolicy('abcdefgh')).toMatch(/maiúscula/);
+      expect(validators.passwordPolicy('ABCDEFGH')).toMatch(/minúscula/);
+      expect(validators.passwordPolicy('Abcdefgh')).toMatch(/número/);
+    });
+
+    it('retorna null quando atende a política inteira', () => {
+      expect(validators.passwordPolicy('Senha123')).toBeNull();
+    });
+  });
+
   describe('confirmPassword', () => {
     it('retorna erro se confirmação vazia', () => {
       const result = validators.confirmPassword('', 'password');
@@ -131,6 +167,14 @@ describe('validateForm', () => {
     };
     const errors = validateForm(formData, ['email', 'password', 'name']);
     expect(Object.keys(errors).length).toBe(0);
+  });
+
+  it('valida companyName (B-9)', () => {
+    const errors = validateForm({ companyName: '' }, ['companyName']);
+    expect(errors.companyName).toBeTruthy();
+
+    const noErrors = validateForm({ companyName: 'Café & Cia' }, ['companyName']);
+    expect(noErrors.companyName).toBeUndefined();
   });
 
   it('valida apenas campos solicitados', () => {

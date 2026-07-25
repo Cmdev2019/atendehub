@@ -1,10 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { StorageService } from '../../shared/storage/storage.service';
+
+jest.mock('bcrypt');
 
 // Isolamento multi-tenant (B4-3) — mesma lógica do contact.service.spec.ts:
 // o que importa é que a mutação nunca roda quando o registro é de outra
@@ -14,6 +17,8 @@ const mockPrisma = {
     findMany: jest.fn(),
     count: jest.fn(),
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
     update: jest.fn(),
   },
   company: {
@@ -43,6 +48,84 @@ describe('UserService — isolamento multi-tenant', () => {
     }).compile();
 
     service = module.get<UserService>(UserService);
+  });
+
+  describe('create', () => {
+    const dto = {
+      name: 'Novo Agente',
+      email: 'Novo@Empresa.com',
+      password: 'Senha123',
+    };
+
+    beforeEach(() => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hash-fake');
+      mockPrisma.company.findUnique.mockResolvedValue({
+        maxAgents: 5,
+        _count: { users: 1 },
+      });
+    });
+
+    it('recusa quando o limite de usuários do plano foi atingido', async () => {
+      mockPrisma.company.findUnique.mockResolvedValueOnce({
+        maxAgents: 5,
+        _count: { users: 5 },
+      });
+
+      await expect(service.create(companyA, dto as any, requesterId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('recusa com ConflictException quando o e-mail já existe em QUALQUER empresa (B-20)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce({ id: 'user-de-outra-empresa' });
+
+      await expect(service.create(companyA, dto as any, requesterId)).rejects.toThrow(
+        ConflictException,
+      );
+      // Checagem é global — sem companyId no where — porque o e-mail agora
+      // é único na base inteira, não só dentro da empresa (B-20).
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'novo@empresa.com' },
+      });
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('recusa criar usuário com role SUPER_ADMIN', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        service.create(companyA, { ...dto, role: Role.SUPER_ADMIN } as any, requesterId),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('cria o usuário com senha hasheada e registra auditoria', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.user.create.mockResolvedValueOnce({
+        id: 'user-novo', companyId: companyA, name: dto.name,
+        email: 'novo@empresa.com', role: Role.AGENT,
+      });
+
+      const result = await service.create(companyA, dto as any, requesterId);
+
+      expect(bcrypt.hash).toHaveBeenCalledWith(dto.password, 12);
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            companyId: companyA,
+            email: 'novo@empresa.com',
+            passwordHash: 'hash-fake',
+            role: Role.AGENT,
+          }),
+        }),
+      );
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'user.created', companyId: companyA }),
+      );
+      expect(result.id).toBe('user-novo');
+    });
   });
 
   describe('findAll', () => {

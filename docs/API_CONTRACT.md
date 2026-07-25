@@ -10,7 +10,7 @@
 > backend, atualize este arquivo no mesmo commit.
 
 - **Base URL:** `http://localhost:3001/api/v1` (config: `VITE_API_URL` no front, `API_PREFIX`/porta no back)
-- **Autenticação:** `Authorization: Bearer <accessToken>` em todas as rotas, exceto `/health`, `/health/ready`, `/auth/login`, `/auth/refresh` e `/webhooks/evolution`
+- **Autenticação:** `Authorization: Bearer <accessToken>` em todas as rotas, exceto `/health`, `/health/ready`, `/auth/login`, `/auth/refresh`, `/auth/register-company` e `/webhooks/evolution`
 - **Validação:** `ValidationPipe` global com `whitelist` + `forbidNonWhitelisted` — **campos extras no body retornam 400**
 - **Rate limit global:** `THROTTLE_LIMIT` req / `THROTTLE_TTL` s (default 100/60s) por IP
 - **Erros:** formato padrão do NestJS — `{ "statusCode": number, "message": string | string[], "error": string }`
@@ -70,6 +70,26 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 ### `POST /auth/refresh` (público)
 `{ "refreshToken": "..." }` → mesmo shape do login (rotaciona o refresh token).
 
+### `POST /auth/register-company` (público, B-9)
+Auto-cadastro de empresa nova — quem se cadastra vira `ADMIN` dessa empresa. Limite: **3 req/60s por IP** (mais apertado que login, pois cria linhas no banco).
+```jsonc
+// Request
+{
+  "companyName": "Café & Cia",     // 2-80 chars — vira o slug da empresa (normalizado, sem acento/pontuação; colisão resolvida com sufixo -2, -3, ...)
+  "name": "Carlos Fundador",       // 2-120 chars — nome do admin
+  "email": "carlos@cafeecia.com",  // único GLOBALMENTE (B-20), não só na empresa — ver nota abaixo
+  "password": "Senha123"           // mesma regra do CreateUserDto: min 8, 1 maiúscula, 1 minúscula, 1 número
+}
+
+// Response 201 — mesmo shape do login (auto-login, sem precisar de uma 2ª chamada)
+{
+  "accessToken": "<jwt>", "refreshToken": "<token opaco>", "expiresIn": 900,
+  "user": { "id": "...", "companyId": "...", "name": "Carlos Fundador", "email": "carlos@cafeecia.com", "role": "ADMIN", "avatarUrl": null }
+}
+// 409 → { statusCode: 409, message: "Já existe uma conta com este e-mail." }
+```
+Empresa nasce no plano `FREE` (`maxAgents=5`, `maxChannels=2` — defaults do schema), sem fluxo de billing/upgrade ainda (fora de escopo).
+
 ### `POST /auth/logout`
 `{ "refreshToken": "..." }` → revoga o refresh token e blacklista o access token atual. Responde **204 No Content**.
 
@@ -79,8 +99,19 @@ Revoga TODOS os refresh tokens do usuário (logout de todos os dispositivos).
 ### `GET /auth/me`
 → `AuthUserDto`: `{ id, companyId, name, email, role, avatarUrl }`
 
-> ⚠️ **Não existe `POST /auth/register`** — o `apiClient.register()` do front
-> chama uma rota inexistente (decisão pendente F1-4).
+> ⚠️ **Não existe `POST /auth/register`** genérico (criar um novo usuário
+> dentro de uma empresa já existente sem ser ADMIN) — o `apiClient.register()`
+> do front antigo chamava uma rota inexistente (decisão pendente F1-4, ainda
+> válida). Isso é diferente de `POST /auth/register-company` (acima), que
+> cria uma empresa **nova** com seu próprio admin.
+>
+> **E-mail único globalmente (B-20):** desde a migration
+> `20260725120609_user_email_globally_unique`, `User.email` é único em toda
+> a base, não só por empresa — o login (`validateUser`) busca só por e-mail,
+> sem `companyId`, então duas empresas com o mesmo e-mail cadastrado
+> resolveriam login de forma ambígua. `POST /users` (criar usuário dentro de
+> uma empresa, ADMIN+) e `POST /auth/register-company` retornam 409 se o
+> e-mail já existir em qualquer empresa.
 
 ---
 
@@ -170,6 +201,19 @@ Query: `limit=50` · `before?` (id de mensagem — cursor para paginação retro
 }
 // Wrapper: { data, meta: { count, hasMore, nextCursor } }
 ```
+
+### `GET .../messages/:id` (B-11)
+Busca uma mensagem específica da conversa. Mesmo shape de item da listagem
+acima, **+ `isDeleted: true|false`** — única diferença real: a listagem
+(`GET .../messages`) sempre filtra `isDeleted: false` (mensagem apagada some
+da lista), mas a busca por id **não** filtra — dá pra buscar uma mensagem já
+apagada (soft delete) diretamente pelo id, ela só some da listagem. Nota
+menor: aqui `attachments[]` não traz `width`/`height`/`duration` (a
+listagem traz) — assimetria existente no `select` do Prisma, não documentada
+antes por ser um detalhe fácil de não perceber sem ler o código lado a lado.
+404 (`"Mensagem não encontrada"`) se o id não existir **nesta** conversa;
+404 (`"Conversa não encontrada"`) se a própria conversa não pertencer à
+empresa do usuário logado.
 
 ### `POST .../messages` — texto
 ```jsonc

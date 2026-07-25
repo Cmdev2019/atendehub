@@ -165,6 +165,144 @@ button {
   background: var(--line);
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   NOTIFICATION BELL - Sino de notificações (B-8)
+   ───────────────────────────────────────────────────────────────── */
+
+.notification-bell {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--panel);
+}
+
+.notification-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.notification-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+
+.notification-mark-all {
+  background: transparent;
+  color: var(--brand);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+.notification-mark-all:hover {
+  text-decoration: underline;
+}
+
+.notification-empty {
+  padding: 20px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.notification-error {
+  color: var(--accent);
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item:hover {
+  background: var(--panel-soft);
+}
+
+.notification-item.unread {
+  background: rgba(15, 118, 110, 0.06);
+  color: var(--text);
+}
+
+.notification-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-item-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.notification-item-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.notification-item-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.notification-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
 .btn-logout {
   padding: 8px 14px;
   border-radius: 6px;
@@ -1302,6 +1440,31 @@ button {
   margin-top: -4px;
 }
 
+.field-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: -4px;
+}
+
+.auth-switch {
+  text-align: center;
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.auth-switch-link {
+  background: none;
+  color: var(--brand);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.auth-switch-link:hover {
+  text-decoration: underline;
+}
+
 .error-box {
   padding: 12px;
   border-radius: 6px;
@@ -1365,6 +1528,120 @@ button {
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   CONFIRM DIALOG - Modal de confirmação (B-13, substitui confirm() nativo)
+   ───────────────────────────────────────────────────────────────── */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.confirm-dialog {
+  width: 100%;
+  max-width: 380px;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.confirm-icon {
+  color: var(--info);
+  margin-bottom: 8px;
+}
+
+.confirm-icon.danger {
+  color: var(--accent);
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-secondary {
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.9rem;
+  border: 1px solid var(--line);
+}
+
+.btn-secondary:hover {
+  background: var(--line);
+}
+
+.confirm-actions .primary-button {
+  margin-top: 0;
+  padding: 10px 16px;
+}
+
+.confirm-actions .primary-button.danger {
+  background: var(--accent);
+}
+
+.confirm-actions .primary-button.danger:hover {
+  background: #b91c1c;
+}
+
+/* Fallback do ErrorBoundary (B-12) — só aparece se um componente lançar uma
+   exceção não tratada durante o render. Visual neutro (não usa o gradiente
+   de marca do loading-screen) pra ficar claramente reconhecível como um
+   estado de erro, não de carregamento normal. */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.error-boundary h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.error-boundary p {
+  margin: 0;
+  max-width: 420px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.error-boundary .primary-button {
+  margin-top: 8px;
 }
 
 .loading-screen p {

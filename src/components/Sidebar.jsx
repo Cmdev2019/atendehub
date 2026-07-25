@@ -1,5 +1,6 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from '../hooks/useConfirm';
 import { Icon } from './icons';
 
 // WhatsApp/Conectar e o tema saíram do menu vertical — agora vivem em
@@ -17,9 +18,10 @@ const NAVIGABLE = new Set(['inbox', 'settings']);
 
 export function Sidebar({ activeView = 'inbox', onNavigate }) {
   const { logout } = useAuth();
+  const confirm = useConfirm();
 
   const handleLogout = async () => {
-    if (confirm('Deseja fazer logout?')) {
+    if (await confirm('Deseja fazer logout?')) {
       await logout();
     }
   };
@@ -48,6 +50,9 @@ export function Sidebar({ activeView = 'inbox', onNavigate }) {
             type: 'button',
             title: NAVIGABLE.has(id) ? label : `${label} (em breve)`,
             disabled: !NAVIGABLE.has(id),
+            // B-14: a seção ativa só era indicada por CSS (.active) — sem
+            // aria-current, leitor de tela não sabia qual item estava selecionado.
+            'aria-current': activeView === id ? 'page' : undefined,
           },
           h('span', { className: 'nav-icon' }, h(Icon, { name: icon, size: 20 })),
           h('span', { className: 'nav-label' }, shortLabel),

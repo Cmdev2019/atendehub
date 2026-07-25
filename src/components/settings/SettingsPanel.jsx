@@ -1,6 +1,7 @@
 import { createElement as h, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
+import { useConfirm } from '../../hooks/useConfirm';
 import { apiClient } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import { Icon } from '../icons';
@@ -69,6 +70,7 @@ function AppearanceSection() {
 // Seção: Conexões WhatsApp (QR Code)
 // ─────────────────────────────────────────────────────────────────────────────
 function WhatsappSection() {
+  const confirm = useConfirm();
   const [connections, setConnections] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [name, setName] = useState('');
@@ -97,7 +99,7 @@ function WhatsappSection() {
     load();
 
     // Status em tempo real vindo do gateway (connection.status)
-    wsClient.on('connection.status', (payload) => {
+    const handleConnectionStatus = (payload) => {
       if (!payload?.connectionId) return;
       setConnections((prev) =>
         prev.map((c) =>
@@ -109,10 +111,11 @@ function WhatsappSection() {
       if (payload.status === 'CONNECTED') {
         setQr((current) => (current?.connectionId === payload.connectionId ? null : current));
       }
-    });
+    };
+    wsClient.on('connection.status', handleConnectionStatus);
 
     return () => {
-      wsClient.off('connection.status');
+      wsClient.off('connection.status', handleConnectionStatus);
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [load]);
@@ -179,7 +182,7 @@ function WhatsappSection() {
   };
 
   const disconnect = async (id) => {
-    if (!confirm('Desconectar este WhatsApp?')) return;
+    if (!(await confirm('Desconectar este WhatsApp?'))) return;
     try {
       await apiClient.disconnectWhatsapp(id);
       load();
@@ -189,7 +192,7 @@ function WhatsappSection() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Excluir esta conexão? As conversas associadas serão mantidas.')) return;
+    if (!(await confirm('Excluir esta conexão? As conversas associadas serão mantidas.', { danger: true }))) return;
     try {
       await apiClient.deleteWhatsappConnection(id);
       setQr((current) => (current?.connectionId === id ? null : current));
@@ -273,6 +276,7 @@ function WhatsappSection() {
                   className: 'settings-btn danger',
                   type: 'button',
                   onClick: () => remove(conn.id),
+                  title: 'Excluir conexão',
                 }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
               ),
             );
@@ -299,6 +303,7 @@ function WhatsappSection() {
 // Seção: Usuários (criação + níveis de acesso)
 // ─────────────────────────────────────────────────────────────────────────────
 function UsersSection({ canManage }) {
+  const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -351,7 +356,7 @@ function UsersSection({ canManage }) {
   };
 
   const remove = async (u) => {
-    if (!confirm(`Excluir o usuário "${u.name}"?`)) return;
+    if (!(await confirm(`Excluir o usuário "${u.name}"?`, { danger: true }))) return;
     try {
       await apiClient.deleteUser(u.id);
       load();
@@ -607,6 +612,7 @@ function ProfileSection() {
 // Seção: Filas de distribuição (F8-8)
 // ─────────────────────────────────────────────────────────────────────────────
 function QueuesSection() {
+  const confirm = useConfirm();
   const [queues, setQueues] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState(null);
@@ -688,7 +694,7 @@ function QueuesSection() {
   };
 
   const remove = async (queue) => {
-    if (!confirm(`Excluir a fila "${queue.name}"?`)) return;
+    if (!(await confirm(`Excluir a fila "${queue.name}"?`, { danger: true }))) return;
     try {
       await apiClient.deleteQueue(queue.id);
       if (editingId === queue.id) startCreate();
@@ -774,6 +780,7 @@ function QueuesSection() {
                 }, h(Icon, { name: queue.isActive === false ? 'play' : 'pause', size: 14 })),
                 h('button', {
                   className: 'settings-btn danger', type: 'button', onClick: () => remove(queue),
+                  title: 'Excluir fila',
                 }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
               ),
             ),
@@ -786,6 +793,7 @@ function QueuesSection() {
 // Seção: Grupos (setores/departamentos)
 // ─────────────────────────────────────────────────────────────────────────────
 function GroupsSection() {
+  const confirm = useConfirm();
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
@@ -841,7 +849,7 @@ function GroupsSection() {
   };
 
   const remove = async (dept) => {
-    if (!confirm(`Excluir o grupo "${dept.name}"?`)) return;
+    if (!(await confirm(`Excluir o grupo "${dept.name}"?`, { danger: true }))) return;
     try {
       await apiClient.deleteDepartment(dept.id);
       if (expanded?.id === dept.id) setExpanded(null);
@@ -929,6 +937,7 @@ function GroupsSection() {
                 expanded?.id === dept.id ? ' Fechar' : ' Membros'),
               h('button', {
                 className: 'settings-btn danger', type: 'button', onClick: () => remove(dept),
+                title: 'Excluir grupo',
               }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
             ),
           ),
@@ -1013,6 +1022,8 @@ export function SettingsPanel() {
             type: 'button',
             className: `settings-nav-item${active === s.id ? ' active' : ''}`,
             onClick: () => setActive(s.id),
+            // B-14: mesma lacuna do menu lateral — seleção só era visual (CSS)
+            'aria-current': active === s.id ? 'page' : undefined,
           },
           h(Icon, { name: s.icon, size: 16 }),
           ` ${s.label}`,

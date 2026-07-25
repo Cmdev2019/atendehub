@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -10,9 +10,14 @@ import { Role } from '@prisma/client';
 
 jest.mock('bcrypt');
 
-const mockPrisma = {
+const mockPrisma: any = {
   user: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+  },
+  company: {
+    create: jest.fn(),
     findUnique: jest.fn(),
   },
   refreshToken: {
@@ -22,6 +27,9 @@ const mockPrisma = {
     updateMany: jest.fn(),
   },
 };
+// A callback de $transaction roda contra o mesmo mock (tx compartilha a
+// mesma "forma" do client fora da transação — suficiente pra unit test).
+mockPrisma.$transaction = jest.fn((callback: (tx: any) => unknown) => callback(mockPrisma));
 
 const mockJwtService = {
   signAsync: jest.fn(),
@@ -142,6 +150,97 @@ describe('AuthService', () => {
             token: expect.stringMatching(/^[a-f0-9]{64}$/),
           }),
         }),
+      );
+    });
+  });
+
+  describe('registerCompany (B-9)', () => {
+    const dto = {
+      companyName: 'Café & Cia!!',
+      name: 'Nova Admin',
+      email: 'NovaAdmin@Empresa.com',
+      password: 'Senha123',
+    };
+
+    beforeEach(() => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hash-da-senha-nova');
+      mockPrisma.refreshToken.create.mockResolvedValue({});
+    });
+
+    it('rejeita com ConflictException quando o e-mail já existe (busca global, não por empresa)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce({ id: 'user-existente' });
+
+      await expect(service.registerCompany(dto)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'novaadmin@empresa.com' },
+      });
+      expect(mockPrisma.company.create).not.toHaveBeenCalled();
+    });
+
+    it('gera um slug normalizado (sem acento/pontuação) a partir do nome da empresa', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null); // e-mail livre
+      mockPrisma.company.findUnique.mockResolvedValueOnce(null); // slug livre de primeira
+      mockPrisma.company.create.mockResolvedValueOnce({ id: 'company-1', name: dto.companyName, slug: 'cafe-cia' });
+      mockPrisma.user.create.mockResolvedValueOnce({
+        id: 'user-1', companyId: 'company-1', name: dto.name,
+        email: 'novaadmin@empresa.com', role: Role.ADMIN, avatarUrl: null,
+      });
+
+      await service.registerCompany(dto);
+
+      expect(mockPrisma.company.findUnique).toHaveBeenCalledWith({
+        where: { slug: 'cafe-cia' },
+        select: { id: true },
+      });
+      expect(mockPrisma.company.create).toHaveBeenCalledWith({
+        data: { name: 'Café & Cia!!', slug: 'cafe-cia' },
+      });
+    });
+
+    it('resolve colisão de slug com sufixo numérico incremental', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.company.findUnique
+        .mockResolvedValueOnce({ id: 'ja-existe' }) // "cafe-cia" ocupado
+        .mockResolvedValueOnce(null); // "cafe-cia-2" livre
+      mockPrisma.company.create.mockResolvedValueOnce({ id: 'company-2', name: dto.companyName, slug: 'cafe-cia-2' });
+      mockPrisma.user.create.mockResolvedValueOnce({
+        id: 'user-2', companyId: 'company-2', name: dto.name,
+        email: 'novaadmin@empresa.com', role: Role.ADMIN, avatarUrl: null,
+      });
+
+      await service.registerCompany(dto);
+
+      expect(mockPrisma.company.create).toHaveBeenCalledWith({
+        data: { name: 'Café & Cia!!', slug: 'cafe-cia-2' },
+      });
+    });
+
+    it('cria a empresa com o solicitante como ADMIN e devolve tokens (auto-login)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.company.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.company.create.mockResolvedValueOnce({ id: 'company-3', name: dto.companyName, slug: 'cafe-cia' });
+      mockPrisma.user.create.mockResolvedValueOnce({
+        id: 'user-3', companyId: 'company-3', name: dto.name,
+        email: 'novaadmin@empresa.com', role: Role.ADMIN, avatarUrl: null,
+      });
+
+      const result = await service.registerCompany(dto);
+
+      expect(mockPrisma.user.create).toHaveBeenCalledWith({
+        data: {
+          companyId: 'company-3',
+          name: 'Nova Admin',
+          email: 'novaadmin@empresa.com', // e-mail normalizado (lowercase/trim)
+          passwordHash: 'hash-da-senha-nova',
+          role: Role.ADMIN,
+        },
+      });
+      expect(bcrypt.hash).toHaveBeenCalledWith(dto.password, 12);
+      // Mesmo formato de resposta do login (F0-4/login) — front reaproveita sem mudança de contrato
+      expect(result.accessToken).toBe('token-assinado');
+      expect(result.refreshToken).toBe('token-assinado');
+      expect(result.user).toEqual(
+        expect.objectContaining({ id: 'user-3', companyId: 'company-3', role: Role.ADMIN }),
       );
     });
   });

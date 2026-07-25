@@ -88,6 +88,46 @@ describe('Mock API Client', () => {
     });
   });
 
+  // B-9: auto-cadastro de empresa
+  describe('registerCompany', () => {
+    it('cria a empresa/admin e retorna o mesmo shape do login (auto-login)', async () => {
+      const response = await mockApiClient.registerCompany({
+        companyName: 'Empresa Nova',
+        name: 'Fundador',
+        email: 'fundador@empresanova.com',
+        password: 'Senha123',
+      });
+
+      expect(response.accessToken).toBeTruthy();
+      expect(response.refreshToken).toBeTruthy();
+      expect(response.user).toEqual(
+        expect.objectContaining({ name: 'Fundador', email: 'fundador@empresanova.com', role: 'ADMIN' }),
+      );
+    });
+
+    it('409 ao cadastrar com um e-mail já usado', async () => {
+      await mockApiClient.registerCompany({
+        companyName: 'Empresa A', name: 'A', email: 'duplicado@empresa.com', password: 'Senha123',
+      });
+
+      await expect(
+        mockApiClient.registerCompany({
+          companyName: 'Empresa B', name: 'B', email: 'duplicado@empresa.com', password: 'Senha123',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('permite logar de novo com o e-mail/senha cadastrados', async () => {
+      await mockApiClient.registerCompany({
+        companyName: 'Relogin Empresa', name: 'Fulano', email: 'relogin@empresa.com', password: 'Senha123',
+      });
+      mockApiClient.clearToken();
+
+      const loginResponse = await mockApiClient.login('relogin@empresa.com', 'Senha123');
+      expect(loginResponse.user.email).toBe('relogin@empresa.com');
+    });
+  });
+
   describe('logout', () => {
     it('limpa tokens do localStorage', async () => {
       localStorage.setItem('accessToken', 'test-token');
@@ -176,6 +216,54 @@ describe('Mock API Client', () => {
       expect(sent.content).toBe('Olá do agente');
       const after = (await mockApiClient.getMessages(first.id)).data.length;
       expect(after).toBe(before + 1);
+    });
+  });
+
+  // B-8: notificações sempre filtradas pelo usuário logado (admin = user-1 no mock)
+  describe('getNotifications / markNotificationRead / markAllNotificationsRead', () => {
+    it('lista só as notificações do usuário, mais recentes primeiro', async () => {
+      const response = await mockApiClient.getNotifications('user-1');
+      expect(response).toHaveProperty('data');
+      expect(response).toHaveProperty('meta');
+      expect(response.data.every((n) => n.userId === 'user-1')).toBe(true);
+      const timestamps = response.data.map((n) => new Date(n.createdAt).getTime());
+      expect(timestamps).toEqual([...timestamps].sort((a, b) => b - a));
+    });
+
+    it('unreadOnly filtra só as não lidas', async () => {
+      const all = await mockApiClient.getNotifications('user-1');
+      const unread = await mockApiClient.getNotifications('user-1', { unreadOnly: true });
+      expect(unread.data.every((n) => !n.readAt)).toBe(true);
+      expect(unread.data.length).toBeLessThan(all.data.length);
+    });
+
+    it('marca uma notificação como lida (idempotente)', async () => {
+      const { data } = await mockApiClient.getNotifications('user-1', { unreadOnly: true });
+      const target = data[0];
+
+      const updated = await mockApiClient.markNotificationRead('user-1', target.id);
+      expect(updated.readAt).not.toBeNull();
+
+      // Chamar de novo não deve trocar o readAt já setado
+      const updatedAgain = await mockApiClient.markNotificationRead('user-1', target.id);
+      expect(updatedAgain.readAt).toBe(updated.readAt);
+    });
+
+    it('404 ao marcar notificação de outro usuário como lida', async () => {
+      const { data } = await mockApiClient.getNotifications('user-1');
+      await expect(
+        mockApiClient.markNotificationRead('user-2', data[0].id),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('marca todas como lidas de uma vez', async () => {
+      const { data: beforeUnread } = await mockApiClient.getNotifications('user-1', { unreadOnly: true });
+
+      const result = await mockApiClient.markAllNotificationsRead('user-1');
+      expect(result.message).toBe(`${beforeUnread.length} notificação(ões) marcada(s) como lida(s)`);
+
+      const { data: afterUnread } = await mockApiClient.getNotifications('user-1', { unreadOnly: true });
+      expect(afterUnread).toHaveLength(0);
     });
   });
 });

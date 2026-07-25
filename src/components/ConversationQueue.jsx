@@ -71,6 +71,8 @@ export function ConversationQueue({
               type: 'button',
               onClick: () => onSelect(conv.id),
               title: conv.slaBreached ? `${conv.contact} — SLA de espera estourado` : conv.contact,
+              // B-14: a conversa aberta só era indicada por CSS (.active)
+              'aria-current': activeId === conv.id ? 'true' : undefined,
             },
             h('div', { className: 'queue-item-avatar' },
               conv.avatarUrl

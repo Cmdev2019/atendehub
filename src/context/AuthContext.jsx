@@ -62,6 +62,30 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Auto-cadastro de empresa (B-9) — mesmo fluxo do login (já sai
+  // autenticado + socket conectado), só troca o endpoint chamado.
+  const registerCompany = useCallback(async (dto) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiClient.registerCompany(dto);
+      setUser(response.user);
+
+      try {
+        await wsClient.connect(response.accessToken);
+      } catch (wsErr) {
+        console.warn('⚠️ WebSocket não conseguiu conectar:', wsErr.message);
+      }
+
+      return response;
+    } catch (err) {
+      setError(err.message || 'Erro ao criar a empresa');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Atualiza o usuário em memória sem precisar de novo login/refresh —
   // usado após editar o próprio perfil ou trocar o avatar (F8-7), pra
   // Topbar/Sidebar refletirem a mudança na hora.
@@ -70,15 +94,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      // Desconectar WebSocket primeiro
-      wsClient.disconnect();
+    // Desconectar WebSocket primeiro
+    wsClient.disconnect();
 
+    try {
       await apiClient.logout();
+    } catch (err) {
+      // Best-effort: a revogação no backend pode falhar (rede, token já
+      // expirado), mas a sessão local já foi encerrada (apiClient.logout
+      // limpa os tokens no finally) — a UI precisa voltar ao login de
+      // qualquer forma, nunca ficar "presa" autenticada sem token válido.
+      console.error('Erro ao revogar sessão no backend:', err);
+    } finally {
       setUser(null);
       setError(null);
-    } catch (err) {
-      console.error('Erro ao fazer logout:', err);
     }
   }, []);
 
@@ -87,6 +116,7 @@ export function AuthProvider({ children }) {
     loading,
     error,
     login,
+    registerCompany,
     logout,
     updateUser,
     isAuthenticated: !!user,

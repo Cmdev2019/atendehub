@@ -186,7 +186,9 @@ class ApiClient {
         }
       }
 
-      const data = await response.json();
+      // 204 No Content (logout, revoke) não tem corpo — response.json()
+      // explode com "Unexpected end of JSON input" num body vazio.
+      const data = response.status === 204 ? null : await response.json();
 
       if (!response.ok) {
         throw new ApiError(
@@ -233,6 +235,9 @@ class ApiClient {
     }
     if (endpoint === '/auth/refresh') {
       return mockApiClient.refreshToken();
+    }
+    if (endpoint === '/auth/register-company') {
+      return mockApiClient.registerCompany(body);
     }
 
     if (resource === 'conversations') {
@@ -292,6 +297,24 @@ class ApiClient {
       if (id && method === 'DELETE') return mockApiClient.deleteQueue(id);
     }
 
+    if (resource === 'notifications') {
+      const currentUser = await mockApiClient.getCurrentUser();
+      if (!id && method === 'GET') {
+        const params = new URLSearchParams(endpoint.split('?')[1] || '');
+        return mockApiClient.getNotifications(currentUser.id, {
+          unreadOnly: params.get('unreadOnly') === 'true',
+          page: params.get('page') ? Number(params.get('page')) : undefined,
+          limit: params.get('limit') ? Number(params.get('limit')) : undefined,
+        });
+      }
+      if (id === 'read-all' && method === 'PATCH') {
+        return mockApiClient.markAllNotificationsRead(currentUser.id);
+      }
+      if (id && sub === 'read' && method === 'PATCH') {
+        return mockApiClient.markNotificationRead(currentUser.id, id);
+      }
+    }
+
     if (resource === 'whatsapp') {
       if (!id && method === 'GET') return mockApiClient.getWhatsappConnections();
       if (!id && method === 'POST') return mockApiClient.createWhatsappConnection(body);
@@ -319,9 +342,29 @@ class ApiClient {
     return response;
   }
 
+  // Auto-cadastro público de empresa (B-9) — mesmo shape de resposta do
+  // login (auto-login: quem se cadastra já sai autenticado).
+  async registerCompany({ companyName, name, email, password }) {
+    const response = await this.request('/auth/register-company', {
+      method: 'POST',
+      body: JSON.stringify({ companyName, name, email, password }),
+    });
+
+    if (response.accessToken) {
+      this.setToken(response.accessToken);
+      localStorage.setItem('refreshToken', response.refreshToken);
+    }
+
+    return response;
+  }
+
   async logout() {
+    const refreshToken = localStorage.getItem('refreshToken');
     try {
-      await this.request('/auth/logout', { method: 'POST' });
+      await this.request('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      });
     } finally {
       this.clearToken();
     }
@@ -513,6 +556,24 @@ class ApiClient {
 
   async deleteQueue(id) {
     return this.request(`/queues/${id}`, { method: 'DELETE' });
+  }
+
+  // NOTIFICATIONS (B-8) — sempre as do próprio usuário logado
+  async getNotifications({ unreadOnly, page, limit } = {}) {
+    const params = new URLSearchParams();
+    if (unreadOnly) params.set('unreadOnly', 'true');
+    if (page) params.set('page', String(page));
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    return this.request(`/notifications${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  async markNotificationRead(id) {
+    return this.request(`/notifications/${id}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request('/notifications/read-all', { method: 'PATCH' });
   }
 
   // WHATSAPP (conexões via QR Code)

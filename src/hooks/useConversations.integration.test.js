@@ -125,6 +125,19 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  it('substitui o mock inicial por fila real vazia quando o backend responde sem conversas (regressão: mock ficava preso mesmo com backend conectado)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [],
+      pagination: { page: 1, limit: 20, total: 0 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations).toEqual([]);
+    });
+  });
+
   it('usa mock data se API falhar', async () => {
     mockApiClient.getConversations.mockRejectedValueOnce(
       new Error('Network error')
@@ -160,8 +173,8 @@ describe('useConversations Integration Tests', () => {
 
     unmount();
 
-    expect(mockWsClient.off).toHaveBeenCalledWith('message.new');
-    expect(mockWsClient.off).toHaveBeenCalledWith('conversation.updated');
+    expect(mockWsClient.off).toHaveBeenCalledWith('message.new', expect.any(Function));
+    expect(mockWsClient.off).toHaveBeenCalledWith('conversation.updated', expect.any(Function));
   });
 
   it('entra na sala da conversa ativa via join:conversation', async () => {

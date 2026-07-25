@@ -32,7 +32,8 @@ async function main() {
   const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
   const admin = await prisma.user.upsert({
-    where: { companyId_email: { companyId: company.id, email: "admin@demo.com" } },
+    // email agora é único globalmente (B-20), não só por empresa
+    where: { email: "admin@demo.com" },
     update: {},
     create: {
       companyId: company.id,

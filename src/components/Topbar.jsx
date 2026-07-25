@@ -1,14 +1,17 @@
 import { createElement as h } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from '../hooks/useConfirm';
 import { Logo } from './Logo';
 import { Icon } from './icons';
+import { NotificationBell } from './NotificationBell';
 
 // O toggle de tema saiu daqui — agora fica em Configurações → Aparência.
 export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
   const { logout, user } = useAuth();
+  const confirm = useConfirm();
 
   const handleLogout = async () => {
-    if (confirm('Deseja fazer logout?')) {
+    if (await confirm('Deseja fazer logout?')) {
       await logout();
     }
   };
@@ -34,8 +37,7 @@ export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
         h(Icon, { name: 'user', size: 16 }),
         ` ${user.name}`,
       ),
-      h('button', { className: 'icon-btn', title: 'Notificações', type: 'button' },
-        h(Icon, { name: 'bell', size: 18, label: 'Notificações' })),
+      h(NotificationBell),
       h('button',
         {
           className: 'icon-btn',

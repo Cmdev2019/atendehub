@@ -17,6 +17,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { AccessToken } from './decorators/access-token.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterCompanyDto } from './dto/register-company.dto';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
 
 @Controller('auth')
@@ -36,6 +37,19 @@ export class AuthController {
     @CurrentUser() user: AuthUserDto, // usuário já validado pelo LocalStrategy
   ): Promise<AuthResponseDto> {
     return this.authService.login(user);
+  }
+
+  // POST /api/v1/auth/register-company
+  // Auto-cadastro público de empresa (B-9): quem se cadastra vira ADMIN da
+  // empresa nova (plano FREE por padrão) e já sai logado (mesmo shape do
+  // login). Limite mais apertado que o login: cria linhas no banco, não só
+  // consulta.
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Public()
+  @Post('register-company')
+  @HttpCode(HttpStatus.CREATED)
+  async registerCompany(@Body() dto: RegisterCompanyDto): Promise<AuthResponseDto> {
+    return this.authService.registerCompany(dto);
   }
 
   // POST /api/v1/auth/refresh

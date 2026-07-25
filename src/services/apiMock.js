@@ -33,6 +33,11 @@ export const mockUsers = {
 let mockIdSeq = 100;
 const nextId = (prefix) => `${prefix}-${mockIdSeq++}`;
 
+// Senhas de empresas auto-cadastradas em modo demo (B-9) — permite logar de
+// novo com o mesmo e-mail/senha depois de um logout, sem persistir nada de
+// verdade (mock reinicia a cada reload da página).
+const mockRegisteredPasswords = {};
+
 const mockUsersList = Object.values(mockUsers).map((u) => ({ ...u, isActive: true }));
 
 const mockDepartments = [
@@ -57,6 +62,28 @@ const mockQueues = [
 // getMessages sejam consistentes entre si em modo demonstração.
 const mockConversationsList = initialConversations.map((c) => ({ ...c, messages: [...c.messages] }));
 let mockMessageSeq = 1000;
+
+// Notificações (B-8) — mesmos 2 tipos que o backend real cria (B1-3):
+// SLA estourado (fan-out pra SUPERVISOR+) e conversa atribuída. Seedadas
+// para o admin (user-1) pra o sino já nascer com algo pra mostrar em demo.
+const mockNotifications = [
+  {
+    id: 'notif-1', companyId: 'comp-1', userId: 'user-1', type: 'sla_breach',
+    title: 'SLA estourado',
+    body: 'Uma conversa na fila ultrapassou o tempo máximo de espera.',
+    data: { conversationId: mockConversationsList[0]?.id ?? null },
+    readAt: null,
+    createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-2', companyId: 'comp-1', userId: 'user-1', type: 'conversation_assigned',
+    title: 'Conversa atribuída a você',
+    body: 'Você assumiu uma nova conversa na fila.',
+    data: { conversationId: mockConversationsList[1]?.id ?? null },
+    readAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+  },
+];
 
 // QR de demonstração (SVG inline — não é um QR real)
 const MOCK_QR_IMAGE =
@@ -124,11 +151,12 @@ export class MockApiClient {
       };
     }
 
-    // Senhas padrão para demo
+    // Senhas padrão para demo + as de empresas auto-cadastradas nesta sessão
     const validPasswords = {
       'admin@demo.com': 'Admin@123',
       'agente1@demo.com': 'Agente@123',
       'supervisor@demo.com': 'Supervisor@123',
+      ...mockRegisteredPasswords,
     };
 
     if (password !== validPasswords[email]) {
@@ -154,6 +182,40 @@ export class MockApiClient {
   async logout() {
     await this.simulateDelay();
     this.clearToken();
+  }
+
+  // ── Auto-cadastro de empresa (B-9) ──────────────────────────────────────────
+  // Mesmo shape de resposta do login (auto-login). Sem `slug`/companies store
+  // de verdade no mock — nível de fidelidade suficiente pra demonstração,
+  // igual ao resto do apiMock (ex.: filas/departamentos não são
+  // multi-tenant aqui, é sempre a mesma "empresa" demo).
+  async registerCompany({ companyName: _companyName, name, email, password }) {
+    await this.simulateDelay();
+    const normalizedEmail = (email || '').toLowerCase().trim();
+
+    if (mockUsers[normalizedEmail]) {
+      throw { status: 409, message: 'Já existe uma conta com este e-mail' };
+    }
+
+    const user = {
+      id: nextId('user'),
+      email: normalizedEmail,
+      name,
+      role: 'ADMIN',
+      companyId: nextId('comp'),
+      avatarUrl: null,
+    };
+
+    mockUsers[normalizedEmail] = user;
+    mockUsersList.push({ ...user, isActive: true });
+    mockRegisteredPasswords[normalizedEmail] = password;
+
+    const accessToken = `token_${user.id}_${Date.now()}`;
+    const refreshToken = `refresh_${user.id}_${Date.now()}`;
+    this.setToken(accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+
+    return { accessToken, refreshToken, expiresIn: 900, user };
   }
 
   async getCurrentUser() {
@@ -364,6 +426,39 @@ export class MockApiClient {
     if (!dept) throw { status: 404, message: 'Grupo não encontrado' };
     dept.users = dept.users.filter((u) => u.id !== userId);
     return stripCount(dept);
+  }
+
+  // ── NOTIFICATIONS (B-8) — sempre filtradas pelo próprio usuário ────────────
+  async getNotifications(userId, { unreadOnly, page = 1, limit = 20 } = {}) {
+    await this.simulateDelay();
+    let list = mockNotifications.filter((n) => n.userId === userId);
+    if (unreadOnly) list = list.filter((n) => !n.readAt);
+    list = [...list].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const total = list.length;
+    const start = (page - 1) * limit;
+    const data = list.slice(start, start + limit);
+    return { data, meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  async markNotificationRead(userId, id) {
+    await this.simulateDelay();
+    const notification = mockNotifications.find((n) => n.id === id && n.userId === userId);
+    if (!notification) throw { status: 404, message: 'Notificação não encontrada' };
+    notification.readAt = notification.readAt ?? new Date().toISOString();
+    return notification;
+  }
+
+  async markAllNotificationsRead(userId) {
+    await this.simulateDelay();
+    let count = 0;
+    mockNotifications.forEach((n) => {
+      if (n.userId === userId && !n.readAt) {
+        n.readAt = new Date().toISOString();
+        count += 1;
+      }
+    });
+    return { message: `${count} notificação(ões) marcada(s) como lida(s)` };
   }
 
   // ── WHATSAPP ───────────────────────────────────────────────────────────────

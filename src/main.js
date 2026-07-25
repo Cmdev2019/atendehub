@@ -4,6 +4,7 @@ import "./styles.css";
 
 import { AuthProvider, AuthContext } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { ConfirmProvider } from "./context/ConfirmContext";
 import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -15,6 +16,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { DemoBanner } from "./components/DemoBanner";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useConversations } from "./hooks/useConversations";
 
 const h = createElement;
@@ -137,7 +139,7 @@ function App() {
       h(
         AuthProvider,
         null,
-        h(AppContent),
+        h(ConfirmProvider, null, h(ErrorBoundary, null, h(AppContent))),
       ),
     ),
   );

@@ -1,15 +1,18 @@
 import {
   Injectable,
   UnauthorizedException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
+import { RegisterCompanyDto } from './dto/register-company.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
@@ -79,6 +82,80 @@ export class AuthService {
     this.logger.log(`Login: user=${user.id} company=${user.companyId}`);
 
     return tokens;
+  }
+
+  // ── Auto-cadastro público de empresa (B-9) ─────────────────────────────────
+  // Quem se cadastra vira ADMIN da empresa nova (plano FREE por padrão, ver
+  // Company.plan @default(FREE) no schema — sem fluxo de billing/upgrade
+  // ainda). Pré-requisito B-20 (e-mail único globalmente, não só por
+  // empresa) já aplicado via migration antes deste método existir.
+  async registerCompany(dto: RegisterCompanyDto): Promise<AuthResponseDto> {
+    const email = dto.email.toLowerCase().trim();
+
+    // Checagem prévia (mesmo padrão de user.service.ts#create — findFirst
+    // antes do create, sem capturar P2002): risco de corrida é teórico e
+    // aceito, consistente com o resto do código.
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Já existe uma conta com este e-mail');
+    }
+
+    const slug = await this.generateUniqueSlug(dto.companyName);
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    const { company, user } = await this.prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: { name: dto.companyName.trim(), slug },
+      });
+      const user = await tx.user.create({
+        data: {
+          companyId: company.id,
+          name: dto.name.trim(),
+          email,
+          passwordHash,
+          role: Role.ADMIN,
+        },
+      });
+      return { company, user };
+    });
+
+    this.logger.log(`Nova empresa cadastrada: company=${company.id} admin=${user.id}`);
+
+    const authUser: AuthUserDto = {
+      id: user.id,
+      companyId: user.companyId,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatarUrl: user.avatarUrl,
+    };
+
+    // Auto-login: quem acabou de criar a empresa já entra logado, sem
+    // precisar de uma 2ª ida à tela de login.
+    return this.login(authUser);
+  }
+
+  // Gera um slug único a partir do nome da empresa (usado como subdomínio —
+  // ver comentário em Company.slug no schema). Colisão é resolvida com
+  // sufixo numérico incremental (comercial-2, comercial-3, ...).
+  private async generateUniqueSlug(companyName: string): Promise<string> {
+    const base =
+      companyName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '') // remove acentos (NFD separa a base da marca combinante)
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50) || 'empresa';
+
+    let slug = base;
+    let suffix = 1;
+    // eslint-disable-next-line no-constant-condition
+    while (await this.prisma.company.findUnique({ where: { slug }, select: { id: true } })) {
+      suffix += 1;
+      slug = `${base}-${suffix}`;
+    }
+    return slug;
   }
 
   // ── Refresh — troca o refresh token por um novo par de tokens ─────────────

@@ -113,16 +113,22 @@ export function useConversations() {
         setLoading(true);
         const response = await apiClient.getConversations();
 
-        if (response.data && response.data.length > 0) {
-          console.log('✅ Conversas reais carregadas do backend');
+        // Qualquer resposta do backend (mesmo lista vazia) é autoritativa —
+        // manter o mock inicial na tela por trás de um backend real e
+        // conectado (ex.: empresa nova via B-9, sem conversa ainda) violava
+        // F2-1/F2-2 (mock nunca fica em pé silenciosamente com backend ok).
+        if (response.data) {
           const normalized = response.data.map(toUiConversation);
+          console.log(
+            normalized.length > 0
+              ? '✅ Conversas reais carregadas do backend'
+              : '✅ Backend conectado — nenhuma conversa ainda',
+          );
           setConversations(normalized);
           setActiveId(normalized[0]?.id);
           setLoadedFromApi(true);
           setQueuePage(1);
           setQueueHasMore((response.meta?.totalPages ?? 1) > 1);
-        } else {
-          console.log('ℹ️ Nenhuma conversa no backend, usando mock data');
         }
       } catch (error) {
         console.warn('⚠️ Erro ao buscar conversas:', error.message);
@@ -201,7 +207,7 @@ export function useConversations() {
 
     // Payload: { companyId, conversation } — nova conversa entra na fila
     // em tempo real, sem refresh
-    wsClient.on('conversation.created', (payload) => {
+    const handleConversationCreated = (payload) => {
       const conv = toUiConversation(payload?.conversation);
       if (!conv?.id) return;
 
@@ -210,10 +216,10 @@ export function useConversations() {
         prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
       );
       fetchStats();
-    });
+    };
 
     // Payload: { conversationId, companyId, message }
-    wsClient.on('message.new', (payload) => {
+    const handleMessageNew = (payload) => {
       const conversationId = payload?.conversationId;
       const message = toUiMessage(payload?.message);
       if (!conversationId || !message) return;
@@ -239,12 +245,12 @@ export function useConversations() {
       );
       // Mensagem de cliente pode incrementar unreadCount no backend
       fetchStats();
-    });
+    };
 
     // Payload: { conversationId, messageId, attachment } — o download da mídia
     // termina DEPOIS do message.new; este evento troca o placeholder pela
     // mídia real sem precisar de refresh
-    wsClient.on('message.updated', (payload) => {
+    const handleMessageUpdated = (payload) => {
       const { conversationId, messageId, attachment } = payload ?? {};
       if (!conversationId || !messageId || !attachment?.url) return;
 
@@ -272,10 +278,10 @@ export function useConversations() {
           };
         }),
       );
-    });
+    };
 
     // Payload: { conversationId, companyId, changes }
-    wsClient.on('conversation.updated', (payload) => {
+    const handleConversationUpdated = (payload) => {
       const { conversationId, changes } = payload ?? {};
       if (!conversationId) return;
 
@@ -294,12 +300,12 @@ export function useConversations() {
         }),
       );
       fetchStats();
-    });
+    };
 
     // Payload: { companyId, conversationId, agentId, departmentId, agent }
     // Emitido por PATCH /conversations/:id/assign — distinto de
     // conversation.updated (o backend usa um evento próprio pra atribuição).
-    wsClient.on('conversation.assigned', (payload) => {
+    const handleConversationAssigned = (payload) => {
       const { conversationId, agentId, agent } = payload ?? {};
       if (!conversationId) return;
 
@@ -318,12 +324,12 @@ export function useConversations() {
         ),
       );
       fetchStats();
-    });
+    };
 
     // Payload: { companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }
     // Destaque visual na fila (F3-4) — a conversa segue WAITING além do
     // maxWaitSecs da fila; some ao ser atribuída ou sair de WAITING (acima).
-    wsClient.on('sla.breached', (payload) => {
+    const handleSlaBreached = (payload) => {
       const conversationId = payload?.conversationId;
       if (!conversationId) return;
 
@@ -335,16 +341,25 @@ export function useConversations() {
             : conv,
         ),
       );
-    });
+    };
 
-    // Cleanup
+    wsClient.on('conversation.created', handleConversationCreated);
+    wsClient.on('message.new', handleMessageNew);
+    wsClient.on('message.updated', handleMessageUpdated);
+    wsClient.on('conversation.updated', handleConversationUpdated);
+    wsClient.on('conversation.assigned', handleConversationAssigned);
+    wsClient.on('sla.breached', handleSlaBreached);
+
+    // Cleanup — remove só os callbacks registrados aqui (B-7); outros
+    // consumidores do mesmo evento (ex.: useNotifications, B-8) não são
+    // afetados.
     return () => {
-      wsClient.off('conversation.created');
-      wsClient.off('message.new');
-      wsClient.off('message.updated');
-      wsClient.off('conversation.updated');
-      wsClient.off('conversation.assigned');
-      wsClient.off('sla.breached');
+      wsClient.off('conversation.created', handleConversationCreated);
+      wsClient.off('message.new', handleMessageNew);
+      wsClient.off('message.updated', handleMessageUpdated);
+      wsClient.off('conversation.updated', handleConversationUpdated);
+      wsClient.off('conversation.assigned', handleConversationAssigned);
+      wsClient.off('sla.breached', handleSlaBreached);
     };
   }, []);
 
@@ -430,7 +445,7 @@ export function useConversations() {
     wsClient.on('connected', join);
 
     return () => {
-      wsClient.off('connected');
+      wsClient.off('connected', join);
       if (wsClient.isConnected) wsClient.leaveConversation(activeId);
     };
   }, [activeId]);

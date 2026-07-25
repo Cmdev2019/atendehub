@@ -108,9 +108,11 @@ export class UserService {
       );
     }
 
-    // Verifica e-mail duplicado na empresa
-    const existing = await this.prisma.user.findFirst({
-      where: { companyId, email: dto.email.toLowerCase().trim() },
+    // E-mail é único GLOBALMENTE (B-20), não só na empresa — o login busca
+    // por e-mail sem companyId, então a checagem precisa ser global também,
+    // senão a violação da constraint no create() viraria um 500 cru.
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase().trim() },
     });
 
     if (existing) {

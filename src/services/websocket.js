@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import { apiClient } from './api';
+import { EventBus } from './eventBus';
 
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
 
@@ -23,7 +24,7 @@ const BACKEND_EVENTS = [
 export class WebSocketClient {
   constructor() {
     this.socket = null;
-    this.listeners = new Map();
+    this.bus = new EventBus();
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -104,30 +105,24 @@ export class WebSocketClient {
     }
   }
 
-  // Ouvir evento local
+  // Ouvir evento local. Devolve uma função de unsubscribe (equivalente a
+  // off(event, callback)) para quem preferir esse estilo em vez de guardar
+  // a referência do callback à parte. Implementação real em EventBus (B-7).
   on(event, callback) {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
-    this.listeners.get(event).push(callback);
+    return this.bus.on(event, callback);
   }
 
-  // Parar de ouvir evento
-  off(event) {
-    this.listeners.delete(event);
+  // Parar de ouvir evento. Remove só o callback informado — dois
+  // componentes ouvindo o mesmo evento não se derrubam mais ao desmontar
+  // (B-7). Sem callback, remove todos os listeners do evento (uso raro,
+  // mantido só por compatibilidade).
+  off(event, callback) {
+    this.bus.off(event, callback);
   }
 
   // Emitir evento local
   emit(event, data) {
-    if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach((callback) => {
-        try {
-          callback(data);
-        } catch (error) {
-          console.error(`❌ Erro em listener de '${event}':`, error);
-        }
-      });
-    }
+    this.bus.emit(event, data);
   }
 
   // Enviar evento para backend

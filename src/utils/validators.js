@@ -46,6 +46,24 @@ export const validators = {
     if (value !== password) return 'Senhas não conferem';
     return null;
   },
+
+  companyName: (value) => {
+    if (!value) return 'Nome da empresa é obrigatório';
+    if (value.length < 2) return 'Nome da empresa deve ter no mínimo 2 caracteres';
+    return null;
+  },
+
+  // Mesma regra do backend (CreateUserDto/RegisterCompanyDto, B-9): min 8
+  // caracteres + 1 maiúscula + 1 minúscula + 1 número. Valida no cliente
+  // pra não gastar uma ida ao servidor com uma senha que o backend recusaria.
+  passwordPolicy: (value) => {
+    if (!value) return 'Senha é obrigatória';
+    if (value.length < 8) return 'Senha deve ter no mínimo 8 caracteres';
+    if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value)) {
+      return 'Senha deve conter ao menos uma letra maiúscula, uma minúscula e um número';
+    }
+    return null;
+  },
 };
 
 export function validateForm(formData, fields) {
@@ -66,6 +84,9 @@ export function validateForm(formData, fields) {
         break;
       case 'confirmPassword':
         error = validators.confirmPassword(formData.confirmPassword, formData.password);
+        break;
+      case 'companyName':
+        error = validators.companyName(formData.companyName);
         break;
       default:
         break;
