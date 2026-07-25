@@ -2,8 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
-import { Channel } from '@prisma/client';
+import { Channel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
@@ -75,6 +76,7 @@ export class ContactService {
         channel: true,
         isBlocked: true,
         metadata: true,
+        anonymizedAt: true,
         createdAt: true,
         updatedAt: true,
         tags: { select: { id: true, name: true, color: true } },
@@ -130,7 +132,10 @@ export class ContactService {
 
   // ── Atualizar contato ─────────────────────────────────────────────────────
   async update(companyId: string, id: string, dto: UpdateContactDto) {
-    await this.findOne(companyId, id);
+    const contact = await this.findOne(companyId, id);
+    if (contact.anonymizedAt) {
+      throw new BadRequestException('Contato anonimizado não pode ser editado');
+    }
 
     return this.prisma.contact.update({
       where: { id },
@@ -147,27 +152,53 @@ export class ContactService {
     });
   }
 
-  // ── Remover contato ───────────────────────────────────────────────────────
+  // ── Anonimizar contato (B-17/LGPD — direito de exclusão do titular) ───────
+  // Não é hard delete: `Conversation.contact` não tem cascade (uma conversa é
+  // histórico de negócio legítimo da empresa, não só do contato) — o hard
+  // delete anterior quebrava com violação de FK (erro cru, não tratado) pra
+  // qualquer contato com pelo menos uma conversa, e nunca foi pego porque não
+  // havia teste contra Postgres real nem consumidor no frontend chamando esta
+  // rota (achado pesquisando o mecanismo de atendimento a solicitação de
+  // titular de dados para B-17). Em vez de apagar, os campos de PII são
+  // substituídos e o registro — com seu histórico de conversas/mensagens —
+  // permanece intacto.
   async remove(companyId: string, id: string, requesterId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, companyId },
-      select: { name: true, phone: true },
+      select: { name: true, phone: true, email: true, anonymizedAt: true },
     });
 
     if (!contact) throw new NotFoundException('Contato não encontrado');
+    if (contact.anonymizedAt) {
+      throw new BadRequestException('Este contato já foi anonimizado');
+    }
 
-    await this.prisma.contact.delete({ where: { id } });
+    const anonymized = await this.prisma.contact.update({
+      where: { id },
+      data: {
+        name: 'Contato removido',
+        phone: `anonimizado-${id}`,
+        email: null,
+        avatarUrl: null,
+        metadata: Prisma.DbNull,
+        anonymizedAt: new Date(),
+      },
+      select: { anonymizedAt: true },
+    });
 
     await this.auditLog.record({
       companyId,
       userId: requesterId,
-      action: 'contact.deleted',
+      action: 'contact.anonymized',
       entity: 'Contact',
       entityId: id,
-      before: { name: contact.name, phone: contact.phone },
+      before: { name: contact.name, phone: contact.phone, email: contact.email },
     });
 
-    return { message: `Contato "${contact.name}" removido com sucesso` };
+    return {
+      message: 'Contato anonimizado com sucesso — histórico de conversas preservado',
+      anonymizedAt: anonymized.anonymizedAt,
+    };
   }
 
   // ── Bloquear / desbloquear ────────────────────────────────────────────────

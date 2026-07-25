@@ -244,8 +244,11 @@ Wrapper: `{ data, meta }`. Ordenação: `name asc`.
 ### `GET /contacts/:id`
 + `metadata`, `updatedAt`, `tags[]` e as 10 conversas mais recentes.
 
-### `POST /contacts` · `PATCH /contacts/:id` · `DELETE /contacts/:id` · `PATCH /contacts/:id/block`
-CRUD padrão; block alterna `isBlocked`. `DELETE` registra auditoria (`contact.deleted`).
+### `POST /contacts` · `PATCH /contacts/:id` · `PATCH /contacts/:id/block`
+CRUD padrão; block alterna `isBlocked`. `PATCH` recusa com 400 se o contato já foi anonimizado (ver `DELETE` abaixo).
+
+### `DELETE /contacts/:id` — requer `ADMIN+`
+**Não é hard delete.** É anonimização (direito de exclusão do titular — B-17/LGPD): `name`/`phone`/`email`/`avatarUrl`/`metadata` são substituídos (`name` vira `"Contato removido"`, `phone` vira `anonimizado-<id>` pra não colidir com o índice único `companyId+phone`) e `anonymizedAt` é preenchido — o registro e seu histórico de conversas/mensagens permanecem intactos (a relação `Conversation.contact` não tem cascade; hard delete quebraria com violação de FK pra qualquer contato com conversa). Recusa com 400 se já estiver anonimizado. Auditoria: `contact.anonymized` (era `contact.deleted`). Resposta: `{ message, anonymizedAt }`.
 
 ### `POST /contacts/:id/tags/:tagId` · `DELETE /contacts/:id/tags/:tagId`
 Atribui/remove uma tag existente do contato (B1-1). 404 se a tag ou o contato não pertencerem à empresa do usuário.

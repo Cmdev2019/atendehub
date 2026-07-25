@@ -11,17 +11,20 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { ContactService } from './contact.service';
 import { TagService } from '../tag/tag.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { ListContactsDto } from './dto/list-contacts.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 
 @Controller('contacts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ContactController {
   constructor(
     private readonly contactService: ContactService,
@@ -57,7 +60,10 @@ export class ContactController {
   }
 
   // DELETE /api/v1/contacts/:id
+  // Anonimiza (não apaga) — direito de exclusão do titular (B-17/LGPD), ação
+  // irreversível restrita a ADMIN+.
   @Delete(':id')
+  @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
   remove(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
     return this.contactService.remove(user.companyId, id, user.id);

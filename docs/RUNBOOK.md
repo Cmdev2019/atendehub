@@ -165,6 +165,72 @@ docker run --rm -v atendehub_minio_data:/data -v "$(pwd)/backups":/backup alpine
 docker compose up -d minio
 ```
 
+## Retenção de dados e LGPD (B-17)
+
+O produto processa PII de terceiros via WhatsApp (nome, telefone, mídia,
+conteúdo de conversa) sem nenhum consentimento explícito coletado — dados
+chegam via webhook da Evolution API a partir do próprio uso do WhatsApp
+pelo cliente final. É relevante pra LGPD por ser um produto brasileiro que
+processa dado pessoal de titular que não é o contratante.
+
+### O que é retido, e por quanto tempo
+
+| Dado | Onde vive | Retenção hoje |
+|---|---|---|
+| Contato (nome, telefone, e-mail, foto) | Postgres, tabela `contacts` | Indefinida — sem expiração automática |
+| Conversas e mensagens | Postgres, tabelas `conversations`/`messages` | Indefinida — sem expiração automática |
+| Mídia (foto, áudio, documento do WhatsApp) | MinIO, bucket `atendehub-media` | Indefinida — **nunca é apagada**, nem quando a mensagem/conversa/contato é apagado/anonimizado (`StorageService#delete` existe mas não é chamado em nenhum lugar do código) |
+| Logs de auditoria (`audit_logs`) | Postgres | Indefinida — sem TTL/purga; só desaparece se a `Company` inteira for removida (cascade), o que não é uma operação exposta hoje |
+
+**Não existe hoje** nenhuma rotina automática (cron/job) de expiração de
+conversa, mensagem ou mídia — confirmado lendo todo `apps/api/src` em busca
+de `@Cron`/`@Interval`: o único cron do projeto é a limpeza de refresh
+tokens expirados (`refresh-token-cleanup.service.ts`), que não tem relação
+com dado de titular.
+
+### Direito de exclusão do titular (`DELETE /contacts/:id`)
+
+**Concluído nesta sessão, junto com a documentação** (ver B-28 no backlog):
+a rota existia desde antes, mas fazia hard delete (`prisma.contact.delete`)
+sem cascade configurado em `Conversation.contact` — na prática, **quebrava
+com violação de FK pra qualquer contato que já tivesse uma conversa**, ou
+seja, o único mecanismo de atendimento a uma solicitação de exclusão nunca
+funcionava de verdade para o caso comum. Corrigido: a rota agora
+**anonimiza** em vez de apagar — `name` vira `"Contato removido"`,
+`phone`/`email`/`avatarUrl`/`metadata` são zerados/substituídos,
+`anonymizedAt` é preenchido, e o registro (com seu histórico de
+conversas/mensagens) permanece intacto. Restrita a `ADMIN+` (antes
+qualquer usuário autenticado podia chamar); idempotente (recusa com 400
+se já estiver anonimizado); auditada como `contact.anonymized`.
+
+Decisão consciente: **anonimizar, não apagar de verdade** — LGPD (art. 16)
+permite reter dado após solicitação de exclusão quando há motivo
+legítimo (aqui, o histórico de atendimento da empresa), desde que
+anonimizado. Apagar a conversa inteira destruiria histórico de negócio que
+não pertence só ao titular (ex.: a resposta do atendente).
+
+**Gaps conhecidos, registrados como itens novos de backlog (não corrigidos
+nesta sessão):**
+- **B-29** — a mídia do contato anonimizado permanece acessível no MinIO
+  (a URL pública não expira nem é invalidada) mesmo depois da PII do
+  contato ser removida do Postgres.
+- **B-30** — não existe nenhum endpoint de exportação/portabilidade
+  (LGPD art. 18, IV/V). Hoje, atender uma solicitação desse tipo é
+  manual: um `ADMIN` consulta `GET /contacts/:id` (dados do contato +
+  últimas 10 conversas) e `GET /conversations/:id/messages` de cada
+  conversa relevante, e monta a resposta a mão.
+
+### Processo hoje (enquanto B-29/B-30 não são resolvidos)
+
+1. **Exclusão**: `DELETE /contacts/:id` (autenticado como `ADMIN`) — cobre o
+   caso comum de verdade agora (antes falhava silenciosamente com 500 pra
+   contato com histórico).
+2. **Portabilidade/acesso**: manual — `GET /contacts/:id` + `GET
+   /conversations?...` filtrando pelo `contactId` + `GET
+   /conversations/:id/messages` de cada uma, compilados por um `ADMIN`.
+3. **Mídia**: não há como purgar isoladamente hoje — fica registrado como
+   limitação até B-29 ser resolvido.
+
 ## Reset de filas (Bull/Redis)
 
 As duas filas do projeto são `webhook` e `sla-check` (a fila de envio de

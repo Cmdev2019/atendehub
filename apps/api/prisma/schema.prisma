@@ -266,6 +266,9 @@ model Contact {
   channel     Channel  @default(WHATSAPP)
   isBlocked   Boolean  @default(false)
   metadata    Json?    // dados extras por canal (handle Instagram, etc.)
+  anonymizedAt DateTime? // preenchido quando um titular exerce direito de exclusão (B-17/LGPD) —
+                         // o registro permanece (conversas/mensagens são histórico legítimo da
+                         // empresa), mas name/phone/email/avatarUrl/metadata são substituídos
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

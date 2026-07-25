@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ContactService } from './contact.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -86,37 +87,79 @@ describe('ContactService — isolamento multi-tenant', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.contact.update).not.toHaveBeenCalled();
     });
+
+    it('recusa editar um contato já anonimizado (B-17/LGPD)', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        id: 'contact-1', anonymizedAt: new Date(), tags: [], conversations: [],
+      });
+
+      await expect(
+        service.update(companyA, 'contact-1', { name: 'Nome Novo' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
+    });
   });
 
-  describe('remove', () => {
-    it('nunca chama contact.delete para um contato de outra empresa', async () => {
+  // B-17/LGPD: exclusão do titular é anonimização, não hard delete — a
+  // relação Conversation.contact não tem cascade (é histórico legítimo da
+  // empresa), então o hard delete anterior quebrava com violação de FK pra
+  // qualquer contato com conversa (bug real, achado pesquisando o mecanismo
+  // de atendimento a solicitação de titular de dados, registrado como B-28).
+  describe('remove (anonimização, B-17/LGPD)', () => {
+    it('nunca chama contact.update para um contato de outra empresa', async () => {
       mockPrisma.contact.findFirst.mockResolvedValueOnce(null);
 
       await expect(service.remove(companyA, contactOfCompanyB, requesterId)).rejects.toThrow(
         NotFoundException,
       );
-      expect(mockPrisma.contact.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
-    it('registra auditoria ao remover um contato de verdade', async () => {
+    it('recusa anonimizar um contato que já foi anonimizado antes', async () => {
       mockPrisma.contact.findFirst.mockResolvedValueOnce({
-        name: 'Fulano',
-        phone: '5511999999999',
+        name: 'Fulano', phone: '5511999999999', email: null, anonymizedAt: new Date(),
       });
-      mockPrisma.contact.delete.mockResolvedValueOnce({});
 
-      await service.remove(companyA, 'contact-1', requesterId);
+      await expect(service.remove(companyA, 'contact-1', requesterId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
 
+    it('substitui PII (name/phone/email/avatarUrl/metadata) em vez de apagar o registro, e registra auditoria', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        name: 'Fulano', phone: '5511999999999', email: 'fulano@example.com', anonymizedAt: null,
+      });
+      mockPrisma.contact.update.mockResolvedValueOnce({ anonymizedAt: new Date('2026-07-25') });
+
+      const result = await service.remove(companyA, 'contact-1', requesterId);
+
+      expect(mockPrisma.contact.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.update).toHaveBeenCalledWith({
+        where: { id: 'contact-1' },
+        data: expect.objectContaining({
+          name: 'Contato removido',
+          phone: 'anonimizado-contact-1',
+          email: null,
+          avatarUrl: null,
+          metadata: Prisma.DbNull,
+          anonymizedAt: expect.any(Date),
+        }),
+        select: { anonymizedAt: true },
+      });
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
           companyId: companyA,
           userId: requesterId,
-          action: 'contact.deleted',
+          action: 'contact.anonymized',
           entity: 'Contact',
           entityId: 'contact-1',
+          before: { name: 'Fulano', phone: '5511999999999', email: 'fulano@example.com' },
         }),
       );
+      expect(result.anonymizedAt).toEqual(new Date('2026-07-25'));
     });
   });
 
