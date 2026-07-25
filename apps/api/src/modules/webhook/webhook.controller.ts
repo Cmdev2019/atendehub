@@ -10,6 +10,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { timingSafeEqual, createHash } from 'crypto';
@@ -48,7 +49,12 @@ export class WebhookController {
    *   "date_time": "..."
    * }
    */
+  // B-15: limite próprio, desacoplado do THROTTLE_LIMIT global (100/60s) —
+  // a Evolution manda um webhook por evento (mensagem, status, contato), então
+  // um pico legítimo de tráfego real pode passar do limite genérico da API;
+  // ainda assim finito, para não deixar um IP malicioso abusar da rota pública.
   @Public()
+  @Throttle({ default: { limit: 200, ttl: 60_000 } })
   @Post('evolution')
   @HttpCode(HttpStatus.OK)
   async receiveEvolution(

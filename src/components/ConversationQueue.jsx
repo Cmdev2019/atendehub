@@ -47,8 +47,6 @@ export function ConversationQueue({
       'div',
       { className: 'section-header' },
       h('h2', null, h(Icon, { name: 'chat', size: 16 }), ' Conversas'),
-      h('button', { type: 'button', className: 'icon-btn small' },
-        h(Icon, { name: 'search', size: 15, label: 'Buscar' })),
     ),
     h('input', {
       type: 'search',

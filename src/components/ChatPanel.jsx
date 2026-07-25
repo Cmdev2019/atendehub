@@ -191,8 +191,6 @@ export function ChatPanel({
           h('p', null, h(Icon, { name: 'smartphone', size: 13 }), ` ${conversation.channel}`),
         ),
       ),
-      h('button', { className: 'icon-btn', type: 'button', title: 'Mais opções' },
-        h(Icon, { name: 'dots', size: 18, label: 'Mais opções' })),
     ),
     h(
       'div',
