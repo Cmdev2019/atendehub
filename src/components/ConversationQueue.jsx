@@ -1,13 +1,35 @@
 import { createElement as h, useState } from 'react';
 import { Icon } from './icons';
 
-export function ConversationQueue({ activeId, conversations, onSelect }) {
+// Distância (px) do fim da lista que já dispara a busca da próxima página —
+// carrega antes do usuário bater no fim de verdade, pra parecer contínuo.
+const LOAD_MORE_THRESHOLD_PX = 150;
+
+export function ConversationQueue({
+  activeId,
+  conversations,
+  onSelect,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+}) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
 
   const filteredConversations = conversations.filter(conv =>
     conv.contact.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Scroll infinito (B-4) — só dispara na lista sem filtro de busca: com
+  // busca ativa, "chegar perto do fim" é do resultado filtrado (menor que o
+  // total real), não sinal de que falta carregar mais do servidor.
+  const handleScroll = (e) => {
+    if (searchTerm || !onLoadMore || !hasMore || loadingMore) return;
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < LOAD_MORE_THRESHOLD_PX) {
+      onLoadMore();
+    }
+  };
 
   const getInitials = (name) => {
     return name
@@ -38,7 +60,7 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
     }),
     h(
       'div',
-      { className: 'queue-list' },
+      { className: 'queue-list', onScroll: handleScroll },
       filteredConversations.length > 0 ? (
         filteredConversations.map((conv) =>
           h(
@@ -81,6 +103,8 @@ export function ConversationQueue({ activeId, conversations, onSelect }) {
       ) : (
         h('div', { style: { padding: '20px', textAlign: 'center', color: '#687386' } }, 'Nenhuma conversa')
       ),
+      loadingMore &&
+        h('div', { className: 'queue-loading-more' }, 'Carregando mais conversas…'),
     ),
   );
 }

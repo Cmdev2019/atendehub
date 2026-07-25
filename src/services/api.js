@@ -368,9 +368,13 @@ class ApiClient {
     return this.request('/conversations/stats', { method: 'GET' });
   }
 
-  async getMessages(conversationId, limit = 50) {
-    // Retorna { data: [mensagens em ordem cronológica], meta }
-    return this.request(`/conversations/${conversationId}/messages?limit=${limit}`, {
+  async getMessages(conversationId, limit = 50, before) {
+    // Retorna { data: [mensagens em ordem cronológica], meta: {count, hasMore, nextCursor} }
+    // `before`: cursor (id da mensagem mais antiga já carregada) — busca as
+    // anteriores a ela, usado no scroll infinito do histórico (B-4).
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', before);
+    return this.request(`/conversations/${conversationId}/messages?${params}`, {
       method: 'GET',
     });
   }

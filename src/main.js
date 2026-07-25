@@ -37,6 +37,11 @@ function Dashboard() {
     sendMessage,
     sendError,
     stats,
+    loadMoreConversations,
+    queueHasMore,
+    queueLoadingMore,
+    loadMoreMessages,
+    loadingOlderMessages,
   } = useConversations();
 
   return h(
@@ -66,6 +71,9 @@ function Dashboard() {
                   activeId,
                   conversations,
                   onSelect: setActiveId,
+                  onLoadMore: loadMoreConversations,
+                  hasMore: queueHasMore,
+                  loadingMore: queueLoadingMore,
                 }),
               ),
               activeConversation &&
@@ -78,6 +86,8 @@ function Dashboard() {
                     onDraftChange: setDraft,
                     onSend: sendMessage,
                     sendError,
+                    onLoadMoreMessages: loadMoreMessages,
+                    loadingOlderMessages,
                   }),
                 ),
               activeConversation &&

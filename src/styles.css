@@ -518,6 +518,13 @@ button {
   border-radius: 3px;
 }
 
+.queue-loading-more {
+  padding: 12px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 .queue-item {
   display: flex;
   align-items: center;
@@ -799,6 +806,13 @@ button {
 .chat-messages::-webkit-scrollbar-thumb {
   background: var(--line-strong);
   border-radius: 3px;
+}
+
+.chat-loading-older {
+  padding: 6px;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .message {

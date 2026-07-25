@@ -61,17 +61,46 @@ function renderBubbleContent(msg) {
   return parts;
 }
 
-export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendError }) {
+// Distância (px) do topo que já dispara a busca de mensagens mais antigas.
+const LOAD_MORE_MESSAGES_THRESHOLD_PX = 100;
+
+export function ChatPanel({
+  conversation,
+  draft,
+  onDraftChange,
+  onSend,
+  sendError,
+  onLoadMoreMessages,
+  loadingOlderMessages,
+}) {
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
+  // Mensagens antigas entram no TOPO da lista — sem isso, o scroll pularia
+  // pro fim (como uma mensagem nova faria) e o usuário perderia a posição
+  // que estava lendo. Guarda a altura antes do prepend pra recalcular depois.
+  const prependScrollHeightRef = useRef(null);
 
   useEffect(() => {
-    if (messagesRef.current) {
-      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    const el = messagesRef.current;
+    if (!el) return;
+
+    if (prependScrollHeightRef.current !== null) {
+      el.scrollTop = el.scrollHeight - prependScrollHeightRef.current;
+      prependScrollHeightRef.current = null;
+    } else {
+      el.scrollTop = el.scrollHeight;
     }
   }, [conversation.messages]);
+
+  function handleMessagesScroll(e) {
+    if (!onLoadMoreMessages || loadingOlderMessages) return;
+    if (e.currentTarget.scrollTop < LOAD_MORE_MESSAGES_THRESHOLD_PX) {
+      prependScrollHeightRef.current = e.currentTarget.scrollHeight;
+      onLoadMoreMessages(conversation.id);
+    }
+  }
 
   async function handleSend() {
     const ok = await onSend(attachments);
@@ -172,7 +201,10 @@ export function ChatPanel({ conversation, draft, onDraftChange, onSend, sendErro
         className: 'chat-messages',
         role: 'log',
         'aria-live': 'polite',
+        onScroll: handleMessagesScroll,
       },
+      loadingOlderMessages &&
+        h('div', { className: 'chat-loading-older' }, 'Carregando mensagens antigas…'),
       conversation.messages.map((msg) =>
         h(
           'div',

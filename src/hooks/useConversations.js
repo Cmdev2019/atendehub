@@ -91,6 +91,11 @@ export function useConversations() {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(emptyStats);
+  // Paginação da fila (B-4) — página 1 vem do fetch inicial; loadMoreConversations
+  // busca as seguintes conforme o usuário rola a lista.
+  const [queuePage, setQueuePage] = useState(1);
+  const [queueHasMore, setQueueHasMore] = useState(false);
+  const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   // true somente após carregar conversas REAIS — evita join/fetch com ids mock
   const [loadedFromApi, setLoadedFromApi] = useState(false);
   // Mensagem de erro do último envio que falhou (visível na UI)
@@ -114,6 +119,8 @@ export function useConversations() {
           setConversations(normalized);
           setActiveId(normalized[0]?.id);
           setLoadedFromApi(true);
+          setQueuePage(1);
+          setQueueHasMore((response.meta?.totalPages ?? 1) > 1);
         } else {
           console.log('ℹ️ Nenhuma conversa no backend, usando mock data');
         }
@@ -142,6 +149,32 @@ export function useConversations() {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  // Scroll infinito da fila (B-4) — busca a próxima página e acrescenta ao
+  // final da lista já carregada (dedupe por id: novas conversas podem ter
+  // entrado no topo via socket entre uma página e outra).
+  const loadMoreConversations = useCallback(async () => {
+    if (!loadedFromApi || !queueHasMore || queueLoadingMore) return;
+
+    setQueueLoadingMore(true);
+    try {
+      const nextPage = queuePage + 1;
+      const response = await apiClient.getConversations(nextPage);
+      const normalized = (response.data || []).map(toUiConversation);
+
+      setConversations((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const fresh = normalized.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...fresh];
+      });
+      setQueuePage(nextPage);
+      setQueueHasMore(nextPage < (response.meta?.totalPages ?? nextPage));
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar mais conversas:', error.message);
+    } finally {
+      setQueueLoadingMore(false);
+    }
+  }, [loadedFromApi, queueHasMore, queueLoadingMore, queuePage]);
 
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
@@ -332,7 +365,9 @@ export function useConversations() {
         const messages = (response.data || []).map(toUiMessage);
         setConversations((prev) =>
           prev.map((c) =>
-            c.id === activeId ? { ...c, messages, messagesLoaded: true } : c,
+            c.id === activeId
+              ? { ...c, messages, messagesLoaded: true, messagesHasMore: response.meta?.hasMore ?? false }
+              : c,
           ),
         );
       } catch (error) {
@@ -342,6 +377,44 @@ export function useConversations() {
       }
     })();
   }, [activeId, conversations]);
+
+  // Carrega mensagens mais antigas ao rolar pro topo do histórico (B-4) —
+  // cursor é o id da mensagem mais antiga já carregada (a própria API usa o
+  // id da mensagem como cursor de paginação, ver ListMessagesDto#before).
+  const loadingMoreMessagesRef = useRef(new Set());
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+
+  const loadMoreMessages = useCallback(async (conversationId) => {
+    const conv = conversationsRef.current.find((c) => c.id === conversationId);
+    if (!conv || conv.messagesHasMore === false) return;
+    if (loadingMoreMessagesRef.current.has(conversationId)) return;
+
+    const cursor = conv.messages?.[0]?.id;
+    if (!cursor) return;
+
+    loadingMoreMessagesRef.current.add(conversationId);
+    setLoadingOlderMessages(true);
+    try {
+      const response = await apiClient.getMessages(conversationId, 50, cursor);
+      const older = (response.data || []).map(toUiMessage);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                messages: [...older, ...(c.messages || [])],
+                messagesHasMore: response.meta?.hasMore ?? false,
+              }
+            : c,
+        ),
+      );
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar mensagens antigas:', error.message);
+    } finally {
+      loadingMoreMessagesRef.current.delete(conversationId);
+      setLoadingOlderMessages(false);
+    }
+  }, []);
 
   // Entra na sala da conversa ativa (join:conversation) para receber os
   // eventos direcionados a ela; sai da sala anterior ao trocar de conversa.
@@ -493,5 +566,10 @@ export function useConversations() {
     sendError,
     loading,
     stats,
+    loadMoreConversations,
+    queueHasMore,
+    queueLoadingMore,
+    loadMoreMessages,
+    loadingOlderMessages,
   };
 }

@@ -7,6 +7,7 @@ jest.mock('../services/api', () => ({
     getConversations: jest.fn(),
     getConversation: jest.fn(),
     getConversationStats: jest.fn(),
+    getMessages: jest.fn(),
     sendMessage: jest.fn(),
   },
 }));
@@ -652,5 +653,144 @@ describe('useConversations Integration Tests', () => {
     });
 
     expect(result.current.draft).toBe('');
+  });
+
+  describe('scroll infinito da fila (B-4)', () => {
+    it('carrega a próxima página e acrescenta ao final da lista', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 2, page: 1, limit: 1, totalPages: 2 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.conversations).toHaveLength(1);
+        expect(result.current.queueHasMore).toBe(true);
+      });
+
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '2', contact: 'Maria', messages: [] }],
+        meta: { total: 2, page: 2, limit: 1, totalPages: 2 },
+      });
+
+      await act(async () => {
+        await result.current.loadMoreConversations();
+      });
+
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith(2);
+      expect(result.current.conversations).toHaveLength(2);
+      expect(result.current.conversations[1].id).toBe('2');
+      expect(result.current.queueHasMore).toBe(false);
+    });
+
+    it('não busca mais quando já está na última página', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.queueHasMore).toBe(false);
+      });
+
+      await act(async () => {
+        await result.current.loadMoreConversations();
+      });
+
+      // Só a chamada inicial — loadMore não dispara uma 2ª
+      expect(mockApiClient.getConversations).toHaveBeenCalledTimes(1);
+    });
+
+    it('não duplica conversa que já chegou via socket antes da próxima página carregar', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 2, page: 1, limit: 1, totalPages: 2 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.queueHasMore).toBe(true);
+      });
+
+      // Página 2 retorna uma conversa que, por coincidência, já está na lista
+      // (ex.: chegou via conversation.created entre as duas chamadas)
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 2, page: 2, limit: 1, totalPages: 2 },
+      });
+
+      await act(async () => {
+        await result.current.loadMoreConversations();
+      });
+
+      expect(result.current.conversations).toHaveLength(1);
+    });
+  });
+
+  describe('scroll infinito do histórico de mensagens (B-4)', () => {
+    it('busca mensagens antigas usando o id da mais antiga carregada como cursor e prepende no início', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        // contact como objeto (shape real da API) — passa pela normalização
+        // de toUiConversation, que também converte messages via toUiMessage
+        // (com contact string, o passthrough usado em outros testes deste
+        // arquivo pula essa conversão e o teste não reflete o shape real).
+        data: [{
+          id: '1',
+          contact: { id: 'ct-1', name: 'João', phone: '5511999999999', avatarUrl: null },
+          messages: [{ id: 'm10', senderType: 'CLIENT', content: 'Recente', type: 'TEXT', sentAt: '2026-07-24T10:00:00.000Z' }],
+        }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.conversations).toHaveLength(1);
+      });
+
+      // Marca manualmente que há mais mensagens antigas (equivalente ao que o
+      // efeito de carregamento inicial faria com messagesHasMore=true)
+      act(() => {
+        result.current.setActiveId('1');
+      });
+
+      mockApiClient.getMessages.mockResolvedValueOnce({
+        data: [{ id: 'm5', senderType: 'CLIENT', content: 'Mais antiga', type: 'TEXT', sentAt: '2026-07-24T09:00:00.000Z' }],
+        meta: { count: 1, hasMore: false, nextCursor: 'm5' },
+      });
+
+      await act(async () => {
+        await result.current.loadMoreMessages('1');
+      });
+
+      expect(mockApiClient.getMessages).toHaveBeenCalledWith('1', 50, 'm10');
+      const conv = result.current.conversations.find((c) => c.id === '1');
+      expect(conv.messages[0].text).toBe('Mais antiga');
+      expect(conv.messages[1].text).toBe('Recente');
+      expect(conv.messagesHasMore).toBe(false);
+    });
+
+    it('não busca mensagens antigas sem nenhuma mensagem carregada (sem cursor)', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.conversations).toHaveLength(1);
+      });
+
+      await act(async () => {
+        await result.current.loadMoreMessages('1');
+      });
+
+      expect(mockApiClient.getMessages).not.toHaveBeenCalled();
+    });
   });
 });
