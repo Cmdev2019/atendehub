@@ -14,11 +14,14 @@ ARG VITE_WS_URL
 ARG VITE_ENV=production
 ARG VITE_APP_NAME=AtendeHub
 ARG VITE_APP_VERSION=0.1.0
+# Opcional (B-18) — vazio é um no-op seguro no Sentry.init(), não precisa de ":?"
+ARG VITE_SENTRY_DSN=
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_WS_URL=$VITE_WS_URL \
     VITE_ENV=$VITE_ENV \
     VITE_APP_NAME=$VITE_APP_NAME \
-    VITE_APP_VERSION=$VITE_APP_VERSION
+    VITE_APP_VERSION=$VITE_APP_VERSION \
+    VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 
 COPY package.json package-lock.json ./
 RUN npm ci

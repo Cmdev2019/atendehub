@@ -79,6 +79,7 @@ services:
       args:
         VITE_API_URL: "${VITE_API_URL:?VITE_API_URL obrigatório em produção, ex. https://api.atendehub.com/api/v1}"
         VITE_WS_URL: "${VITE_WS_URL:?VITE_WS_URL obrigatório em produção, ex. https://api.atendehub.com}"
+        VITE_SENTRY_DSN: "${VITE_SENTRY_DSN:-}" # opcional (B-18) — vazio é um no-op seguro
     container_name: atendehub_nginx
     restart: always
     ports:

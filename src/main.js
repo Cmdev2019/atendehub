@@ -2,6 +2,7 @@ import { StrictMode, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
+import { initMonitoring } from "./services/monitoring";
 import { AuthProvider, AuthContext } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ConfirmProvider } from "./context/ConfirmContext";
@@ -18,6 +19,8 @@ import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { DemoBanner } from "./components/DemoBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useConversations } from "./hooks/useConversations";
+
+initMonitoring(); // B-18
 
 const h = createElement;
 

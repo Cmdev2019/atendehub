@@ -8,6 +8,11 @@ import { AppModule } from './app.module';
 import { RedisIoAdapter } from './shared/websocket/redis-io.adapter';
 import { createWinstonLogger } from './shared/logging/winston.logger';
 import { RequestIdMiddleware } from './shared/logging/request-id.middleware';
+import { initSentry, SentryExceptionFilter } from './shared/monitoring/sentry';
+
+// B-18: precisa rodar antes de qualquer outra coisa (padrão do SDK do
+// Sentry) — sem SENTRY_DSN configurado é um no-op seguro.
+initSentry();
 
 // ── Placeholders inseguros que jamais devem ser usados em produção ────────────
 const INSECURE_PLACEHOLDERS = [
@@ -62,6 +67,11 @@ async function bootstrap() {
 
   // ── Prefixo global da API ──────────────────────────────────────────────────
   app.setGlobalPrefix('api/v1');
+
+  // ── Monitoramento de erros (B-18) ───────────────────────────────────────────
+  // Estende o exception filter padrão do Nest — resposta HTTP ao cliente
+  // não muda, só passa a capturar erros inesperados (5xx) no Sentry antes.
+  app.useGlobalFilters(new SentryExceptionFilter(app.getHttpAdapter()));
 
   // ── Socket.IO com Redis Adapter (B2-6) ─────────────────────────────────────
   // Precisa ser aplicado aqui, no IoAdapter raiz, e não dentro do gateway —

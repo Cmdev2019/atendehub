@@ -42,6 +42,11 @@ cair silenciosamente num valor de desenvolvimento:
 
 Gerar secrets fortes: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`.
 
+**Opcional:** `SENTRY_DSN` (backend, `.env` da raiz) e `VITE_SENTRY_DSN`
+(frontend, build arg do `nginx`) — monitoramento de erros (B-18). Sem
+preencher, o Sentry não é inicializado (no-op seguro, não bloqueia o
+deploy). Ver seção própria abaixo.
+
 Certificados SSL: colocar `fullchain.pem`/`privkey.pem` em `infra/nginx/certs/`
 (montado como volume no serviço `nginx`) antes do primeiro `up`.
 
@@ -265,6 +270,34 @@ Trocar `'webhook'` por `'sla-check'` conforme a fila. **Isso apaga jobs
 pendentes de verdade** — um `sla-check` obliterado perde o alerta de SLA
 daquela conversa (ela só vai ser verificada de novo na próxima mudança de
 status). Usar só quando a fila está genuinamente travada, não como rotina.
+
+## Monitoramento de erros (B-18)
+
+O winston (B6-3) cobre logs estruturados, mas não agrupa exceções nem
+alerta — antes do B-18 não existia nenhuma captura de erro em produção além
+de vasculhar log manualmente. Backend e frontend cada um manda pro seu
+próprio projeto Sentry (ou GlitchTip self-hosted — o SDK é o mesmo,
+`@sentry/node`/`@sentry/react`, só muda o DSN).
+
+**Configurar:** criar um projeto Node.js (backend) e um React (frontend) em
+sentry.io (ou instância própria de GlitchTip), preencher `SENTRY_DSN` no
+`.env` da raiz e `VITE_SENTRY_DSN` (build arg do `nginx`, ver "Pré-requisitos
+de deploy"). **Sem preencher, o SDK não é inicializado — no-op seguro, não
+bloqueia boot nem build.**
+
+**O que é capturado:**
+- Backend: `SentryExceptionFilter` (`shared/monitoring/sentry.ts`) — só
+  exceções inesperadas (5xx / erro não tratado). `HttpException` com status
+  < 500 (validação, 404, 409...) é fluxo normal da aplicação, não vira
+  evento — senão o Sentry vira ruído.
+- Frontend: `ErrorBoundary` (B-12) reporta todo erro de render não
+  capturado, além dos `window.onerror`/`unhandledrejection` globais que o
+  SDK do Sentry já instrumenta sozinho.
+
+**Privacidade (mesma cautela de B-17/B-28/B-29/B-30):** `beforeSend` em
+ambos os lados remove `request.data`/`cookies` do evento antes de enviar —
+o corpo de uma requisição pode conter telefone/conteúdo de mensagem de
+cliente. Só stack trace e metadata técnica saem da sua infra.
 
 ## Troubleshooting
 

@@ -1,5 +1,6 @@
 import { Component, createElement as h } from 'react';
 import { Icon } from './icons';
+import { captureException } from '../services/monitoring';
 
 const e = h;
 
@@ -22,6 +23,9 @@ export class ErrorBoundary extends Component {
     // Nunca logar dados do usuário aqui — só a mensagem/stack do erro em si
     // (mesma convenção de higiene de logs do resto do projeto, F6-4/B5-4).
     console.error('❌ Erro não tratado na interface:', error, info?.componentStack);
+    // B-18: mesmo erro também vira evento no Sentry (agrupamento/alerta em
+    // produção) — sem VITE_SENTRY_DSN configurado, é um no-op.
+    captureException(error, { componentStack: info?.componentStack });
   }
 
   render() {

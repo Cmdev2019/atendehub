@@ -2,6 +2,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement as h } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 
+// monitoring.js usa import.meta.env (Vite) — precisa ser mockado antes de
+// ser importado, senão o Jest (CommonJS) falha ao parsear o módulo (mesma
+// razão documentada em api.test.js/eventBus.test.js).
+jest.mock('../services/monitoring', () => ({
+  captureException: jest.fn(),
+}));
+
 function Bomb() {
   throw new Error('estourou no render');
 }
@@ -39,6 +46,16 @@ describe('ErrorBoundary (B-12)', () => {
       (call) => typeof call[0] === 'string' && call[0].includes('Erro não tratado na interface'),
     );
     expect(loggedOwnError).toBe(true);
+  });
+
+  it('reporta o erro pro monitoramento (B-18), não só no console', () => {
+    const { captureException } = require('../services/monitoring');
+    render(h(ErrorBoundary, null, h(Bomb)));
+
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ componentStack: expect.any(String) }),
+    );
   });
 
   it('o botão "Recarregar página" chama onReload (default: window.location.reload)', () => {
