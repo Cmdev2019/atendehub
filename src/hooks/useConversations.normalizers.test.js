@@ -72,14 +72,14 @@ describe('toUiConversation', () => {
     tags: [{ id: 't1', name: 'Prioridade', color: '#ef4444' }],
   };
 
-  it('achata contact/agent/tags do contrato da API para strings simples', () => {
+  it('achata contact/agent do contrato da API para strings simples, mas preserva tags como objetos (B-27, precisa do id pra atribuir/remover)', () => {
     const ui = toUiConversation(apiConversation);
 
     expect(ui.contact).toBe('Natanael');
     expect(ui.phone).toBe('5512999999999');
     expect(ui.avatarUrl).toBe('http://x/avatar.png');
     expect(ui.agent).toBe('Camila');
-    expect(ui.tags).toEqual(['Prioridade']);
+    expect(ui.tags).toEqual([{ id: 't1', name: 'Prioridade', color: '#ef4444' }]);
     expect(ui.channel).toBe('WhatsApp');
     expect(ui.summary).toBe('última mensagem');
   });

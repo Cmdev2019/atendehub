@@ -57,6 +57,17 @@ const mockQueues = [
   },
 ];
 
+// Catálogo de tags da empresa (B-27) — mesmos ids/nomes/cores já embutidos
+// nas conversas de `initialConversations`, pra o catálogo bater com o que
+// já aparece atribuído nas fixtures de demonstração.
+const mockTags = [
+  { id: 'tag-1', name: 'Entrega', color: '#ef4444' },
+  { id: 'tag-2', name: 'Prioridade', color: '#f59e0b' },
+  { id: 'tag-3', name: 'Plano anual', color: '#0f766e' },
+  { id: 'tag-4', name: 'Produto', color: '#3b82f6' },
+  { id: 'tag-5', name: 'Nota fiscal', color: '#f59e0b' },
+];
+
 // Store de conversas em memória — mesmas fixtures usadas como estado inicial
 // do useConversations (F1-3), para que getConversations/getConversation/
 // getMessages sejam consistentes entre si em modo demonstração.
@@ -112,6 +123,17 @@ const withQueueRelations = (queue) => {
     _count: { conversations: 0 },
   };
 };
+
+// _count real conta uso da tag no banco (via relação Prisma); no mock, conta
+// quantas conversas em memória têm a tag atribuída (não há contato separado
+// da conversa no store de demonstração, por isso `contacts` fica sempre 0).
+const withTagCount = (tag) => ({
+  ...tag,
+  _count: {
+    conversations: mockConversationsList.filter((c) => c.tags?.some((t) => t.id === tag.id)).length,
+    contacts: 0,
+  },
+});
 
 export class MockApiClient {
   constructor() {
@@ -567,6 +589,68 @@ export class MockApiClient {
     if (idx === -1) throw { status: 404, message: 'Fila não encontrada' };
     mockQueues.splice(idx, 1);
     return { success: true };
+  }
+
+  // ── TAGS (B-27) ──────────────────────────────────────────────────────────
+  async getTags() {
+    await this.simulateDelay();
+    return mockTags.map(withTagCount);
+  }
+
+  async createTag(data) {
+    await this.simulateDelay();
+    if (mockTags.some((t) => t.name === data.name)) {
+      throw { status: 409, message: 'Já existe uma tag com este nome' };
+    }
+    const tag = { id: nextId('tag'), name: data.name, color: data.color || '#6366f1' };
+    mockTags.push(tag);
+    return withTagCount(tag);
+  }
+
+  async updateTag(id, data) {
+    await this.simulateDelay();
+    const tag = mockTags.find((t) => t.id === id);
+    if (!tag) throw { status: 404, message: 'Tag não encontrada' };
+    if (data.name && mockTags.some((t) => t.id !== id && t.name === data.name)) {
+      throw { status: 409, message: 'Já existe uma tag com este nome' };
+    }
+    Object.assign(tag, data);
+    // Reflete o nome/cor atualizados nas conversas que já têm a tag atribuída
+    // (o backend faz o mesmo, por trás de uma FK real em vez de objeto solto).
+    mockConversationsList.forEach((c) => {
+      c.tags = (c.tags || []).map((t) => (t.id === id ? { id: tag.id, name: tag.name, color: tag.color } : t));
+    });
+    return withTagCount(tag);
+  }
+
+  async deleteTag(id) {
+    await this.simulateDelay();
+    const idx = mockTags.findIndex((t) => t.id === id);
+    if (idx === -1) throw { status: 404, message: 'Tag não encontrada' };
+    mockTags.splice(idx, 1);
+    mockConversationsList.forEach((c) => {
+      c.tags = (c.tags || []).filter((t) => t.id !== id);
+    });
+    return { message: 'Tag removida com sucesso' };
+  }
+
+  async addConversationTag(conversationId, tagId) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === conversationId);
+    const tag = mockTags.find((t) => t.id === tagId);
+    if (!conv || !tag) throw { status: 404, message: 'Conversa ou tag não encontrada' };
+    if (!conv.tags?.some((t) => t.id === tagId)) {
+      conv.tags = [...(conv.tags || []), tag];
+    }
+    return { message: 'Tag atribuída à conversa' };
+  }
+
+  async removeConversationTag(conversationId, tagId) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === conversationId);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    conv.tags = (conv.tags || []).filter((t) => t.id !== tagId);
+    return { message: 'Tag removida da conversa' };
   }
 }
 

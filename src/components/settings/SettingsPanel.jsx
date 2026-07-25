@@ -825,6 +825,148 @@ function QueuesSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seção: Tags (B-27) — CRUD requer SUPERVISOR+ (mesma regra do backend);
+// atribuir/remover tag numa conversa é feito no CustomerPanel, não aqui.
+// ─────────────────────────────────────────────────────────────────────────────
+function TagsSection() {
+  const confirm = useConfirm();
+  const [tags, setTags] = useState([]);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const emptyForm = { name: '', color: '#6366f1' };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setTags(unwrap(await apiClient.getTags()));
+      setError(null);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const startCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+  };
+
+  const startEdit = (tag) => {
+    setEditingId(tag.id);
+    setForm({ name: tag.name, color: tag.color || '#6366f1' });
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setBusy(true);
+    setError(null);
+    const payload = { name: form.name.trim(), color: form.color };
+    try {
+      if (editingId) {
+        await apiClient.updateTag(editingId, payload);
+      } else {
+        await apiClient.createTag(payload);
+      }
+      setForm(emptyForm);
+      setEditingId(null);
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (tag) => {
+    if (!(await confirm(`Excluir a tag "${tag.name}"? Ela será removida de todas as conversas/contatos que a usam.`, { danger: true }))) return;
+    try {
+      await apiClient.deleteTag(tag.id);
+      if (editingId === tag.id) startCreate();
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  return h(
+    'div',
+    { className: 'settings-section' },
+    h('h3', null, h(Icon, { name: 'tag', size: 17 }), ' Tags'),
+    h('p', { className: 'settings-hint' },
+      'Tags ajudam a classificar conversas e contatos. Atendentes atribuem/removem tags ' +
+      'existentes direto na conversa; criar, renomear ou excluir uma tag é feito aqui.'),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
+
+    h(
+      'form',
+      { className: 'settings-form-grid', onSubmit: submit },
+      h('input', {
+        className: 'settings-input', placeholder: 'Nome da tag (ex.: Prioridade)', required: true,
+        maxLength: 50, value: form.name, onChange: setField('name'),
+      }),
+      h('input', {
+        className: 'settings-input', type: 'color', value: form.color, onChange: setField('color'),
+        title: 'Cor da tag', style: { padding: 2, height: 38 },
+      }),
+      h(
+        'div',
+        { style: { display: 'flex', gap: 8 } },
+        h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !form.name.trim() },
+          h(Icon, { name: 'check', size: 14 }), editingId ? ' Salvar alterações' : ' Criar tag'),
+        editingId && h('button', { className: 'settings-btn', type: 'button', onClick: startCreate },
+          h(Icon, { name: 'x', size: 14 }), ' Cancelar'),
+      ),
+    ),
+
+    h(
+      'div',
+      { className: 'settings-list' },
+      tags.length === 0
+        ? h('p', { className: 'settings-hint' }, 'Nenhuma tag criada ainda.')
+        : tags.map((tag) =>
+            h(
+              'div',
+              { key: tag.id, className: 'settings-item' },
+              h(
+                'div',
+                { className: 'settings-item-main' },
+                h(
+                  'div',
+                  { className: 'settings-row-title' },
+                  h('span', {
+                    style: {
+                      display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                      background: tag.color || '#6366f1', marginRight: 6,
+                    },
+                  }),
+                  tag.name,
+                ),
+                h('div', { className: 'settings-hint' },
+                  `${tag._count?.conversations ?? 0} conversa(s) · ${tag._count?.contacts ?? 0} contato(s)`),
+              ),
+              h(
+                'div',
+                { className: 'settings-item-actions' },
+                h('button', {
+                  className: 'settings-btn', type: 'button', onClick: () => startEdit(tag),
+                }, h(Icon, { name: 'settings', size: 14 }), ' Editar'),
+                h('button', {
+                  className: 'settings-btn danger', type: 'button', onClick: () => remove(tag),
+                  title: 'Excluir tag',
+                }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
+              ),
+            ),
+          ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Seção: Grupos (setores/departamentos)
 // ─────────────────────────────────────────────────────────────────────────────
 function GroupsSection() {
@@ -1038,6 +1180,10 @@ export function SettingsPanel() {
     { id: 'users', label: 'Usuários e níveis', icon: 'user', visible: canViewUsers },
     { id: 'groups', label: 'Grupos (setores)', icon: 'users', visible: canManage },
     { id: 'queues', label: 'Filas de distribuição', icon: 'clock', visible: canManage },
+    // Mesma regra de visibilidade do backend (RolesGuard): criar/editar/
+    // excluir tag exige SUPERVISOR+ (tag.controller.ts) — mesmo corte já
+    // usado pra "Usuários e níveis" (canViewUsers).
+    { id: 'tags', label: 'Tags', icon: 'tag', visible: canViewUsers },
   ].filter((s) => s.visible);
 
   const [active, setActive] = useState(sections[0]?.id ?? 'appearance');
@@ -1074,6 +1220,7 @@ export function SettingsPanel() {
       active === 'users' && canViewUsers && h(UsersSection, { canManage }),
       active === 'groups' && canManage && h(GroupsSection),
       active === 'queues' && canManage && h(QueuesSection),
+      active === 'tags' && canViewUsers && h(TagsSection),
     ),
   );
 }

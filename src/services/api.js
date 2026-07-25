@@ -252,6 +252,12 @@ class ApiClient {
       if (sub === 'messages' && method === 'GET') {
         return mockApiClient.getMessages(id);
       }
+      if (sub === 'tags' && subId && method === 'POST') {
+        return mockApiClient.addConversationTag(id, subId);
+      }
+      if (sub === 'tags' && subId && method === 'DELETE') {
+        return mockApiClient.removeConversationTag(id, subId);
+      }
       if (id) return mockApiClient.getConversation(id);
       return mockApiClient.getConversations();
     }
@@ -298,6 +304,13 @@ class ApiClient {
       if (!id && method === 'POST') return mockApiClient.createQueue(body);
       if (id && method === 'PATCH') return mockApiClient.updateQueue(id, body);
       if (id && method === 'DELETE') return mockApiClient.deleteQueue(id);
+    }
+
+    if (resource === 'tags') {
+      if (!id && method === 'GET') return mockApiClient.getTags();
+      if (!id && method === 'POST') return mockApiClient.createTag(body);
+      if (id && method === 'PATCH') return mockApiClient.updateTag(id, body);
+      if (id && method === 'DELETE') return mockApiClient.deleteTag(id);
     }
 
     if (resource === 'notifications') {
@@ -565,6 +578,39 @@ class ApiClient {
 
   async deleteQueue(id) {
     return this.request(`/queues/${id}`, { method: 'DELETE' });
+  }
+
+  // TAGS (B-27) — CRUD requer SUPERVISOR+; atribuir/remover de uma conversa
+  // é liberado pra qualquer usuário autenticado (ver tag.controller.ts vs.
+  // conversation.controller.ts)
+  async getTags() {
+    return this.request('/tags', { method: 'GET' });
+  }
+
+  async createTag(data) {
+    return this.request('/tags', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTag(id, data) {
+    return this.request(`/tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTag(id) {
+    return this.request(`/tags/${id}`, { method: 'DELETE' });
+  }
+
+  async addConversationTag(conversationId, tagId) {
+    return this.request(`/conversations/${conversationId}/tags/${tagId}`, { method: 'POST' });
+  }
+
+  async removeConversationTag(conversationId, tagId) {
+    return this.request(`/conversations/${conversationId}/tags/${tagId}`, { method: 'DELETE' });
   }
 
   // NOTIFICATIONS (B-8) — sempre as do próprio usuário logado

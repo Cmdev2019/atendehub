@@ -44,6 +44,9 @@ function Dashboard() {
     queueLoadingMore,
     loadMoreMessages,
     loadingOlderMessages,
+    availableTags,
+    addTagToConversation,
+    removeTagFromConversation,
   } = useConversations();
 
   return h(
@@ -98,6 +101,9 @@ function Dashboard() {
                   { className: "details-area" },
                   h(CustomerPanel, {
                     conversation: activeConversation,
+                    availableTags,
+                    onAddTag: addTagToConversation,
+                    onRemoveTag: removeTagFromConversation,
                   }),
                 ),
             ),

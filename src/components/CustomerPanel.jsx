@@ -1,7 +1,16 @@
-import { createElement as h } from 'react';
+import { createElement as h, useState } from 'react';
 import { Icon } from './icons';
 
-export function CustomerPanel({ conversation }) {
+export function CustomerPanel({ conversation, availableTags = [], onAddTag, onRemoveTag }) {
+  const [tagToAdd, setTagToAdd] = useState('');
+  const assignedTagIds = new Set((conversation.tags || []).map((t) => t.id));
+  const selectableTags = availableTags.filter((t) => !assignedTagIds.has(t.id));
+
+  const handleAddTag = (e) => {
+    const tagId = e.target.value;
+    setTagToAdd('');
+    if (tagId && onAddTag) onAddTag(tagId);
+  };
   const getInitials = (name) => {
     return name
       .split(' ')
@@ -56,12 +65,41 @@ export function CustomerPanel({ conversation }) {
         { className: 'tag-list' },
         (conversation.tags || []).length > 0 ? (
           conversation.tags.map((tag) =>
-            h('span', { key: tag, className: 'tag' }, tag),
+            h(
+              'span',
+              { key: tag.id, className: 'tag', style: { backgroundColor: tag.color || undefined } },
+              tag.name,
+              onRemoveTag &&
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'tag-remove',
+                    onClick: () => onRemoveTag(tag.id),
+                    title: `Remover tag "${tag.name}"`,
+                    'aria-label': `Remover tag ${tag.name}`,
+                  },
+                  h(Icon, { name: 'x', size: 10 }),
+                ),
+            ),
           )
         ) : (
           h('span', { className: 'info-label' }, 'Sem tags')
         ),
       ),
+      onAddTag &&
+        selectableTags.length > 0 &&
+        h(
+          'select',
+          {
+            className: 'tag-add-select',
+            value: tagToAdd,
+            onChange: handleAddTag,
+            'aria-label': 'Adicionar tag à conversa',
+          },
+          h('option', { value: '' }, '+ Adicionar tag…'),
+          selectableTags.map((tag) => h('option', { key: tag.id, value: tag.id }, tag.name)),
+        ),
     ),
     h(
       'section',

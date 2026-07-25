@@ -39,9 +39,11 @@ export function toUiMessage(message) {
   };
 }
 
-// Converte conversa do contrato da API (contact/agent/tags como objetos,
-// status em enum, mensagens ausentes na listagem) para o formato usado
-// pelos componentes ({ contact: string, agent: string, tags: string[], ... }).
+// Converte conversa do contrato da API (contact/agent como objetos, status
+// em enum, mensagens ausentes na listagem) para o formato usado pelos
+// componentes ({ contact: string, agent: string, ... }). `tags` já chega no
+// shape certo pra UI ({id,name,color}[], B-27) — precisa do id pra atribuir/
+// remover, então passa direto sem achatar pra string.
 export function toUiConversation(conv) {
   // Mock legado/testes com contact já em string — passa direto
   if (!conv || typeof conv.contact !== 'object' || conv.contact === null) {
@@ -60,7 +62,7 @@ export function toUiConversation(conv) {
     avatarUrl: conv.contact.avatarUrl || null,
     channel: conv.channel === 'WHATSAPP' ? 'WhatsApp' : (conv.channel || ''),
     agent: conv.agent?.name || null,
-    tags: (conv.tags || []).map((tag) => tag?.name ?? tag),
+    tags: conv.tags || [],
     timeline: [],
     summary: conv.lastMessagePreview || '',
     messages: hasInlineMessages ? conv.messages.map(toUiMessage) : [],
@@ -155,6 +157,22 @@ export function useConversations() {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  // Catálogo de tags da empresa (B-27) — carregado uma vez, usado tanto pra
+  // exibir quanto pra popular o seletor de "adicionar tag" na conversa ativa.
+  const [availableTags, setAvailableTags] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await apiClient.getTags();
+        const tags = Array.isArray(response) ? response : response?.data ?? [];
+        setAvailableTags(tags);
+      } catch (error) {
+        console.warn('⚠️ Erro ao buscar tags:', error.message);
+      }
+    })();
+  }, []);
 
   // Scroll infinito da fila (B-4) — busca a próxima página e acrescenta ao
   // final da lista já carregada (dedupe por id: novas conversas podem ter
@@ -457,6 +475,48 @@ export function useConversations() {
 
   const activeConversation = conversations.find((c) => c.id === activeId);
 
+  // Atribuir/remover tag na conversa ativa (B-27) — qualquer usuário
+  // autenticado pode (backend não restringe por role aqui, só a criação/
+  // edição/exclusão da tag em si exige SUPERVISOR+).
+  const addTagToConversation = useCallback(
+    async (tagId) => {
+      if (!activeId) return;
+      try {
+        await apiClient.addConversationTag(activeId, tagId);
+        const tag = availableTags.find((t) => t.id === tagId);
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === activeId && tag && !conv.tags?.some((t) => t.id === tagId)
+              ? { ...conv, tags: [...(conv.tags || []), tag] }
+              : conv,
+          ),
+        );
+      } catch (error) {
+        console.warn('⚠️ Erro ao adicionar tag:', error.message);
+      }
+    },
+    [activeId, availableTags],
+  );
+
+  const removeTagFromConversation = useCallback(
+    async (tagId) => {
+      if (!activeId) return;
+      try {
+        await apiClient.removeConversationTag(activeId, tagId);
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === activeId
+              ? { ...conv, tags: (conv.tags || []).filter((t) => t.id !== tagId) }
+              : conv,
+          ),
+        );
+      } catch (error) {
+        console.warn('⚠️ Erro ao remover tag:', error.message);
+      }
+    },
+    [activeId],
+  );
+
   // Envia texto e/ou arquivos de mídia (prints colados, anexos).
   // Retorna true em sucesso — o ChatPanel usa isso para limpar os anexos.
   const sendMessage = async (files = []) => {
@@ -586,5 +646,8 @@ export function useConversations() {
     queueLoadingMore,
     loadMoreMessages,
     loadingOlderMessages,
+    availableTags,
+    addTagToConversation,
+    removeTagFromConversation,
   };
 }

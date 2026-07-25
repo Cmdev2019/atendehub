@@ -9,6 +9,9 @@ jest.mock('../services/api', () => ({
     getConversationStats: jest.fn(),
     getMessages: jest.fn(),
     sendMessage: jest.fn(),
+    getTags: jest.fn(),
+    addConversationTag: jest.fn(),
+    removeConversationTag: jest.fn(),
   },
 }));
 
@@ -804,6 +807,80 @@ describe('useConversations Integration Tests', () => {
       });
 
       expect(mockApiClient.getMessages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('tags da conversa (B-27)', () => {
+    it('busca o catálogo de tags da empresa ao montar', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({ data: [], pagination: {} });
+      mockApiClient.getTags.mockResolvedValueOnce([
+        { id: 'tag-1', name: 'Entrega', color: '#ef4444' },
+        { id: 'tag-2', name: 'Prioridade', color: '#f59e0b' },
+      ]);
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.availableTags).toHaveLength(2);
+      });
+      expect(result.current.availableTags[0].name).toBe('Entrega');
+    });
+
+    it('adiciona uma tag à conversa ativa e atualiza o estado local', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', tags: [], messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.getTags.mockResolvedValueOnce([
+        { id: 'tag-1', name: 'Entrega', color: '#ef4444' },
+      ]);
+      mockApiClient.addConversationTag.mockResolvedValueOnce({ message: 'ok' });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.conversations).toHaveLength(1);
+        expect(result.current.availableTags).toHaveLength(1);
+      });
+
+      act(() => {
+        result.current.setActiveId('1');
+      });
+
+      await act(async () => {
+        await result.current.addTagToConversation('tag-1');
+      });
+
+      expect(mockApiClient.addConversationTag).toHaveBeenCalledWith('1', 'tag-1');
+      const conv = result.current.conversations.find((c) => c.id === '1');
+      expect(conv.tags).toEqual([{ id: 'tag-1', name: 'Entrega', color: '#ef4444' }]);
+    });
+
+    it('remove uma tag da conversa ativa e atualiza o estado local', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', tags: [{ id: 'tag-1', name: 'Entrega', color: '#ef4444' }], messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.getTags.mockResolvedValueOnce([]);
+      mockApiClient.removeConversationTag.mockResolvedValueOnce({ message: 'ok' });
+
+      const { result } = renderHook(() => useConversations());
+
+      await waitFor(() => {
+        expect(result.current.conversations).toHaveLength(1);
+      });
+
+      act(() => {
+        result.current.setActiveId('1');
+      });
+
+      await act(async () => {
+        await result.current.removeTagFromConversation('tag-1');
+      });
+
+      expect(mockApiClient.removeConversationTag).toHaveBeenCalledWith('1', 'tag-1');
+      const conv = result.current.conversations.find((c) => c.id === '1');
+      expect(conv.tags).toEqual([]);
     });
   });
 });
