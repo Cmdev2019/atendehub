@@ -76,3 +76,18 @@ describe('Sidebar — Dashboard no lugar de Funis (B-32)', () => {
     expect(onNavigate).toHaveBeenCalledWith('dashboard');
   });
 });
+
+// B-33: "Relatórios" ganhou tela própria e deixou de ser "em breve".
+describe('Sidebar — Relatórios navegável (B-33)', () => {
+  it('Relatórios não está mais desabilitado e chama onNavigate ao clicar', () => {
+    const onNavigate = jest.fn();
+    render(h(ConfirmProvider, null, h(Sidebar, { activeView: 'inbox', onNavigate })));
+
+    const reportsButton = screen.getByTitle('Relatórios');
+    expect(reportsButton).not.toBeDisabled();
+
+    fireEvent.click(reportsButton);
+
+    expect(onNavigate).toHaveBeenCalledWith('reports');
+  });
+});

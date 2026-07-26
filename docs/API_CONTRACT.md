@@ -207,6 +207,61 @@ um erro: um chamado pode entrar no período e só ser encerrado depois dele.
 
 ---
 
+## Reports — `/reports` (B-33)
+
+Os 3 endpoints abaixo compartilham a mesma query: `from?`/`to?` (ISO 8601 —
+sem eles, últimos 30 dias) e `format?` (`json` padrão, `csv` ou `pdf` — os 2
+últimos viram download, `Content-Disposition: attachment`, em vez de JSON).
+
+### `GET /reports/attendance` — base de atendimento
+Lista detalhada de conversas do período (uma linha por conversa).
+```jsonc
+{
+  "period": { "from": "...", "to": "..." },
+  "rows": [
+    {
+      "contato": "Marina Alves",       // nome, ou telefone se não tiver nome
+      "canal": "WHATSAPP",
+      "atendente": "Ana",              // "—" se nunca atribuída
+      "departamento": "Comercial",     // "—" se nenhum
+      "status": "CLOSED",
+      "resolucao": "Resolvido",        // "Resolvido" | "Não resolvido" | "—"
+      "tags": "Entrega, Prioridade",   // "—" se nenhuma
+      "criadaEm": "2026-07-10T10:00:00.000Z",
+      "encerradaEm": "2026-07-10T12:00:00.000Z" // null se ainda ativa
+    }
+  ]
+}
+```
+
+### `GET /reports/by-tag` — por tipo de atendimento
+Agrupado por tag (uma conversa com 2 tags entra na contagem das 2 — categorias
+não-exclusivas, comportamento esperado). Tag sem nenhuma conversa no período
+não aparece.
+```jsonc
+{
+  "period": { "from": "...", "to": "..." },
+  "rows": [
+    { "tag": "Entrega", "total": 12, "resolvidas": 8, "naoResolvidas": 2, "tempoMedioResolucaoHoras": 3.5 }
+  ]
+}
+```
+
+### `GET /reports/by-agent` — por atendente
+Um agente sem nenhuma atividade (nem no período, nem em aberto agora) não
+aparece. `emAberto` é estado **atual** (não filtrado por período — uma
+conversa aberta há semanas continua relevante hoje).
+```jsonc
+{
+  "period": { "from": "...", "to": "..." },
+  "rows": [
+    { "atendente": "Ana", "atendidas": 20, "resolvidas": 15, "naoResolvidas": 3, "emAberto": 2, "tempoMedioResolucaoHoras": 2.1 }
+  ]
+}
+```
+
+---
+
 ## Messages — `/conversations/:conversationId/messages`
 
 ### `GET .../messages`

@@ -16,7 +16,7 @@ const menuItems = [
 ];
 
 // Itens que já possuem uma tela correspondente
-const NAVIGABLE = new Set(['dashboard', 'inbox', 'settings']);
+const NAVIGABLE = new Set(['dashboard', 'inbox', 'reports', 'settings']);
 
 export function Sidebar({ activeView = 'inbox', onNavigate }) {
   const { logout } = useAuth();

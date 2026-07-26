@@ -27,6 +27,36 @@ export const mockUsers = {
     companyId: 'comp-1',
     avatarUrl: null,
   },
+  // Agentes já referenciados como `conversation.agent`/`message.sender` nas
+  // fixtures de `mockConversations.js` (Camila/Nando/Juliana) — sem entrada
+  // aqui, ficavam "fantasmas": apareciam atribuídos numa conversa mas não
+  // existiam em `mockUsersList` (usada por qualquer relatório/atribuição que
+  // precise juntar id de agente com um usuário de verdade — achado testando
+  // o relatório "por atendente", B-33, que dava sempre vazio por causa disso).
+  'camila@demo.com': {
+    id: 'agent-1',
+    email: 'camila@demo.com',
+    name: 'Camila',
+    role: 'AGENT',
+    companyId: 'comp-1',
+    avatarUrl: null,
+  },
+  'nando@demo.com': {
+    id: 'agent-2',
+    email: 'nando@demo.com',
+    name: 'Nando',
+    role: 'AGENT',
+    companyId: 'comp-1',
+    avatarUrl: null,
+  },
+  'juliana@demo.com': {
+    id: 'agent-3',
+    email: 'juliana@demo.com',
+    name: 'Juliana',
+    role: 'AGENT',
+    companyId: 'comp-1',
+    avatarUrl: null,
+  },
 };
 
 // ── Estado em memória para a tela de Configurações (demo sem backend) ───────
@@ -134,6 +164,45 @@ const withTagCount = (tag) => ({
     contacts: 0,
   },
 });
+
+// Relatórios (B-33) — mesmo cálculo/formatação do backend real
+// (report.service.ts), sobre o store do mock em vez do Postgres.
+const RESOLUTION_LABELS = { RESOLVED: 'Resolvido', UNRESOLVED: 'Não resolvido' };
+
+function avgResolutionHours(convs) {
+  const closed = convs.filter((c) => c.closedAt);
+  if (closed.length === 0) return null;
+  const totalMs = closed.reduce((sum, c) => sum + (new Date(c.closedAt) - new Date(c.createdAt)), 0);
+  return totalMs / closed.length / 3_600_000;
+}
+
+function formatDateTimeBR(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function formatHoursBR(hours) {
+  if (hours === null || hours === undefined) return '—';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return `${h}h ${m}min`;
+}
+
+function escapeCsvValue(value) {
+  const str = value === null || value === undefined ? '' : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+// BOM no início: sem ele, o Excel no Windows abre acentuação em PT-BR como
+// lixo (interpreta o arquivo como Latin-1 em vez de UTF-8) — mesmo motivo
+// do backend real (report-export.util.ts).
+const CSV_BOM = '﻿';
+
+function rowsToCsvBlob(rows) {
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const lines = [headers.join(','), ...rows.map((row) => headers.map((h) => escapeCsvValue(row[h])).join(','))];
+  return new Blob([CSV_BOM + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+}
 
 export class MockApiClient {
   constructor() {
@@ -383,6 +452,142 @@ export class MockApiClient {
       resolved: closedInPeriod.filter((c) => c.resolution === 'RESOLVED').length,
       unresolved: closedInPeriod.filter((c) => c.resolution === 'UNRESOLVED').length,
       unlabeled: closedInPeriod.filter((c) => !c.resolution).length,
+    };
+  }
+
+  // Relatórios (B-33) — mesmo shape/regra do backend real (report.service.ts):
+  // 'attendance' (base de atendimento), 'by-tag', 'by-agent'.
+  async getReport(type, { from, to } = {}) {
+    await this.simulateDelay();
+    const toDate = to ? new Date(to) : new Date();
+    const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const period = { from: fromDate, to: toDate };
+    const inPeriod = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return d >= fromDate && d <= toDate;
+    };
+
+    if (type === 'attendance') {
+      const rows = mockConversationsList
+        .filter((c) => inPeriod(c.createdAt))
+        .map((c) => ({
+          contato: c.contact?.name || c.contact?.phone || '—',
+          canal: c.channel,
+          atendente: c.agent?.name ?? '—',
+          departamento: c.department?.name ?? '—',
+          status: c.status,
+          resolucao: c.resolution ? RESOLUTION_LABELS[c.resolution] : '—',
+          tags: (c.tags || []).map((t) => t.name).join(', ') || '—',
+          criadaEm: c.createdAt,
+          encerradaEm: c.closedAt || null,
+        }));
+      return { period, rows };
+    }
+
+    if (type === 'by-tag') {
+      const rows = mockTags
+        .map((tag) => {
+          const convs = mockConversationsList.filter(
+            (c) => inPeriod(c.createdAt) && (c.tags || []).some((t) => t.id === tag.id),
+          );
+          const closedConvs = convs.filter((c) => c.status === 'CLOSED');
+          return {
+            tag: tag.name,
+            total: convs.length,
+            resolvidas: closedConvs.filter((c) => c.resolution === 'RESOLVED').length,
+            naoResolvidas: closedConvs.filter((c) => c.resolution === 'UNRESOLVED').length,
+            tempoMedioResolucaoHoras: avgResolutionHours(closedConvs),
+          };
+        })
+        .filter((r) => r.total > 0);
+      return { period, rows };
+    }
+
+    if (type === 'by-agent') {
+      const rows = mockUsersList
+        .filter((u) => u.isActive)
+        .map((agent) => {
+          const convs = mockConversationsList.filter((c) => inPeriod(c.createdAt) && c.agent?.id === agent.id);
+          const closedConvs = convs.filter((c) => c.status === 'CLOSED');
+          const emAberto = mockConversationsList.filter(
+            (c) => c.agent?.id === agent.id && c.status === 'OPEN',
+          ).length;
+          return {
+            atendente: agent.name,
+            atendidas: convs.length,
+            resolvidas: closedConvs.filter((c) => c.resolution === 'RESOLVED').length,
+            naoResolvidas: closedConvs.filter((c) => c.resolution === 'UNRESOLVED').length,
+            emAberto,
+            tempoMedioResolucaoHoras: avgResolutionHours(closedConvs),
+          };
+        })
+        .filter((r) => r.atendidas > 0 || r.emAberto > 0);
+      return { period, rows };
+    }
+
+    throw { status: 404, message: 'Relatório não encontrado' };
+  }
+
+  // Exportação (B-33) — CSV gerado no cliente (mesmas colunas/rótulos do
+  // backend real). PDF não é suportado em modo demonstração: geração real
+  // usa PDFKit no backend, não dá pra reproduzir sem duplicar a lib no front
+  // só pra essa simulação — erro amigável em vez de fingir que funciona.
+  async downloadReport(type, { from, to, format }) {
+    await this.simulateDelay();
+    if (format === 'pdf') {
+      throw { status: 501, message: 'Exportação em PDF não está disponível em modo demonstração.' };
+    }
+
+    const { rows } = await this.getReport(type, { from, to });
+    const filename = `relatorio-${type}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    if (type === 'attendance') {
+      return {
+        filename,
+        blob: rowsToCsvBlob(
+          rows.map((r) => ({
+            'Contato': r.contato,
+            'Canal': r.canal,
+            'Atendente': r.atendente,
+            'Departamento': r.departamento,
+            'Status': r.status,
+            'Resolução': r.resolucao,
+            'Tags': r.tags,
+            'Criada em': formatDateTimeBR(r.criadaEm),
+            'Encerrada em': formatDateTimeBR(r.encerradaEm),
+          })),
+        ),
+      };
+    }
+
+    if (type === 'by-tag') {
+      return {
+        filename,
+        blob: rowsToCsvBlob(
+          rows.map((r) => ({
+            'Tag': r.tag,
+            'Total': String(r.total),
+            'Resolvidas': String(r.resolvidas),
+            'Não resolvidas': String(r.naoResolvidas),
+            'Tempo médio de resolução': formatHoursBR(r.tempoMedioResolucaoHoras),
+          })),
+        ),
+      };
+    }
+
+    return {
+      filename,
+      blob: rowsToCsvBlob(
+        rows.map((r) => ({
+          'Atendente': r.atendente,
+          'Atendidas': String(r.atendidas),
+          'Resolvidas': String(r.resolvidas),
+          'Não resolvidas': String(r.naoResolvidas),
+          'Em aberto': String(r.emAberto),
+          'Tempo médio de resolução': formatHoursBR(r.tempoMedioResolucaoHoras),
+        })),
+      ),
     };
   }
 

@@ -307,6 +307,14 @@ class ApiClient {
       }
     }
 
+    if (resource === 'reports') {
+      const params = new URLSearchParams(endpoint.split('?')[1] || '');
+      return mockApiClient.getReport(id, {
+        from: params.get('from') || undefined,
+        to: params.get('to') || undefined,
+      });
+    }
+
     if (resource === 'users') {
       if (!id && method === 'GET') return mockApiClient.getUsers();
       if (!id && method === 'POST') return mockApiClient.createUser(body);
@@ -540,6 +548,44 @@ class ApiClient {
     return this.request(`/dashboard/summary${query ? `?${query}` : ''}`, {
       method: 'GET',
     });
+  }
+
+  // RELATÓRIOS (B-33) — base de atendimento / por tipo (tag) / por atendente.
+  // `type`: 'attendance' | 'by-tag' | 'by-agent'.
+  async getReport(type, { from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const query = params.toString();
+    return this.request(`/reports/${type}${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  // Exportação (CSV/PDF, B-33) — a resposta é um arquivo binário, não JSON,
+  // então não passa por request()/response.json(); replica manualmente o
+  // roteamento mock×real que request() já faz (token, fallback).
+  async downloadReport(type, { from, to, format }) {
+    if (this.mockActive) {
+      return mockApiClient.downloadReport(type, { from, to, format });
+    }
+
+    const params = new URLSearchParams({ format });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+
+    const headers = {};
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+
+    const response = await fetch(`${this.baseURL}/reports/${type}?${params}`, { headers });
+    if (!response.ok) {
+      throw new ApiError(response.status, 'Não foi possível gerar o relatório.');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    return { blob, filename: match ? match[1] : `relatorio.${format}` };
   }
 
   // CONTACTS

@@ -2153,6 +2153,97 @@ button {
   font-size: 0.85rem;
 }
 
+/* B-33: relatórios ocupam o workspace inteiro, mesmo motivo do
+   .workspace-dashboard/.workspace-settings — sem as colunas do grid de
+   conversas. */
+.workspace-reports {
+  display: flex;
+  grid-template-columns: none;
+  overflow-y: auto;
+}
+
+.reports-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.reports-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.reports-type-select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 0.85rem;
+  min-width: 220px;
+}
+
+.reports-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.reports-date-field input {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.reports-export-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.reports-empty {
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.reports-table-wrap {
+  overflow: auto;
+  padding: 0 20px 20px;
+}
+
+.reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.reports-table th,
+.reports-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.reports-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
 .settings-panel {
   display: flex;
   flex: 1;

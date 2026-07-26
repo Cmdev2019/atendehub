@@ -24,6 +24,7 @@ import { SlaModule } from './modules/sla/sla.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ReportModule } from './modules/report/report.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     NoteModule,
     // ── Produto (B-32+) ───────────────────────────────────────────────────────
     DashboardModule,
+    ReportModule,
     // ── Tempo real ────────────────────────────────────────────────────────────
     EventsModule,
     // ── Integrações ───────────────────────────────────────────────────────────

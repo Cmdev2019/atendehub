@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Metrics } from "./components/Metrics";
 import { DashboardView } from "./components/DashboardView";
+import { ReportsView } from "./components/ReportsView";
 import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
 import { CustomerPanel } from "./components/CustomerPanel";
@@ -28,6 +29,7 @@ const h = createElement;
 const VIEW_TITLES = {
   dashboard: "Dashboard",
   inbox: "Caixa de Entrada",
+  reports: "Relatórios",
   settings: "Configurações",
 };
 
@@ -93,6 +95,8 @@ function Dashboard() {
         ? h("div", { className: "workspace workspace-settings" }, h(SettingsPanel))
         : view === "dashboard"
         ? h("div", { className: "workspace workspace-dashboard" }, h(DashboardView))
+        : view === "reports"
+        ? h("div", { className: "workspace workspace-reports" }, h(ReportsView))
         : h(
             "div",
             { className: "workspace-inbox" },

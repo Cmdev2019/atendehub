@@ -204,6 +204,79 @@ describe('Mock API Client', () => {
     });
   });
 
+  // B-33: relatórios (base de atendimento, por tipo/tag, por atendente) e
+  // exportação (CSV no mock — PDF exige o backend real com PDFKit).
+  describe('getReport / downloadReport', () => {
+    const wideRange = { from: '2020-01-01', to: '2030-01-01' };
+
+    it('attendance retorna uma linha por conversa do período, com contato/status/resolução', async () => {
+      const result = await mockApiClient.getReport('attendance', wideRange);
+
+      expect(result).toHaveProperty('period');
+      expect(result.rows.length).toBeGreaterThan(0);
+      // contato precisa ser string (nome/telefone) — regressão real pega aqui:
+      // vinha como o objeto bruto {id,name,phone,...} do contrato da API,
+      // virava "[object Object]" na tela e no CSV/PDF exportado.
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({ contato: expect.any(String), canal: expect.any(String), status: expect.any(String) }),
+      );
+    });
+
+    it('by-tag esconde tag sem nenhuma conversa no período', async () => {
+      const result = await mockApiClient.getReport('by-tag', { from: '2020-01-01', to: '2020-01-02' });
+      expect(result.rows).toHaveLength(0);
+    });
+
+    it('by-tag agrega total/resolvidas/não resolvidas por tag usada no período', async () => {
+      const result = await mockApiClient.getReport('by-tag', wideRange);
+      expect(result.rows.length).toBeGreaterThan(0);
+      result.rows.forEach((row) => {
+        expect(row.total).toBeGreaterThan(0);
+      });
+    });
+
+    it('by-agent esconde atendente sem nenhuma atividade', async () => {
+      const result = await mockApiClient.getReport('by-agent', { from: '2020-01-01', to: '2020-01-02' });
+      expect(result.rows.every((r) => r.atendidas > 0 || r.emAberto > 0)).toBe(true);
+    });
+
+    it('lança 404 pra um tipo de relatório desconhecido', async () => {
+      await expect(mockApiClient.getReport('inexistente', wideRange)).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('downloadReport gera um Blob CSV com BOM (bytes EF BB BF) e cabeçalho em PT-BR', async () => {
+      const { blob, filename } = await mockApiClient.downloadReport('attendance', { ...wideRange, format: 'csv' });
+
+      expect(filename).toMatch(/\.csv$/);
+
+      // BOM é sinalizador de encoding, não caractere de conteúdo — o
+      // TextDecoder do FileReader.readAsText() o consome ao decodificar
+      // (comportamento padrão, igual num navegador real), então só dá pra
+      // confirmar que ele está no arquivo lendo os BYTES crus (ArrayBuffer).
+      const bytes = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(new Uint8Array(reader.result));
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(blob);
+      });
+      expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
+
+      const text = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(blob);
+      });
+      expect(text).toContain('Contato,Canal,Atendente');
+    });
+
+    it('downloadReport rejeita PDF em modo demonstração com mensagem clara', async () => {
+      await expect(
+        mockApiClient.downloadReport('attendance', { ...wideRange, format: 'pdf' }),
+      ).rejects.toMatchObject({ status: 501 });
+    });
+  });
+
   describe('sendMessage', () => {
     it('persiste a mensagem na conversa e retorna no shape do contrato', async () => {
       const list = await mockApiClient.getConversations();
