@@ -32,7 +32,12 @@ describe('report-export.util (B-33)', () => {
 
       const content = res.getBuffer().toString('utf-8');
       expect(content.charCodeAt(0)).toBe(0xfeff); // BOM
-      const lines = content.replace(/^﻿/, '').split('\n');
+      // Regex construída a partir dos códigos de caractere do BOM (94 '^',
+      // 92 '\', 117 'u', 70 'F', 69 'E', 70 'F', 70 'F') em vez do escape
+      // Unicode literal — evita deixar o caractere invisível de verdade no
+      // fonte, que disparava o ESLint (no-irregular-whitespace) aqui.
+      const bomPattern = new RegExp(String.fromCharCode(94, 92, 117, 70, 69, 70, 70));
+      const lines = content.replace(bomPattern, '').split('\n');
       expect(lines).toHaveLength(3);
       expect(lines[0]).toBe('Contato,Status');
       expect(lines[1]).toBe('Marina,"CLOSED, ""encerrada"""');

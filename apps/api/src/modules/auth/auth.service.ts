@@ -150,7 +150,6 @@ export class AuthService {
 
     let slug = base;
     let suffix = 1;
-    // eslint-disable-next-line no-constant-condition
     while (await this.prisma.company.findUnique({ where: { slug }, select: { id: true } })) {
       suffix += 1;
       slug = `${base}-${suffix}`;
