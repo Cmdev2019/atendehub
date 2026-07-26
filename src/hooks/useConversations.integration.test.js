@@ -12,6 +12,8 @@ jest.mock('../services/api', () => ({
     getTags: jest.fn(),
     addConversationTag: jest.fn(),
     removeConversationTag: jest.fn(),
+    assignConversation: jest.fn(),
+    updateConversationStatus: jest.fn(),
   },
 }));
 
@@ -500,6 +502,42 @@ describe('useConversations Integration Tests', () => {
 
   it('limpa slaBreached ao receber conversation.updated com status fora de WAITING (F3-4)', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [
+        { id: '1', contact: 'João', status: 'WAITING', slaBreached: true, messages: [] },
+        { id: '2', contact: 'Maria', status: 'OPEN', slaBreached: true, messages: [] },
+      ],
+      pagination: { page: 1, limit: 20, total: 2 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+
+    await waitFor(() => {
+      expect(result.current.conversations[1].slaBreached).toBe(true);
+    });
+
+    const conversationUpdatedHandler = mockWsClient.on.mock.calls.find(
+      call => call[0] === 'conversation.updated'
+    )[1];
+
+    // status OPEN (não WAITING, não CLOSED) — permanece na lista ativa,
+    // só o alerta de SLA é limpo.
+    act(() => {
+      conversationUpdatedHandler({
+        conversationId: '2',
+        companyId: 'company-1',
+        changes: { status: 'OPEN' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversations[1].slaBreached).toBe(false);
+    });
+  });
+
+  // B-31: CLOSED via socket (outro agente/supervisor encerrou) sai da lista
+  // ativa igual ao que closeConversation() já faz localmente.
+  it('remove da lista ativa e move pra closedConversations ao receber conversation.updated com status CLOSED', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', status: 'WAITING', slaBreached: true, messages: [] }],
       pagination: { page: 1, limit: 20, total: 1 },
     });
@@ -507,7 +545,7 @@ describe('useConversations Integration Tests', () => {
     const { result } = renderHook(() => useConversations());
 
     await waitFor(() => {
-      expect(result.current.conversations[0].slaBreached).toBe(true);
+      expect(result.current.conversations).toHaveLength(1);
     });
 
     const conversationUpdatedHandler = mockWsClient.on.mock.calls.find(
@@ -523,7 +561,10 @@ describe('useConversations Integration Tests', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.conversations[0].slaBreached).toBe(false);
+      expect(result.current.conversations).toHaveLength(0);
+      expect(result.current.closedConversations).toHaveLength(1);
+      expect(result.current.closedConversations[0].id).toBe('1');
+      expect(result.current.closedConversations[0].slaBreached).toBe(false);
     });
   });
 
@@ -694,7 +735,7 @@ describe('useConversations Integration Tests', () => {
         await result.current.loadMoreConversations();
       });
 
-      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith(2);
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
       expect(result.current.conversations).toHaveLength(2);
       expect(result.current.conversations[1].id).toBe('2');
       expect(result.current.queueHasMore).toBe(false);
@@ -881,6 +922,78 @@ describe('useConversations Integration Tests', () => {
       expect(mockApiClient.removeConversationTag).toHaveBeenCalledWith('1', 'tag-1');
       const conv = result.current.conversations.find((c) => c.id === '1');
       expect(conv.tags).toEqual([]);
+    });
+  });
+
+  // B-31: etapas de atendimento — atender (assign) e encerrar (status).
+  describe('etapas de atendimento (B-31)', () => {
+    it('atender: atribui e atualiza status/agente localmente', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.assignConversation.mockResolvedValueOnce({
+        status: 'OPEN',
+        agent: { id: 'user-1', name: 'Ana' },
+      });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      await act(async () => {
+        await result.current.attendConversation('1', { id: 'user-1', name: 'Ana' });
+      });
+
+      expect(mockApiClient.assignConversation).toHaveBeenCalledWith('1', { agentId: 'user-1' });
+      const conv = result.current.conversations.find((c) => c.id === '1');
+      expect(conv.status).toBe('OPEN');
+      expect(conv.agent).toBe('Ana');
+      expect(conv.agentId).toBe('user-1');
+    });
+
+    it('encerrar: sai da lista ativa e entra em closedConversations', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', status: 'OPEN', messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED' });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      await act(async () => {
+        await result.current.closeConversation('1');
+      });
+
+      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED');
+      expect(result.current.conversations).toHaveLength(0);
+      expect(result.current.closedConversations).toHaveLength(1);
+      expect(result.current.closedConversations[0].status).toBe('CLOSED');
+    });
+
+    it('carrega conversas encerradas sob demanda (loadClosedConversations) e não refaz se já carregado', async () => {
+      mockApiClient.getConversations
+        .mockResolvedValueOnce({ data: [], pagination: {} }) // fetch inicial da lista ativa
+        .mockResolvedValueOnce({
+          data: [{ id: 'c1', contact: 'Antiga', status: 'CLOSED', messages: [] }],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(mockApiClient.getConversations).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await result.current.loadClosedConversations();
+      });
+
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ status: 'CLOSED', page: 1, limit: 20 });
+      expect(result.current.closedConversations).toHaveLength(1);
+
+      // 2ª chamada não refaz o fetch — já carregado
+      await act(async () => {
+        await result.current.loadClosedConversations();
+      });
+      expect(mockApiClient.getConversations).toHaveBeenCalledTimes(2);
     });
   });
 });

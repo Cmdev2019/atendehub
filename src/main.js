@@ -32,6 +32,7 @@ const VIEW_TITLES = {
 // Dashboard - Página principal do sistema
 function Dashboard() {
   const [view, setView] = useState("inbox");
+  const { user } = useAuth();
   const {
     conversations,
     activeId,
@@ -50,7 +51,22 @@ function Dashboard() {
     availableTags,
     addTagToConversation,
     removeTagFromConversation,
+    closedConversations,
+    closedHasMore,
+    closedLoadingMore,
+    loadClosedConversations,
+    loadMoreClosedConversations,
+    attendConversation,
+    closeConversation,
   } = useConversations();
+
+  // Atender (B-31): assume a conversa da fila em nome do usuário logado e já
+  // abre ela — atendimento começa direto, sem precisar de um segundo clique.
+  const handleAttend = async (conversationId) => {
+    if (!user) return;
+    const ok = await attendConversation(conversationId, { id: user.id, name: user.name });
+    if (ok) setActiveId(conversationId);
+  };
 
   return h(
     "div",
@@ -82,6 +98,13 @@ function Dashboard() {
                   onLoadMore: loadMoreConversations,
                   hasMore: queueHasMore,
                   loadingMore: queueLoadingMore,
+                  closedConversations,
+                  closedHasMore,
+                  closedLoadingMore,
+                  onLoadClosed: loadClosedConversations,
+                  onLoadMoreClosed: loadMoreClosedConversations,
+                  currentUserId: user?.id,
+                  onAttend: handleAttend,
                 }),
               ),
               activeConversation &&
@@ -96,6 +119,7 @@ function Dashboard() {
                     sendError,
                     onLoadMoreMessages: loadMoreMessages,
                     loadingOlderMessages,
+                    onCloseConversation: closeConversation,
                   }),
                 ),
               activeConversation &&

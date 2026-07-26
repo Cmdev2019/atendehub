@@ -280,8 +280,21 @@ class ApiClient {
       if (sub === 'tags' && subId && method === 'DELETE') {
         return mockApiClient.removeConversationTag(id, subId);
       }
+      if (sub === 'assign' && method === 'PATCH') {
+        return mockApiClient.assignConversation(id, body.agentId);
+      }
+      if (sub === 'status' && method === 'PATCH') {
+        return mockApiClient.updateConversationStatus(id, body.status);
+      }
       if (id) return mockApiClient.getConversation(id);
-      return mockApiClient.getConversations();
+
+      const listParams = new URLSearchParams(endpoint.split('?')[1] || '');
+      return mockApiClient.getConversations({
+        status: listParams.get('status') || undefined,
+        agentId: listParams.get('agentId') || undefined,
+        page: listParams.get('page') ? Number(listParams.get('page')) : undefined,
+        limit: listParams.get('limit') ? Number(listParams.get('limit')) : undefined,
+      });
     }
 
     if (resource === 'users') {
@@ -433,8 +446,14 @@ class ApiClient {
   }
 
   // CONVERSATIONS
-  async getConversations(page = 1, limit = 20) {
-    return this.request(`/conversations?page=${page}&limit=${limit}`, {
+  // Aceita { page, limit, status, agentId } — status/agentId filtram no
+  // servidor (ex.: aba "Fila de atendimento"/"Meus", B-31). Sem `status`, o
+  // backend já exclui CLOSED por padrão (fila ativa normal).
+  async getConversations({ page = 1, limit = 20, status, agentId } = {}) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set('status', status);
+    if (agentId) params.set('agentId', agentId);
+    return this.request(`/conversations?${params.toString()}`, {
       method: 'GET',
     });
   }
@@ -447,6 +466,23 @@ class ApiClient {
   // da paginação da fila
   async getConversationStats() {
     return this.request('/conversations/stats', { method: 'GET' });
+  }
+
+  // Atender (B-31): atribui a conversa a um agente — o backend move
+  // sozinho pra status OPEN quando `agentId` é informado.
+  async assignConversation(id, data) {
+    return this.request(`/conversations/${id}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Encerrar (B-31): muda o status da conversa (OPEN → CLOSED tipicamente).
+  async updateConversationStatus(id, status) {
+    return this.request(`/conversations/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
   }
 
   async getMessages(conversationId, limit = 50, before) {

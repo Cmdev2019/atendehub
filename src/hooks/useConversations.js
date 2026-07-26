@@ -62,6 +62,9 @@ export function toUiConversation(conv) {
     avatarUrl: conv.contact.avatarUrl || null,
     channel: conv.channel === 'WHATSAPP' ? 'WhatsApp' : (conv.channel || ''),
     agent: conv.agent?.name || null,
+    // Precisa do id (não só o nome) pra filtrar a aba "Meus" (B-31) — o nome
+    // sozinho não dá pra comparar com o usuário logado de forma confiável.
+    agentId: conv.agent?.id || null,
     tags: conv.tags || [],
     timeline: [],
     summary: conv.lastMessagePreview || '',
@@ -174,6 +177,51 @@ export function useConversations() {
     })();
   }, []);
 
+  // ── Encerrados (B-31) — carregado sob demanda só quando a aba é aberta,
+  // separado de `conversations` porque o backend já exclui CLOSED da
+  // listagem padrão (mesmo filtro implícito usado pela fila ativa).
+  const [closedConversations, setClosedConversations] = useState([]);
+  const [closedLoaded, setClosedLoaded] = useState(false);
+  const [closedPage, setClosedPage] = useState(1);
+  const [closedHasMore, setClosedHasMore] = useState(false);
+  const [closedLoadingMore, setClosedLoadingMore] = useState(false);
+
+  const loadClosedConversations = useCallback(async () => {
+    if (closedLoaded) return; // já carregado — a aba não refaz a cada clique
+    try {
+      const response = await apiClient.getConversations({ status: 'CLOSED', page: 1, limit: 20 });
+      const normalized = (response.data || []).map(toUiConversation);
+      setClosedConversations(normalized);
+      setClosedLoaded(true);
+      setClosedPage(1);
+      setClosedHasMore((response.meta?.totalPages ?? 1) > 1);
+    } catch (error) {
+      console.warn('⚠️ Erro ao buscar conversas encerradas:', error.message);
+    }
+  }, [closedLoaded]);
+
+  const loadMoreClosedConversations = useCallback(async () => {
+    if (!closedHasMore || closedLoadingMore) return;
+
+    setClosedLoadingMore(true);
+    try {
+      const nextPage = closedPage + 1;
+      const response = await apiClient.getConversations({ status: 'CLOSED', page: nextPage, limit: 20 });
+      const normalized = (response.data || []).map(toUiConversation);
+
+      setClosedConversations((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        return [...prev, ...normalized.filter((c) => !existingIds.has(c.id))];
+      });
+      setClosedPage(nextPage);
+      setClosedHasMore(nextPage < (response.meta?.totalPages ?? nextPage));
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar mais conversas encerradas:', error.message);
+    } finally {
+      setClosedLoadingMore(false);
+    }
+  }, [closedHasMore, closedLoadingMore, closedPage]);
+
   // Scroll infinito da fila (B-4) — busca a próxima página e acrescenta ao
   // final da lista já carregada (dedupe por id: novas conversas podem ter
   // entrado no topo via socket entre uma página e outra).
@@ -183,7 +231,7 @@ export function useConversations() {
     setQueueLoadingMore(true);
     try {
       const nextPage = queuePage + 1;
-      const response = await apiClient.getConversations(nextPage);
+      const response = await apiClient.getConversations({ page: nextPage, limit: 20 });
       const normalized = (response.data || []).map(toUiConversation);
 
       setConversations((prev) => {
@@ -304,19 +352,35 @@ export function useConversations() {
       if (!conversationId) return;
 
       console.log('🔄 Conversa atualizada', conversationId);
+      let closedElsewhere = null;
       setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv.id !== conversationId) return conv;
-          const next = { ...conv, ...(changes ?? {}) };
-          // Saiu de WAITING por qualquer caminho (não só atribuição de
-          // agente, ver conversation.assigned abaixo) — o alerta de SLA
-          // deixa de fazer sentido.
-          if (changes?.status && changes.status !== 'WAITING') {
-            next.slaBreached = false;
-          }
-          return next;
-        }),
+        prev
+          .map((conv) => {
+            if (conv.id !== conversationId) return conv;
+            const next = { ...conv, ...(changes ?? {}) };
+            // Saiu de WAITING por qualquer caminho (não só atribuição de
+            // agente, ver conversation.assigned abaixo) — o alerta de SLA
+            // deixa de fazer sentido.
+            if (changes?.status && changes.status !== 'WAITING') {
+              next.slaBreached = false;
+            }
+            // Encerrada (por mim em outra aba, ou por outro agente/supervisor)
+            // — sai da lista ativa, igual ao que closeConversation já faz.
+            if (changes?.status === 'CLOSED') {
+              closedElsewhere = next;
+              return null;
+            }
+            return next;
+          })
+          .filter(Boolean),
       );
+      // Real-time: se a aba "Encerrados" já estava carregada, reflete a
+      // conversa recém-fechada nela também, sem esperar um refresh manual.
+      if (closedElsewhere) {
+        setClosedConversations((prev) =>
+          prev.some((c) => c.id === closedElsewhere.id) ? prev : [closedElsewhere, ...prev],
+        );
+      }
       fetchStats();
     };
 
@@ -333,6 +397,7 @@ export function useConversations() {
             ? {
                 ...conv,
                 agent: agent?.name || null,
+                agentId: agentId || null,
                 // Atribuir agente sempre encerra a espera — o backend já
                 // cancela o job de SLA pendente nesse momento
                 // (ConversationService#assign).
@@ -473,7 +538,64 @@ export function useConversations() {
     setSendError(null);
   }, [activeId]);
 
-  const activeConversation = conversations.find((c) => c.id === activeId);
+  // Também busca em closedConversations — clicar numa conversa na aba
+  // "Encerrados" (B-31) precisa abrir o histórico dela no ChatPanel também.
+  const activeConversation =
+    conversations.find((c) => c.id === activeId) ??
+    closedConversations.find((c) => c.id === activeId);
+
+  // Atender (B-31): assume a conversa da fila — atribui a quem clicou e o
+  // backend já move pro status OPEN sozinho (ConversationService#assign).
+  // A confirmação otimista aqui evita esperar o round-trip do socket só pra
+  // a conversa sumir da aba "Fila de atendimento".
+  const attendConversation = useCallback(async (conversationId, agent) => {
+    try {
+      const updated = await apiClient.assignConversation(conversationId, { agentId: agent.id });
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === conversationId
+            ? {
+                ...conv,
+                status: updated?.status || 'OPEN',
+                agent: updated?.agent?.name || agent.name,
+                agentId: updated?.agent?.id || agent.id,
+              }
+            : conv,
+        ),
+      );
+      fetchStats();
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Erro ao assumir conversa:', error.message);
+      return false;
+    }
+  }, [fetchStats]);
+
+  // Encerrar (B-31): fecha a conversa ativa — some da fila ativa e, se a aba
+  // "Encerrados" já tiver sido aberta antes, entra nela na hora.
+  const closeConversation = useCallback(async (conversationId) => {
+    try {
+      await apiClient.updateConversationStatus(conversationId, 'CLOSED');
+      let closed = null;
+      setConversations((prev) =>
+        prev.filter((conv) => {
+          if (conv.id !== conversationId) return true;
+          closed = { ...conv, status: 'CLOSED' };
+          return false;
+        }),
+      );
+      if (closed) {
+        setClosedConversations((prev) =>
+          prev.some((c) => c.id === closed.id) ? prev : [closed, ...prev],
+        );
+      }
+      fetchStats();
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Erro ao encerrar conversa:', error.message);
+      return false;
+    }
+  }, [fetchStats]);
 
   // Atribuir/remover tag na conversa ativa (B-27) — qualquer usuário
   // autenticado pode (backend não restringe por role aqui, só a criação/
@@ -649,5 +771,12 @@ export function useConversations() {
     availableTags,
     addTagToConversation,
     removeTagFromConversation,
+    closedConversations,
+    closedHasMore,
+    closedLoadingMore,
+    loadClosedConversations,
+    loadMoreClosedConversations,
+    attendConversation,
+    closeConversation,
   };
 }

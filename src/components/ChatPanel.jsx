@@ -1,5 +1,6 @@
 import { createElement as h, useRef, useEffect, useState } from 'react';
 import { Icon } from './icons';
+import { useConfirm } from '../hooks/useConfirm';
 
 const MEDIA_LABELS = {
   IMAGE: 'Foto',
@@ -72,7 +73,9 @@ export function ChatPanel({
   sendError,
   onLoadMoreMessages,
   loadingOlderMessages,
+  onCloseConversation,
 }) {
+  const confirm = useConfirm();
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -171,6 +174,17 @@ export function ChatPanel({
       .slice(0, 2);
   };
 
+  // Encerrar (B-31) — sai da fila ativa (WAITING/OPEN) e vai pra "Encerrados".
+  // Confirmação porque é uma ação terminal: reabrir depois exige atribuir de
+  // novo (o backend não deixa CLOSED voltar direto pra WAITING/OPEN).
+  const handleClose = async () => {
+    if (!(await confirm(
+      `Encerrar a conversa com ${conversation.contact}? Ela sai da fila de atendimento.`,
+      { danger: true, confirmLabel: 'Encerrar' },
+    ))) return;
+    onCloseConversation?.(conversation.id);
+  };
+
   return h(
     'article',
     { className: 'chat-panel' },
@@ -191,6 +205,18 @@ export function ChatPanel({
           h('p', null, h(Icon, { name: 'smartphone', size: 13 }), ` ${conversation.channel}`),
         ),
       ),
+      conversation.status !== 'CLOSED' && onCloseConversation &&
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'chat-close-btn',
+            onClick: handleClose,
+            title: 'Encerrar esta conversa',
+          },
+          h(Icon, { name: 'check', size: 14 }),
+          ' Encerrar',
+        ),
     ),
     h(
       'div',

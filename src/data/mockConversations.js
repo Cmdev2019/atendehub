@@ -62,7 +62,7 @@ export const initialConversations = [
   },
   {
     id: 'conv-4',
-    status: 'RESOLVED',
+    status: 'CLOSED',
     channel: 'EMAIL',
     unreadCount: 0,
     lastMessageAt: '2026-07-21T08:55:00.000Z',

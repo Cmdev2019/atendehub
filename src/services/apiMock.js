@@ -271,12 +271,42 @@ export class MockApiClient {
     return { accessToken: newToken };
   }
 
-  async getConversations() {
+  // { status, agentId, page, limit } — mesmos filtros do backend real
+  // (B-31: abas "Fila de atendimento"/"Meus"/"Em atendimento"/"Encerrados").
+  // Sem `status`, exclui CLOSED por padrão — mesma regra do backend.
+  async getConversations({ status, agentId, page = 1, limit = 20 } = {}) {
     await this.simulateDelay();
-    return {
-      data: mockConversationsList,
-      meta: { total: mockConversationsList.length, page: 1, limit: 20, totalPages: 1 },
-    };
+    let list = mockConversationsList.filter((c) =>
+      status ? c.status === status : c.status !== 'CLOSED',
+    );
+    if (agentId) list = list.filter((c) => c.agent?.id === agentId);
+
+    const total = list.length;
+    const start = (page - 1) * limit;
+    const data = list.slice(start, start + limit);
+    return { data, meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  // Atender (B-31): atribui e move pra OPEN, igual ao ConversationService#assign real.
+  async assignConversation(id, agentId) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === id);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    const agent = mockUsersList.find((u) => u.id === agentId) ?? null;
+    conv.agent = agent ? { id: agent.id, name: agent.name, avatarUrl: agent.avatarUrl } : null;
+    if (agentId) conv.status = 'OPEN';
+    return { id: conv.id, status: conv.status, agent: conv.agent };
+  }
+
+  // Encerrar (B-31): igual ao ConversationService#updateStatus real.
+  async updateConversationStatus(id, status) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === id);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    conv.status = status;
+    if (status === 'RESOLVED') conv.resolvedAt = new Date().toISOString();
+    if (status === 'CLOSED') conv.closedAt = new Date().toISOString();
+    return { id: conv.id, status: conv.status };
   }
 
   async getConversation(id) {

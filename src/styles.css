@@ -622,6 +622,59 @@ button {
   color: var(--text);
 }
 
+/* Etapas de atendimento (B-31) */
+.queue-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+}
+
+.queue-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+.queue-tab:hover {
+  color: var(--text);
+  background: var(--panel-soft);
+}
+
+.queue-tab.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+}
+
+.queue-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--line);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.queue-tab.active .queue-tab-count {
+  background: var(--brand);
+  color: white;
+}
+
 .search-input {
   margin: 8px 12px;
   padding: 8px 12px;
@@ -751,6 +804,38 @@ button {
   flex-shrink: 0;
 }
 
+.queue-item-agent {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.queue-item-attend {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: var(--brand);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.queue-item-attend:hover {
+  background: var(--brand-dark);
+}
+
+.queue-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 /* ─────────────────────────────────────────────────────────────────
    CHAT PANEL - Conversas
    ───────────────────────────────────────────────────────────────── */
@@ -789,6 +874,25 @@ button {
 .chat-info {
   flex: 1;
   min-width: 0;
+}
+
+.chat-close-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.chat-close-btn:hover {
+  background: var(--line);
 }
 
 .chat-info h3 {
