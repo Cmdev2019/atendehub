@@ -622,38 +622,46 @@ button {
   color: var(--text);
 }
 
-/* Etapas de atendimento (B-31) */
+/* Etapas de atendimento (B-31) — a coluna da fila é estreita demais pra 4
+   abas em PT-BR numa linha só; `overflow-x:auto` deixava "Fila de
+   atendimento" cortada/escondida sem nenhuma pista visual de que dava pra
+   rolar. `flex-wrap` garante as 4 sempre visíveis, em 1 ou 2 linhas
+   conforme o espaço, com respiro de verdade entre elas nos dois eixos. */
 .queue-tabs {
   display: flex;
-  gap: 4px;
-  padding: 8px 12px 0;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
 }
 
 .queue-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
   color: var(--text-muted);
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  border-bottom: 2px solid transparent;
 }
 
 .queue-tab:hover {
   color: var(--text);
-  background: var(--panel-soft);
+  border-color: var(--line-strong);
 }
 
 .queue-tab.active {
-  color: var(--brand);
-  border-bottom-color: var(--brand);
+  color: white;
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.queue-tab-label {
+  display: inline-block;
 }
 
 .queue-tab-count {
@@ -671,7 +679,7 @@ button {
 }
 
 .queue-tab.active .queue-tab-count {
-  background: var(--brand);
+  background: rgba(255, 255, 255, 0.25);
   color: white;
 }
 

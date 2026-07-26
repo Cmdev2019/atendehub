@@ -129,7 +129,7 @@ export function ConversationQueue({
             'aria-selected': activeTab === tab.id,
             onClick: () => handleTabClick(tab.id),
           },
-          tab.label,
+          h('span', { className: 'queue-tab-label' }, tab.label),
           tabCounts[tab.id] > 0 && h('span', { className: 'queue-tab-count' }, tabCounts[tab.id]),
         ),
       ),
