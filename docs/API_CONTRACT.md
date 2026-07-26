@@ -325,8 +325,8 @@ Soft delete (marca `isDeleted`).
 ## Contacts — `/contacts`
 
 ### `GET /contacts`
-Query: `channel?` · `isBlocked?` · `search?` (nome/telefone/email) · `page` · `limit`.
-Item: `{ id, name, phone, email, avatarUrl, channel, isBlocked, createdAt, _count: { conversations } }`.
+Query: `channel?` · `isBlocked?` · `tagId?` (B-34 — filtra contatos com essa tag atribuída) · `search?` (nome/telefone/email) · `page` · `limit`.
+Item: `{ id, name, phone, email, avatarUrl, channel, isBlocked, createdAt, tags[] (B-34), _count: { conversations } }`.
 Wrapper: `{ data, meta }`. Ordenação: `name asc`.
 
 ### `GET /contacts/:id`

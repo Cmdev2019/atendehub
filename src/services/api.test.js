@@ -277,6 +277,57 @@ describe('Mock API Client', () => {
     });
   });
 
+  // B-34 (ampliação): organização de contatos por tag/grupo — mesmo
+  // catálogo de tags já usado em conversas (B-27).
+  describe('addContactTag / removeContactTag / filtro por tagId', () => {
+    it('addContactTag atribui e getContact reflete a tag', async () => {
+      const list = await mockApiClient.getContacts({ search: 'Lucas' });
+      const target = list.data[0];
+
+      await mockApiClient.addContactTag(target.id, 'tag-4');
+      const refreshed = await mockApiClient.getContact(target.id);
+
+      expect(refreshed.tags.some((t) => t.id === 'tag-4')).toBe(true);
+    });
+
+    it('addContactTag é idempotente — atribuir a mesma tag 2x não duplica', async () => {
+      const list = await mockApiClient.getContacts({ search: 'Bia' });
+      const target = list.data[0];
+
+      await mockApiClient.addContactTag(target.id, 'tag-2');
+      await mockApiClient.addContactTag(target.id, 'tag-2');
+      const refreshed = await mockApiClient.getContact(target.id);
+
+      expect(refreshed.tags.filter((t) => t.id === 'tag-2')).toHaveLength(1);
+    });
+
+    it('addContactTag lança 404 pra contato ou tag inexistente', async () => {
+      const list = await mockApiClient.getContacts();
+      await expect(mockApiClient.addContactTag('nao-existe', 'tag-1')).rejects.toMatchObject({ status: 404 });
+      await expect(mockApiClient.addContactTag(list.data[0].id, 'tag-inexistente')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('removeContactTag remove e getContact deixa de mostrar a tag', async () => {
+      // Marina (contact-1) já nasce com tag-1/tag-2 no mock — remove só a
+      // tag-2 aqui (tag-1 continua intacta pro teste de filtro logo abaixo,
+      // que depende dela pra achar a Marina).
+      const list = await mockApiClient.getContacts({ search: 'Marina' });
+      const target = list.data[0];
+      expect(target.tags.some((t) => t.id === 'tag-2')).toBe(true);
+
+      await mockApiClient.removeContactTag(target.id, 'tag-2');
+      const refreshed = await mockApiClient.getContact(target.id);
+
+      expect(refreshed.tags.some((t) => t.id === 'tag-2')).toBe(false);
+    });
+
+    it('getContacts filtra por tagId', async () => {
+      const result = await mockApiClient.getContacts({ tagId: 'tag-1' });
+      expect(result.data.every((c) => c.tags.some((t) => t.id === 'tag-1'))).toBe(true);
+      expect(result.data.some((c) => c.name === 'Marina Alves')).toBe(true);
+    });
+  });
+
   // B-33: relatórios (base de atendimento, por tipo/tag, por atendente) e
   // exportação (CSV no mock — PDF exige o backend real com PDFKit).
   describe('getReport / downloadReport', () => {

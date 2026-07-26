@@ -12,13 +12,26 @@ const PHONE_PATTERN = /^\d{10,15}$/;
 // (`contact` presente = edição). Telefone/canal só existem no cadastro: o
 // backend recusa mudar os dois depois de criado (UpdateContactDto omite
 // ambos de propósito), então na edição eles aparecem só como leitura.
-export function ContactFormDialog({ open, contact, onSave, onCancel, saving, error }) {
+// Tags (organização por tag/grupo) só fazem sentido em contato que já
+// existe — mesma restrição do backend (o endpoint de atribuir tag exige um
+// contactId real) — então só aparecem em edição, nunca em cadastro.
+export function ContactFormDialog({ open, contact, availableTags = [], onAddTag, onRemoveTag, onSave, onCancel, saving, error }) {
   const isEdit = !!contact;
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [channel, setChannel] = useState('WHATSAPP');
+  const [tagToAdd, setTagToAdd] = useState('');
   const nameRef = useRef(null);
+
+  const assignedTagIds = new Set((contact?.tags || []).map((t) => t.id));
+  const selectableTags = availableTags.filter((t) => !assignedTagIds.has(t.id));
+
+  const handleAddTag = (event) => {
+    const tagId = event.target.value;
+    setTagToAdd('');
+    if (tagId && onAddTag) onAddTag(tagId);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -126,6 +139,50 @@ export function ContactFormDialog({ open, contact, onSave, onCancel, saving, err
           h('label', { htmlFor: 'contact-email' }, 'E-mail (opcional)'),
           h('input', { id: 'contact-email', type: 'email', value: email, onChange: (e) => setEmail(e.target.value) }),
         ),
+        isEdit &&
+          h(
+            'div',
+            { className: 'contact-form-field' },
+            h('label', null, 'Tags'),
+            h(
+              'div',
+              { className: 'tag-list' },
+              (contact.tags || []).length > 0
+                ? contact.tags.map((tag) =>
+                    h(
+                      'span',
+                      { key: tag.id, className: 'tag', style: { backgroundColor: tag.color || undefined } },
+                      tag.name,
+                      onRemoveTag &&
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'tag-remove',
+                            onClick: () => onRemoveTag(tag.id),
+                            title: `Remover tag "${tag.name}"`,
+                            'aria-label': `Remover tag ${tag.name}`,
+                          },
+                          h(Icon, { name: 'x', size: 10 }),
+                        ),
+                    ),
+                  )
+                : h('span', { className: 'info-label' }, 'Sem tags'),
+            ),
+            onAddTag &&
+              selectableTags.length > 0 &&
+              h(
+                'select',
+                {
+                  className: 'tag-add-select',
+                  value: tagToAdd,
+                  onChange: handleAddTag,
+                  'aria-label': 'Adicionar tag ao contato',
+                },
+                h('option', { value: '' }, '+ Adicionar tag…'),
+                selectableTags.map((tag) => h('option', { key: tag.id, value: tag.id }, tag.name)),
+              ),
+          ),
         h(
           'div',
           { className: 'confirm-actions' },

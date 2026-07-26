@@ -71,6 +71,40 @@ describe('ContactService — isolamento multi-tenant', () => {
         expect.objectContaining({ where: expect.objectContaining({ companyId: companyA }) }),
       );
     });
+
+    // B-34: organização por tag/grupo — filtrar a lista de contatos por tag.
+    it('filtra por tagId quando informado (tags.some)', async () => {
+      mockPrisma.contact.findMany.mockResolvedValueOnce([]);
+      mockPrisma.contact.count.mockResolvedValueOnce(0);
+
+      await service.findAll(companyA, { tagId: 'tag-1' } as any);
+
+      expect(mockPrisma.contact.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ tags: { some: { id: 'tag-1' } } }),
+        }),
+      );
+    });
+
+    it('não filtra por tag quando tagId não é informado', async () => {
+      mockPrisma.contact.findMany.mockResolvedValueOnce([]);
+      mockPrisma.contact.count.mockResolvedValueOnce(0);
+
+      await service.findAll(companyA, {});
+
+      const call = mockPrisma.contact.findMany.mock.calls[0][0];
+      expect(call.where).not.toHaveProperty('tags');
+    });
+
+    it('inclui as tags de cada contato no select da listagem', async () => {
+      mockPrisma.contact.findMany.mockResolvedValueOnce([]);
+      mockPrisma.contact.count.mockResolvedValueOnce(0);
+
+      await service.findAll(companyA, {});
+
+      const call = mockPrisma.contact.findMany.mock.calls[0][0];
+      expect(call.select.tags).toEqual({ select: { id: true, name: true, color: true } });
+    });
   });
 
   describe('findOne', () => {

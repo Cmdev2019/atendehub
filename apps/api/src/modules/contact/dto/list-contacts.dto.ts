@@ -16,6 +16,12 @@ export class ListContactsDto {
   @IsBoolean()
   isBlocked?: boolean;
 
+  // B-34: filtra contatos que têm essa tag atribuída (organização por
+  // tag/grupo) — mesmo catálogo de tags já usado em conversas (B-27).
+  @IsOptional()
+  @IsString()
+  tagId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

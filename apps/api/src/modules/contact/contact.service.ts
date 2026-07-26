@@ -25,13 +25,14 @@ export class ContactService {
 
   // ── Listar contatos com paginação e filtros ───────────────────────────────
   async findAll(companyId: string, query: ListContactsDto) {
-    const { search, channel, isBlocked, page = 1, limit = 20 } = query;
+    const { search, channel, isBlocked, tagId, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where = {
       companyId,
       ...(channel && { channel }),
       ...(isBlocked !== undefined && { isBlocked }),
+      ...(tagId && { tags: { some: { id: tagId } } }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' as const } },
@@ -53,6 +54,7 @@ export class ContactService {
           channel: true,
           isBlocked: true,
           createdAt: true,
+          tags: { select: { id: true, name: true, color: true } },
           _count: { select: { conversations: true } },
         },
         orderBy: { name: 'asc' },

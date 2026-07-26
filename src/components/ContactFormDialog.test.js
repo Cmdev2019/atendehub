@@ -118,4 +118,64 @@ describe('ContactFormDialog (B-34)', () => {
 
     expect(onCancel).toHaveBeenCalled();
   });
+
+  // B-34 (ampliação): organização por tag/grupo — mesmo padrão visual de
+  // CustomerPanel (B-27), só que pra contato em vez de conversa.
+  describe('tags (edição)', () => {
+    const contactWithTags = {
+      id: 'c1',
+      name: 'Ana',
+      phone: '5511900000001',
+      email: null,
+      channel: 'WHATSAPP',
+      tags: [{ id: 'tag-1', name: 'Entrega', color: '#ef4444' }],
+    };
+    const availableTags = [
+      { id: 'tag-1', name: 'Entrega', color: '#ef4444' },
+      { id: 'tag-2', name: 'Prioridade', color: '#f59e0b' },
+    ];
+
+    it('não mostra a seção de tags no cadastro (contato ainda não existe)', () => {
+      render(h(ContactFormDialog, { ...baseProps, availableTags }));
+      expect(screen.queryByText('Tags')).not.toBeInTheDocument();
+    });
+
+    it('mostra as tags já atribuídas, com botão de remover', () => {
+      render(h(ContactFormDialog, { ...baseProps, contact: contactWithTags, availableTags, onRemoveTag: jest.fn() }));
+
+      expect(screen.getByText('Entrega')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Remover tag Entrega' })).toBeInTheDocument();
+    });
+
+    it('mostra "Sem tags" quando o contato não tem nenhuma', () => {
+      render(h(ContactFormDialog, { ...baseProps, contact: { ...contactWithTags, tags: [] }, availableTags }));
+      expect(screen.getByText('Sem tags')).toBeInTheDocument();
+    });
+
+    it('seletor "+ Adicionar tag" só lista tags ainda não atribuídas', () => {
+      render(h(ContactFormDialog, { ...baseProps, contact: contactWithTags, availableTags, onAddTag: jest.fn() }));
+
+      const select = screen.getByLabelText('Adicionar tag ao contato');
+      const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+      expect(options).toEqual(['+ Adicionar tag…', 'Prioridade']);
+    });
+
+    it('escolher uma tag no seletor chama onAddTag com o id certo', () => {
+      const onAddTag = jest.fn();
+      render(h(ContactFormDialog, { ...baseProps, contact: contactWithTags, availableTags, onAddTag }));
+
+      fireEvent.change(screen.getByLabelText('Adicionar tag ao contato'), { target: { value: 'tag-2' } });
+
+      expect(onAddTag).toHaveBeenCalledWith('tag-2');
+    });
+
+    it('clicar em remover chama onRemoveTag com o id certo', () => {
+      const onRemoveTag = jest.fn();
+      render(h(ContactFormDialog, { ...baseProps, contact: contactWithTags, availableTags, onRemoveTag }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remover tag Entrega' }));
+
+      expect(onRemoveTag).toHaveBeenCalledWith('tag-1');
+    });
+  });
 });

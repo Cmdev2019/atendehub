@@ -31,7 +31,7 @@ export class ContactController {
     private readonly tagService: TagService,
   ) {}
 
-  // GET /api/v1/contacts?search=&channel=&isBlocked=&page=&limit=
+  // GET /api/v1/contacts?search=&channel=&isBlocked=&tagId=&page=&limit=
   @Get()
   findAll(@CurrentUser() user: AuthUserDto, @Query() query: ListContactsDto) {
     return this.contactService.findAll(user.companyId, query);

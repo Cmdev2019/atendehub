@@ -17,8 +17,14 @@ export function ContactsView() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
+
+  // Organização por tag (B-34) — mesmo catálogo de tags já usado em
+  // conversas (B-27); alimenta tanto o filtro da lista quanto o seletor de
+  // "adicionar tag" dentro do diálogo de edição.
+  const [availableTags, setAvailableTags] = useState([]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
@@ -29,7 +35,12 @@ export function ContactsView() {
     setLoading(true);
     setListError(null);
     try {
-      const response = await apiClient.getContacts({ search: search || undefined, page, limit: PAGE_LIMIT });
+      const response = await apiClient.getContacts({
+        search: search || undefined,
+        tagId: tagFilter || undefined,
+        page,
+        limit: PAGE_LIMIT,
+      });
       setContacts(response?.data || []);
       setMeta(response?.meta || { total: 0, page: 1, totalPages: 1 });
     } catch (error) {
@@ -38,16 +49,32 @@ export function ContactsView() {
     } finally {
       setLoading(false);
     }
-  }, [search, page]);
+  }, [search, tagFilter, page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await apiClient.getTags();
+        setAvailableTags(Array.isArray(response) ? response : response?.data ?? []);
+      } catch (error) {
+        console.warn('⚠️ Erro ao buscar tags:', error.message);
+      }
+    })();
+  }, []);
+
   const handleSearchSubmit = (event) => {
     event.preventDefault();
     setPage(1);
     setSearch(searchInput.trim());
+  };
+
+  const handleTagFilterChange = (event) => {
+    setPage(1);
+    setTagFilter(event.target.value);
   };
 
   const openCreate = () => {
@@ -87,6 +114,36 @@ export function ContactsView() {
     }
   };
 
+  // Adicionar/remover tag aplica na hora (sem depender do botão "Salvar" do
+  // form) — mesma ergonomia do CustomerPanel pra tags de conversa (B-27).
+  // Atualiza o contato aberto no diálogo E a lista por trás dele, já que a
+  // linha da tabela também mostra as tags.
+  const handleAddTag = async (tagId) => {
+    if (!editingContact) return;
+    setFormError(null);
+    try {
+      await apiClient.addContactTag(editingContact.id, tagId);
+      const refreshed = await apiClient.getContact(editingContact.id);
+      setEditingContact(refreshed);
+      load();
+    } catch (error) {
+      setFormError(error?.message || 'Não foi possível adicionar a tag.');
+    }
+  };
+
+  const handleRemoveTag = async (tagId) => {
+    if (!editingContact) return;
+    setFormError(null);
+    try {
+      await apiClient.removeContactTag(editingContact.id, tagId);
+      const refreshed = await apiClient.getContact(editingContact.id);
+      setEditingContact(refreshed);
+      load();
+    } catch (error) {
+      setFormError(error?.message || 'Não foi possível remover a tag.');
+    }
+  };
+
   return h(
     'div',
     { className: 'contacts-view' },
@@ -111,6 +168,17 @@ export function ContactsView() {
         }),
       ),
       h(
+        'select',
+        {
+          className: 'contacts-tag-filter',
+          'aria-label': 'Filtrar por tag',
+          value: tagFilter,
+          onChange: handleTagFilterChange,
+        },
+        h('option', { value: '' }, 'Todas as tags'),
+        availableTags.map((tag) => h('option', { key: tag.id, value: tag.id }, tag.name)),
+      ),
+      h(
         'button',
         { type: 'button', className: 'primary-button', onClick: openCreate },
         h(Icon, { name: 'plus', size: 14 }),
@@ -121,7 +189,7 @@ export function ContactsView() {
     loading
       ? h('p', { className: 'dashboard-loading' }, 'Carregando contatos…')
       : contacts.length === 0
-      ? h('p', { className: 'reports-empty' }, search ? 'Nenhum contato encontrado.' : 'Nenhum contato cadastrado ainda.')
+      ? h('p', { className: 'reports-empty' }, search || tagFilter ? 'Nenhum contato encontrado.' : 'Nenhum contato cadastrado ainda.')
       : h(
           'div',
           { className: 'reports-table-wrap' },
@@ -134,7 +202,7 @@ export function ContactsView() {
               h(
                 'tr',
                 null,
-                ['Nome', 'Telefone', 'E-mail', 'Canal', 'Conversas', 'Cadastrado em', ''].map((label) =>
+                ['Nome', 'Telefone', 'E-mail', 'Canal', 'Tags', 'Conversas', 'Cadastrado em', ''].map((label) =>
                   h('th', { key: label || 'actions' }, label),
                 ),
               ),
@@ -150,6 +218,19 @@ export function ContactsView() {
                   h('td', null, c.phone),
                   h('td', null, c.email || '—'),
                   h('td', null, CHANNEL_LABELS[c.channel] || c.channel),
+                  h(
+                    'td',
+                    null,
+                    (c.tags || []).length > 0
+                      ? h(
+                          'div',
+                          { className: 'tag-list contacts-tag-list-cell' },
+                          c.tags.map((tag) =>
+                            h('span', { key: tag.id, className: 'tag', style: { backgroundColor: tag.color || undefined } }, tag.name),
+                          ),
+                        )
+                      : '—',
+                  ),
                   h('td', null, String(c._count?.conversations ?? 0)),
                   h('td', null, formatDate(c.createdAt)),
                   h(
@@ -186,6 +267,9 @@ export function ContactsView() {
     h(ContactFormDialog, {
       open: dialogOpen,
       contact: editingContact,
+      availableTags,
+      onAddTag: handleAddTag,
+      onRemoveTag: handleRemoveTag,
       onSave: handleSave,
       onCancel: closeDialog,
       saving: formSaving,

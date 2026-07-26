@@ -108,6 +108,10 @@ let mockMessageSeq = 1000;
 // conversas fixture (nome/telefone/canal batem com o que aparece na fila),
 // enriquecidos com os campos que só a listagem de contatos usa (email,
 // isBlocked, createdAt, contagem de conversas).
+// `tags` (B-34) é um catálogo PRÓPRIO do contato — mesmas tags de
+// `mockTags`, mas a atribuição é independente da conversa (Tag→Contact é uma
+// relação separada de Tag→Conversation no schema real). Marina começa com
+// 2 tags pra demo não nascer sem nenhum exemplo de filtro.
 const mockContactsList = mockConversationsList.map((conv) => ({
   id: conv.contact.id,
   name: conv.contact.name,
@@ -117,6 +121,7 @@ const mockContactsList = mockConversationsList.map((conv) => ({
   channel: conv.channel,
   isBlocked: false,
   createdAt: conv.createdAt,
+  tags: conv.contact.id === 'contact-1' ? [mockTags[0], mockTags[1]] : [],
 }));
 
 // Notificações (B-8) — mesmos 2 tipos que o backend real cria (B1-3):
@@ -644,7 +649,7 @@ export class MockApiClient {
   // ── CONTACTS (B-34) ──────────────────────────────────────────────────────
   // Busca/paginação e regra de conflito de telefone iguais ao backend real
   // (contact.service.ts#findAll/create).
-  async getContacts({ search, channel, isBlocked, page = 1, limit = 20 } = {}) {
+  async getContacts({ search, channel, isBlocked, tagId, page = 1, limit = 20 } = {}) {
     await this.simulateDelay();
     let list = mockContactsList;
     if (search) {
@@ -658,6 +663,7 @@ export class MockApiClient {
     }
     if (channel) list = list.filter((c) => c.channel === channel);
     if (isBlocked !== undefined) list = list.filter((c) => c.isBlocked === isBlocked);
+    if (tagId) list = list.filter((c) => c.tags?.some((t) => t.id === tagId));
     list = [...list].sort((a, b) => a.name.localeCompare(b.name));
 
     const total = list.length;
@@ -670,7 +676,28 @@ export class MockApiClient {
     await this.simulateDelay();
     const contact = mockContactsList.find((c) => c.id === id);
     if (!contact) throw { status: 404, message: 'Contato não encontrado' };
-    return { ...withContactCount(contact), tags: [], conversations: [] };
+    return { ...withContactCount(contact), conversations: [] };
+  }
+
+  // Organização por tag (B-34) — mesmo par de endpoints já usado em
+  // conversas (B-27), 404 se a tag ou o contato não existirem.
+  async addContactTag(contactId, tagId) {
+    await this.simulateDelay();
+    const contact = mockContactsList.find((c) => c.id === contactId);
+    const tag = mockTags.find((t) => t.id === tagId);
+    if (!contact || !tag) throw { status: 404, message: 'Contato ou tag não encontrado' };
+    if (!contact.tags.some((t) => t.id === tagId)) {
+      contact.tags.push({ id: tag.id, name: tag.name, color: tag.color });
+    }
+    return { id: contact.id, tags: contact.tags };
+  }
+
+  async removeContactTag(contactId, tagId) {
+    await this.simulateDelay();
+    const contact = mockContactsList.find((c) => c.id === contactId);
+    if (!contact) throw { status: 404, message: 'Contato não encontrado' };
+    contact.tags = contact.tags.filter((t) => t.id !== tagId);
+    return { id: contact.id, tags: contact.tags };
   }
 
   async createContact(data) {
@@ -687,6 +714,7 @@ export class MockApiClient {
       channel: data.channel || 'WHATSAPP',
       isBlocked: false,
       createdAt: new Date().toISOString(),
+      tags: [],
     };
     mockContactsList.push(contact);
     return withContactCount(contact);

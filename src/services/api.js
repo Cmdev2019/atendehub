@@ -322,10 +322,13 @@ class ApiClient {
           search: params.get('search') || undefined,
           channel: params.get('channel') || undefined,
           isBlocked: params.has('isBlocked') ? params.get('isBlocked') === 'true' : undefined,
+          tagId: params.get('tagId') || undefined,
           page: params.get('page') ? Number(params.get('page')) : undefined,
           limit: params.get('limit') ? Number(params.get('limit')) : undefined,
         });
       }
+      if (sub === 'tags' && subId && method === 'POST') return mockApiClient.addContactTag(id, subId);
+      if (sub === 'tags' && subId && method === 'DELETE') return mockApiClient.removeContactTag(id, subId);
       if (!id && method === 'POST') return mockApiClient.createContact(body);
       if (id && method === 'PATCH') return mockApiClient.updateContact(id, body);
       if (id && method === 'GET') return mockApiClient.getContact(id);
@@ -605,12 +608,23 @@ class ApiClient {
   }
 
   // CONTACTS (B-34)
-  async getContacts({ search, channel, isBlocked, page = 1, limit = 20 } = {}) {
+  async getContacts({ search, channel, isBlocked, tagId, page = 1, limit = 20 } = {}) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (search) params.set('search', search);
     if (channel) params.set('channel', channel);
     if (isBlocked !== undefined) params.set('isBlocked', String(isBlocked));
+    if (tagId) params.set('tagId', tagId);
     return this.request(`/contacts?${params}`, { method: 'GET' });
+  }
+
+  // Organização por tag (B-34) — mesmo catálogo/endpoints de tag já usados
+  // em conversas (B-27), só que no contato.
+  async addContactTag(contactId, tagId) {
+    return this.request(`/contacts/${contactId}/tags/${tagId}`, { method: 'POST' });
+  }
+
+  async removeContactTag(contactId, tagId) {
+    return this.request(`/contacts/${contactId}/tags/${tagId}`, { method: 'DELETE' });
   }
 
   async getContact(id) {

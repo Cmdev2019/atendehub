@@ -2277,6 +2277,21 @@ button {
   margin: 0;
 }
 
+.contacts-tag-filter {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 0.85rem;
+  min-width: 160px;
+}
+
+.contacts-tag-list-cell {
+  max-width: 220px;
+  white-space: normal;
+}
+
 .contacts-pagination {
   display: flex;
   align-items: center;

@@ -2,14 +2,27 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { createElement as h } from 'react';
 
 jest.mock('../services/api', () => ({
-  apiClient: { getContacts: jest.fn(), createContact: jest.fn(), updateContact: jest.fn() },
+  apiClient: {
+    getContacts: jest.fn(),
+    createContact: jest.fn(),
+    updateContact: jest.fn(),
+    getContact: jest.fn(),
+    getTags: jest.fn(),
+    addContactTag: jest.fn(),
+    removeContactTag: jest.fn(),
+  },
 }));
 
 import { ContactsView } from './ContactsView';
 
 const contactsPage1 = [
-  { id: 'c1', name: 'Ana Silva', phone: '5511900000001', email: 'ana@email.com', channel: 'WHATSAPP', createdAt: '2026-07-01T10:00:00.000Z', _count: { conversations: 2 } },
-  { id: 'c2', name: 'Bruno Costa', phone: '5511900000002', email: null, channel: 'EMAIL', createdAt: '2026-07-02T10:00:00.000Z', _count: { conversations: 0 } },
+  { id: 'c1', name: 'Ana Silva', phone: '5511900000001', email: 'ana@email.com', channel: 'WHATSAPP', createdAt: '2026-07-01T10:00:00.000Z', tags: [{ id: 'tag-1', name: 'Entrega', color: '#ef4444' }], _count: { conversations: 2 } },
+  { id: 'c2', name: 'Bruno Costa', phone: '5511900000002', email: null, channel: 'EMAIL', createdAt: '2026-07-02T10:00:00.000Z', tags: [], _count: { conversations: 0 } },
+];
+
+const availableTags = [
+  { id: 'tag-1', name: 'Entrega', color: '#ef4444' },
+  { id: 'tag-2', name: 'Prioridade', color: '#f59e0b' },
 ];
 
 describe('ContactsView (B-34)', () => {
@@ -18,6 +31,7 @@ describe('ContactsView (B-34)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockApiClient = require('../services/api').apiClient;
+    mockApiClient.getTags.mockResolvedValue(availableTags);
   });
 
   it('carrega e mostra os contatos da 1ª página', async () => {
@@ -131,5 +145,92 @@ describe('ContactsView (B-34)', () => {
 
     await screen.findByText('Já existe um contato com este número de telefone');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  // B-34 (ampliação): organização por tag/grupo.
+  describe('tags', () => {
+    it('carrega o catálogo de tags e popula o filtro', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+
+      render(h(ContactsView));
+      await waitFor(() => expect(screen.getByText('Ana Silva')).toBeInTheDocument());
+
+      const filterSelect = screen.getByLabelText('Filtrar por tag');
+      const options = Array.from(filterSelect.querySelectorAll('option')).map((o) => o.textContent);
+      expect(options).toEqual(['Todas as tags', 'Entrega', 'Prioridade']);
+    });
+
+    it('trocar o filtro de tag refaz a busca com tagId e volta pra página 1', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+
+      render(h(ContactsView));
+      await waitFor(() => expect(screen.getByText('Ana Silva')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByLabelText('Filtrar por tag'), { target: { value: 'tag-1' } });
+
+      await waitFor(() =>
+        expect(mockApiClient.getContacts).toHaveBeenLastCalledWith(expect.objectContaining({ tagId: 'tag-1', page: 1 })),
+      );
+    });
+
+    it('mostra os chips de tag na linha do contato', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+
+      render(h(ContactsView));
+
+      await waitFor(() => expect(screen.getAllByText('Entrega').length).toBeGreaterThan(0));
+    });
+
+    it('adicionar tag no diálogo chama addContactTag, atualiza o diálogo e recarrega a lista', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+      mockApiClient.addContactTag.mockResolvedValueOnce({ id: 'c2', tags: [{ id: 'tag-2', name: 'Prioridade', color: '#f59e0b' }] });
+      mockApiClient.getContact.mockResolvedValueOnce({ ...contactsPage1[1], tags: [{ id: 'tag-2', name: 'Prioridade', color: '#f59e0b' }] });
+
+      render(h(ContactsView));
+      await waitFor(() => expect(screen.getByText('Bruno Costa')).toBeInTheDocument());
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Editar' })[1]); // Bruno Costa (sem tags)
+      const dialog = await screen.findByRole('dialog');
+      const callsBefore = mockApiClient.getContacts.mock.calls.length;
+
+      fireEvent.change(within(dialog).getByLabelText('Adicionar tag ao contato'), { target: { value: 'tag-2' } });
+
+      expect(mockApiClient.addContactTag).toHaveBeenCalledWith('c2', 'tag-2');
+      await waitFor(() => expect(mockApiClient.getContact).toHaveBeenCalledWith('c2'));
+      await waitFor(() => expect(within(dialog).getByText('Prioridade')).toBeInTheDocument());
+      await waitFor(() => expect(mockApiClient.getContacts.mock.calls.length).toBeGreaterThan(callsBefore));
+    });
+
+    it('remover tag no diálogo chama removeContactTag e atualiza o diálogo', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+      mockApiClient.removeContactTag.mockResolvedValueOnce({ id: 'c1', tags: [] });
+      mockApiClient.getContact.mockResolvedValueOnce({ ...contactsPage1[0], tags: [] });
+
+      render(h(ContactsView));
+      await waitFor(() => expect(screen.getByText('Ana Silva')).toBeInTheDocument());
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Editar' })[0]); // Ana Silva (tag-1)
+      const dialog = await screen.findByRole('dialog');
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Remover tag Entrega' }));
+
+      expect(mockApiClient.removeContactTag).toHaveBeenCalledWith('c1', 'tag-1');
+      await waitFor(() => expect(within(dialog).getByText('Sem tags')).toBeInTheDocument());
+    });
+
+    it('erro ao adicionar tag aparece no diálogo sem fechá-lo', async () => {
+      mockApiClient.getContacts.mockResolvedValue({ data: contactsPage1, meta: { total: 2, page: 1, limit: 20, totalPages: 1 } });
+      mockApiClient.addContactTag.mockRejectedValueOnce({ message: 'Não foi possível adicionar a tag.' });
+
+      render(h(ContactsView));
+      await waitFor(() => expect(screen.getByText('Bruno Costa')).toBeInTheDocument());
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Editar' })[1]);
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.change(within(dialog).getByLabelText('Adicionar tag ao contato'), { target: { value: 'tag-1' } });
+
+      await screen.findByText('Não foi possível adicionar a tag.');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
   });
 });
