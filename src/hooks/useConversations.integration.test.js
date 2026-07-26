@@ -1003,11 +1003,75 @@ describe('useConversations Integration Tests', () => {
         await result.current.closeConversation('1', 'RESOLVED');
       });
 
-      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED', 'RESOLVED');
+      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED', 'RESOLVED', undefined);
       expect(result.current.closedConversations[0].resolution).toBe('RESOLVED');
       expect(result.current.conversations).toHaveLength(0);
       expect(result.current.closedConversations).toHaveLength(1);
       expect(result.current.closedConversations[0].status).toBe('CLOSED');
+    });
+
+    // B-36: cancelar exige justificativa — passa junto no PATCH e fica salva
+    // localmente na conversa que migrou pra "Encerrados".
+    it('encerrar com CANCELLED: manda resolutionNote e guarda no closedConversations', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', status: 'OPEN', messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED', resolution: 'CANCELLED' });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      await act(async () => {
+        await result.current.closeConversation('1', 'CANCELLED', 'Contato sumiu.');
+      });
+
+      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED', 'CANCELLED', 'Contato sumiu.');
+      expect(result.current.closedConversations[0].resolution).toBe('CANCELLED');
+      expect(result.current.closedConversations[0].resolutionNote).toBe('Contato sumiu.');
+    });
+
+    // Pedido do usuário: a conversa recém-fechada não deve continuar na tela
+    // do chat — activeId precisa ser limpo pra área central voltar ao
+    // estado vazio ("Nenhuma mensagem no momento").
+    it('encerrar limpa activeId quando a conversa fechada era a ativa', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', status: 'OPEN', messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED', resolution: 'RESOLVED' });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+      act(() => result.current.setActiveId('1'));
+      expect(result.current.activeId).toBe('1');
+
+      await act(async () => {
+        await result.current.closeConversation('1', 'RESOLVED');
+      });
+
+      expect(result.current.activeId).toBeNull();
+    });
+
+    it('encerrar NÃO mexe no activeId se a conversa fechada não era a ativa', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [
+          { id: '1', contact: 'João', status: 'OPEN', messages: [] },
+          { id: '2', contact: 'Maria', status: 'OPEN', messages: [] },
+        ],
+        pagination: { page: 1, limit: 20, total: 2 },
+      });
+      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED', resolution: 'RESOLVED' });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(2));
+      act(() => result.current.setActiveId('2'));
+
+      await act(async () => {
+        await result.current.closeConversation('1', 'RESOLVED');
+      });
+
+      expect(result.current.activeId).toBe('2');
     });
 
     it('carrega conversas encerradas sob demanda (loadClosedConversations) e não refaz se já carregado', async () => {

@@ -17,6 +17,7 @@ import { ReportsView } from "./components/ReportsView";
 import { ContactsView } from "./components/ContactsView";
 import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
+import { EmptyChatState } from "./components/EmptyChatState";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { DemoBanner } from "./components/DemoBanner";
@@ -133,21 +134,22 @@ function Dashboard() {
                   onAttend: handleAttend,
                 }),
               ),
-              activeConversation &&
-                h(
-                  "section",
-                  { className: "chat-area" },
-                  h(ChatPanel, {
-                    conversation: activeConversation,
-                    draft,
-                    onDraftChange: setDraft,
-                    onSend: sendMessage,
-                    sendError,
-                    onLoadMoreMessages: loadMoreMessages,
-                    loadingOlderMessages,
-                    onCloseConversation: closeConversation,
-                  }),
-                ),
+              h(
+                "section",
+                { className: "chat-area" },
+                activeConversation
+                  ? h(ChatPanel, {
+                      conversation: activeConversation,
+                      draft,
+                      onDraftChange: setDraft,
+                      onSend: sendMessage,
+                      sendError,
+                      onLoadMoreMessages: loadMoreMessages,
+                      loadingOlderMessages,
+                      onCloseConversation: closeConversation,
+                    })
+                  : h(EmptyChatState),
+              ),
               activeConversation &&
                 h(
                   "section",

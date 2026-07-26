@@ -284,7 +284,7 @@ class ApiClient {
         return mockApiClient.assignConversation(id, body.agentId);
       }
       if (sub === 'status' && method === 'PATCH') {
-        return mockApiClient.updateConversationStatus(id, body.status, body.resolution);
+        return mockApiClient.updateConversationStatus(id, body.status, body.resolution, body.resolutionNote);
       }
       if (id) return mockApiClient.getConversation(id);
 
@@ -517,10 +517,15 @@ class ApiClient {
   // Encerrar (B-31): muda o status da conversa (OPEN → CLOSED tipicamente).
   // `resolution` (B-32) é obrigatório no backend quando status='CLOSED' —
   // motivo do encerramento (RESOLVED/UNRESOLVED) escolhido pelo atendente.
-  async updateConversationStatus(id, status, resolution) {
+  // `resolutionNote` (B-36) é obrigatório no backend quando resolution=
+  // 'CANCELLED' — justificativa do atendente pra cancelar em vez de atender.
+  async updateConversationStatus(id, status, resolution, resolutionNote) {
+    const body = { status };
+    if (resolution) body.resolution = resolution;
+    if (resolutionNote) body.resolutionNote = resolutionNote;
     return this.request(`/conversations/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify(resolution ? { status, resolution } : { status }),
+      body: JSON.stringify(body),
     });
   }
 

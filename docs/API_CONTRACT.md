@@ -164,16 +164,19 @@ interpretado como `:id` senão.
 ```
 
 ### `GET /conversations/:id`
-Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `metadata`, `updatedAt` e contato/agente expandidos.
+Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos.
 
 ### `PATCH /conversations/:id/assign`
 `{ "agentId": "..." | null, "departmentId"?: "..." }` — atribui/desatribui. Emite `conversation.assigned`.
 
 ### `PATCH /conversations/:id/status`
-`{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING", "resolution"?: "RESOLVED" | "UNRESOLVED" }`.
+`{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING", "resolution"?: "RESOLVED" | "UNRESOLVED" | "CANCELLED", "resolutionNote"?: "até 500 caracteres" }`.
 `resolution` é **obrigatório quando `status: "CLOSED"`** (B-32) — o atendente
-informa se o atendimento foi resolvido ou não ao encerrar; ignorado/não
-persistido em qualquer outra transição. Emite `conversation.updated`.
+informa se o atendimento foi resolvido, não resolvido ou cancelado (B-36) ao
+encerrar; ignorado/não persistido em qualquer outra transição.
+`resolutionNote` é **obrigatório quando `resolution: "CANCELLED"`** (B-36) —
+justificativa do atendente pra cancelar em vez de atender; não existe pra
+`RESOLVED`/`UNRESOLVED`. Emite `conversation.updated`.
 
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`.
@@ -197,13 +200,17 @@ Contagens reais via `count` do Prisma, sempre filtradas por `companyId`.
   "totalClosed": 25,         // status=CLOSED && closedAt no período
   "resolved": 18,            // + resolution=RESOLVED
   "unresolved": 5,           // + resolution=UNRESOLVED
-  "unlabeled": 2              // + resolution=null (encerradas antes de B-32 existir)
+  "cancelled": 1,             // + resolution=CANCELLED (B-36)
+  "unlabeled": 1              // + resolution=null (encerradas antes de B-32 existir)
 }
 ```
 `attended`/`notAttended` usam `createdAt` (chamados que **entraram** no
-período); `totalClosed`/`resolved`/`unresolved`/`unlabeled` usam `closedAt`
-(só existe depois de encerrada) — são janelas diferentes por natureza, não
-um erro: um chamado pode entrar no período e só ser encerrado depois dele.
+período); `totalClosed`/`resolved`/`unresolved`/`cancelled`/`unlabeled` usam
+`closedAt` (só existe depois de encerrada) — são janelas diferentes por
+natureza, não um erro: um chamado pode entrar no período e só ser encerrado
+depois dele. `cancelled` fica separado de `unresolved` de propósito —
+cancelamento é o atendente desistindo/redirecionando (com justificativa
+obrigatória, B-36), não uma tentativa de atendimento que não deu certo.
 
 ---
 
@@ -225,7 +232,7 @@ Lista detalhada de conversas do período (uma linha por conversa).
       "atendente": "Ana",              // "—" se nunca atribuída
       "departamento": "Comercial",     // "—" se nenhum
       "status": "CLOSED",
-      "resolucao": "Resolvido",        // "Resolvido" | "Não resolvido" | "—"
+      "resolucao": "Resolvido",        // "Resolvido" | "Não resolvido" | "Cancelado" | "—"
       "tags": "Entrega, Prioridade",   // "—" se nenhuma
       "criadaEm": "2026-07-10T10:00:00.000Z",
       "encerradaEm": "2026-07-10T12:00:00.000Z" // null se ainda ativa
@@ -242,7 +249,7 @@ não aparece.
 {
   "period": { "from": "...", "to": "..." },
   "rows": [
-    { "tag": "Entrega", "total": 12, "resolvidas": 8, "naoResolvidas": 2, "tempoMedioResolucaoHoras": 3.5 }
+    { "tag": "Entrega", "total": 12, "resolvidas": 8, "naoResolvidas": 2, "canceladas": 1, "tempoMedioResolucaoHoras": 3.5 }
   ]
 }
 ```
@@ -255,7 +262,7 @@ conversa aberta há semanas continua relevante hoje).
 {
   "period": { "from": "...", "to": "..." },
   "rows": [
-    { "atendente": "Ana", "atendidas": 20, "resolvidas": 15, "naoResolvidas": 3, "emAberto": 2, "tempoMedioResolucaoHoras": 2.1 }
+    { "atendente": "Ana", "atendidas": 20, "resolvidas": 15, "naoResolvidas": 3, "canceladas": 1, "emAberto": 2, "tempoMedioResolucaoHoras": 2.1 }
   ]
 }
 ```

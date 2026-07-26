@@ -58,7 +58,8 @@ describe('DashboardService', () => {
       .mockResolvedValueOnce(8)  // totalClosed
       .mockResolvedValueOnce(5)  // resolved
       .mockResolvedValueOnce(2)  // unresolved
-      .mockResolvedValueOnce(1); // unlabeled
+      .mockResolvedValueOnce(1)  // cancelled
+      .mockResolvedValueOnce(0); // unlabeled
 
     const result = await service.getSummary(companyA);
 
@@ -68,7 +69,8 @@ describe('DashboardService', () => {
     expect(result.totalClosed).toBe(8);
     expect(result.resolved).toBe(5);
     expect(result.unresolved).toBe(2);
-    expect(result.unlabeled).toBe(1);
+    expect(result.cancelled).toBe(1);
+    expect(result.unlabeled).toBe(0);
   });
 
   it('atendidas filtra agentId não nulo; não atendidas filtra agentId nulo', async () => {
@@ -82,14 +84,25 @@ describe('DashboardService', () => {
     expect(notAttendedCall.where.agentId).toBeNull();
   });
 
-  it('resolvidas/não resolvidas/sem registro só contam conversas CLOSED', async () => {
+  it('resolvidas/não resolvidas/canceladas/sem registro só contam conversas CLOSED', async () => {
     mockPrisma.conversation.count.mockResolvedValue(0);
 
     await service.getSummary(companyA);
 
-    [3, 4, 5, 6].forEach((i) => {
+    [3, 4, 5, 6, 7].forEach((i) => {
       const call = mockPrisma.conversation.count.mock.calls[i][0];
       expect(call.where.status).toBe('CLOSED');
     });
+  });
+
+  it('canceladas filtra resolution=CANCELLED, separado de não resolvidas', async () => {
+    mockPrisma.conversation.count.mockResolvedValue(0);
+
+    await service.getSummary(companyA);
+
+    const unresolvedCall = mockPrisma.conversation.count.mock.calls[5][0];
+    const cancelledCall = mockPrisma.conversation.count.mock.calls[6][0];
+    expect(unresolvedCall.where.resolution).toBe('UNRESOLVED');
+    expect(cancelledCall.where.resolution).toBe('CANCELLED');
   });
 });

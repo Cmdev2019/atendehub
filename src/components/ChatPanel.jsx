@@ -175,15 +175,16 @@ export function ChatPanel({
   };
 
   // Encerrar (B-31) — sai da fila ativa (WAITING/OPEN) e vai pra "Encerrados".
-  // Pede o motivo do encerramento (B-32, resolvido/não resolvido) antes de
-  // confirmar: é uma ação terminal (reabrir depois exige atribuir de novo, o
-  // backend não deixa CLOSED voltar direto pra WAITING/OPEN) e o dado vira
-  // insumo real do dashboard.
+  // Pede o motivo do encerramento (B-32/B-36: resolvido/não resolvido/
+  // cancelado) antes de confirmar: é uma ação terminal (reabrir depois exige
+  // atribuir de novo, o backend não deixa CLOSED voltar direto pra WAITING/
+  // OPEN) e o dado vira insumo real do dashboard. `resolutionNote` só existe
+  // pra 'CANCELLED' — justificativa obrigatória do cancelamento.
   const handleCloseClick = () => setCloseDialogOpen(true);
 
-  const handleChooseResolution = (resolution) => {
+  const handleChooseResolution = (resolution, resolutionNote) => {
     setCloseDialogOpen(false);
-    onCloseConversation?.(conversation.id, resolution);
+    onCloseConversation?.(conversation.id, resolution, resolutionNote);
   };
 
   return h(

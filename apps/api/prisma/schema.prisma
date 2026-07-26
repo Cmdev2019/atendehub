@@ -59,6 +59,7 @@ enum ConversationStatus {
 enum ConversationResolution {
   RESOLVED
   UNRESOLVED
+  CANCELLED // encerrada pelo atendente sem atender — exige `resolutionNote` (B-36)
 }
 
 enum SenderType {
@@ -311,6 +312,7 @@ model Conversation {
   resolvedAt           DateTime?
   closedAt             DateTime?
   resolution           ConversationResolution? // motivo do encerramento (B-32) — null em conversas encerradas antes deste campo existir
+  resolutionNote       String? // justificativa do atendente — obrigatória quando resolution=CANCELLED (B-36)
   metadata             Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt

@@ -15,11 +15,13 @@ const emptySummary = {
   totalClosed: 0,
   resolved: 0,
   unresolved: 0,
+  cancelled: 0,
   unlabeled: 0,
 };
 
 const ATTENDANCE_COLORS = ['#0f766e', '#f59e0b']; // atendido, não atendido
-const RESOLUTION_COLORS = ['#0f766e', '#dc2626', '#94a3b8']; // resolvida, não resolvida, sem registro
+// resolvida, não resolvida, cancelada (B-36), sem registro
+const RESOLUTION_COLORS = ['#0f766e', '#dc2626', '#94a3b8', '#cbd5e1'];
 
 function donutData(summary) {
   return {
@@ -30,6 +32,7 @@ function donutData(summary) {
     resolution: [
       { name: 'Resolvidas', value: summary.resolved },
       { name: 'Não resolvidas', value: summary.unresolved },
+      { name: 'Canceladas', value: summary.cancelled },
       { name: 'Sem registro', value: summary.unlabeled },
     ].filter((slice) => slice.value > 0),
   };
@@ -135,6 +138,7 @@ export function DashboardView() {
     { label: 'Não atendidos', value: summary.notAttended },
     { label: 'Resolvidos', value: summary.resolved },
     { label: 'Não resolvidos', value: summary.unresolved },
+    { label: 'Cancelados', value: summary.cancelled },
   ];
 
   return h(
@@ -156,7 +160,7 @@ export function DashboardView() {
             'section',
             { className: 'dashboard-charts' },
             h(DonutCard, { title: 'Atendidos x não atendidos', data: attendance, colors: ATTENDANCE_COLORS }),
-            h(DonutCard, { title: 'Resolvidas x não resolvidas', data: resolution, colors: RESOLUTION_COLORS }),
+            h(DonutCard, { title: 'Resultado do encerramento', data: resolution, colors: RESOLUTION_COLORS }),
           ),
         ),
   );

@@ -401,6 +401,36 @@ describe('Mock API Client', () => {
     });
   });
 
+  // B-31/B-32/B-36: encerrar sempre passa por resolution; CANCELLED (novo)
+  // também carrega resolutionNote, obrigatório no backend real.
+  describe('updateConversationStatus', () => {
+    it('CLOSED com CANCELLED grava resolution e resolutionNote na conversa', async () => {
+      const list = await mockApiClient.getConversations();
+      const target = list.data[0];
+
+      const result = await mockApiClient.updateConversationStatus(target.id, 'CLOSED', 'CANCELLED', 'Contato sumiu.');
+
+      expect(result.resolution).toBe('CANCELLED');
+      expect(result.resolutionNote).toBe('Contato sumiu.');
+    });
+
+    it('CLOSED com RESOLVED não grava resolutionNote (só existe pra CANCELLED)', async () => {
+      const list = await mockApiClient.getConversations();
+      const target = list.data[0];
+
+      const result = await mockApiClient.updateConversationStatus(target.id, 'CLOSED', 'RESOLVED');
+
+      expect(result.resolution).toBe('RESOLVED');
+      expect(result.resolutionNote).toBeNull();
+    });
+
+    it('lança 404 pra conversa inexistente', async () => {
+      await expect(
+        mockApiClient.updateConversationStatus('nao-existe', 'CLOSED', 'RESOLVED'),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
   describe('sendMessage', () => {
     it('persiste a mensagem na conversa e retorna no shape do contrato', async () => {
       const list = await mockApiClient.getConversations();

@@ -30,7 +30,7 @@ export class DashboardService {
       closedAt: { gte: from, lte: to },
     };
 
-    const [totalConversations, attended, notAttended, totalClosed, resolved, unresolved, unlabeled] =
+    const [totalConversations, attended, notAttended, totalClosed, resolved, unresolved, cancelled, unlabeled] =
       await Promise.all([
         this.prisma.conversation.count({ where: createdInPeriod }),
         this.prisma.conversation.count({ where: { ...createdInPeriod, agentId: { not: null } } }),
@@ -41,6 +41,9 @@ export class DashboardService {
         }),
         this.prisma.conversation.count({
           where: { ...closedInPeriod, resolution: ConversationResolution.UNRESOLVED },
+        }),
+        this.prisma.conversation.count({
+          where: { ...closedInPeriod, resolution: ConversationResolution.CANCELLED },
         }),
         this.prisma.conversation.count({ where: { ...closedInPeriod, resolution: null } }),
       ]);
@@ -53,9 +56,13 @@ export class DashboardService {
       totalClosed,
       resolved,
       unresolved,
-      // Encerradas antes deste campo existir (ou por algum caminho que ainda
-      // não pede o motivo) — contadas à parte pra não inflar nem desinflar
-      // "resolvido"/"não resolvido" com um dado que não existe de verdade.
+      // Cancelada pelo atendente, sem chegar a atender de verdade (B-36) —
+      // contada à parte de "não resolvida", que é atendimento que não deu
+      // certo (motivos diferentes, não faz sentido somar num só balde).
+      cancelled,
+      // Encerradas antes do campo `resolution` existir (ou por algum caminho
+      // que ainda não pede o motivo) — contadas à parte pra não inflar nem
+      // desinflar os outros baldes com um dado que não existe de verdade.
       unlabeled,
     };
   }

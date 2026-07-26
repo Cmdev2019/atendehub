@@ -219,6 +219,8 @@ export class ConversationService {
         slaBreachedAt: true,
         resolvedAt: true,
         closedAt: true,
+        resolution: true,
+        resolutionNote: true,
         metadata: true,
         createdAt: true,
         updatedAt: true,
@@ -414,7 +416,11 @@ export class ConversationService {
       data: {
         status: dto.status,
         ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
-        ...(dto.status === ConversationStatus.CLOSED && { closedAt: now, resolution: dto.resolution }),
+        ...(dto.status === ConversationStatus.CLOSED && {
+          closedAt: now,
+          resolution: dto.resolution,
+          resolutionNote: dto.resolutionNote,
+        }),
       },
       select: {
         id: true,
@@ -423,6 +429,7 @@ export class ConversationService {
         resolvedAt: true,
         closedAt: true,
         resolution: true,
+        resolutionNote: true,
         updatedAt: true,
         queueId: true,
       },

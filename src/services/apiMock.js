@@ -399,7 +399,7 @@ export class MockApiClient {
   // Encerrar (B-31): igual ao ConversationService#updateStatus real.
   // `resolution` (B-32): motivo do encerramento (RESOLVED/UNRESOLVED),
   // persistido só quando status='CLOSED' — mesma regra do backend real.
-  async updateConversationStatus(id, status, resolution) {
+  async updateConversationStatus(id, status, resolution, resolutionNote) {
     await this.simulateDelay();
     const conv = mockConversationsList.find((c) => c.id === id);
     if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
@@ -408,8 +408,14 @@ export class MockApiClient {
     if (status === 'CLOSED') {
       conv.closedAt = new Date().toISOString();
       conv.resolution = resolution ?? null;
+      conv.resolutionNote = resolution === 'CANCELLED' ? resolutionNote ?? null : null;
     }
-    return { id: conv.id, status: conv.status, resolution: conv.resolution ?? null };
+    return {
+      id: conv.id,
+      status: conv.status,
+      resolution: conv.resolution ?? null,
+      resolutionNote: conv.resolutionNote ?? null,
+    };
   }
 
   async getConversation(id) {

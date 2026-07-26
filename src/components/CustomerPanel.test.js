@@ -71,3 +71,31 @@ describe('CustomerPanel — tags (B-27)', () => {
     expect(screen.queryByLabelText('Adicionar tag à conversa')).not.toBeInTheDocument();
   });
 });
+
+// B-36: motivo do cancelamento (obrigatório no fluxo de Encerrar/Cancelado)
+// precisa aparecer de novo depois, senão a justificativa é escrita e nunca
+// mais lida por ninguém.
+describe('CustomerPanel — motivo do cancelamento (B-36)', () => {
+  it('mostra o motivo quando a conversa foi cancelada', () => {
+    render(
+      h(CustomerPanel, {
+        conversation: { ...baseConversation, resolution: 'CANCELLED', resolutionNote: 'Contato sumiu.' },
+      }),
+    );
+
+    expect(screen.getByText('Motivo do cancelamento')).toBeInTheDocument();
+    expect(screen.getByText('Contato sumiu.')).toBeInTheDocument();
+  });
+
+  it('não mostra nada quando a conversa não foi cancelada', () => {
+    render(h(CustomerPanel, { conversation: { ...baseConversation, resolution: 'RESOLVED' } }));
+
+    expect(screen.queryByText('Motivo do cancelamento')).not.toBeInTheDocument();
+  });
+
+  it('não mostra a seção se resolution=CANCELLED mas não há nota (conversa antiga)', () => {
+    render(h(CustomerPanel, { conversation: { ...baseConversation, resolution: 'CANCELLED', resolutionNote: null } }));
+
+    expect(screen.queryByText('Motivo do cancelamento')).not.toBeInTheDocument();
+  });
+});

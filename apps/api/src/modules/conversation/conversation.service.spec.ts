@@ -305,6 +305,38 @@ describe('ConversationService — isolamento multi-tenant', () => {
       const call = mockPrisma.conversation.update.mock.calls[0][0];
       expect(call.data).not.toHaveProperty('resolution');
     });
+
+    // B-36: cancelar exige justificativa do atendente (validada no DTO,
+    // aqui só confirma que o service persiste o que recebeu).
+    it('persiste resolutionNote ao cancelar (resolution=CANCELLED)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.OPEN,
+      });
+      mockPrisma.conversation.update.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.CLOSED,
+        companyId: companyA,
+        resolution: 'CANCELLED',
+        resolutionNote: 'Contato pediu pra falar depois, não retornou.',
+      });
+
+      await service.updateStatus(companyA, 'conv-1', {
+        status: ConversationStatus.CLOSED,
+        resolution: 'CANCELLED' as any,
+        resolutionNote: 'Contato pediu pra falar depois, não retornou.',
+      });
+
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: ConversationStatus.CLOSED,
+            resolution: 'CANCELLED',
+            resolutionNote: 'Contato pediu pra falar depois, não retornou.',
+          }),
+        }),
+      );
+    });
   });
 
   describe('markAsRead', () => {

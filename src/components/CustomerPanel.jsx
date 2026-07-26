@@ -55,6 +55,16 @@ export function CustomerPanel({ conversation, availableTags = [], onAddTag, onRe
         h('div', { className: 'info-label' }, 'Tempo em fila'),
         h('div', null, conversation.wait || '-'),
       ),
+      // Justificativa do cancelamento (B-36) — só existe pra resolution
+      // CANCELLED; RESOLVED/UNRESOLVED não pedem explicação nenhuma.
+      conversation.resolution === 'CANCELLED' &&
+        conversation.resolutionNote &&
+        h(
+          'div',
+          { className: 'info-item' },
+          h('div', { className: 'info-label' }, 'Motivo do cancelamento'),
+          h('div', null, conversation.resolutionNote),
+        ),
     ),
     h(
       'section',

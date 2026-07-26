@@ -622,16 +622,21 @@ export function useConversations(currentUserId) {
 
   // Encerrar (B-31): fecha a conversa ativa — some da fila ativa e, se a aba
   // "Encerrados" já tiver sido aberta antes, entra nela na hora.
-  // `resolution` (B-32, obrigatório no backend): motivo do encerramento
-  // ('RESOLVED'/'UNRESOLVED'), escolhido pelo atendente antes de confirmar.
-  const closeConversation = useCallback(async (conversationId, resolution) => {
+  // `resolution` (B-32/B-36, obrigatório no backend): motivo do encerramento
+  // ('RESOLVED'/'UNRESOLVED'/'CANCELLED'), escolhido pelo atendente antes de
+  // confirmar. `resolutionNote` só existe (e é obrigatória no backend) pra
+  // 'CANCELLED' — justificativa do cancelamento.
+  // Limpa `activeId` ao final (pedido do usuário): sem isso, a conversa
+  // recém-fechada continuava na tela do chat (ainda é achada em
+  // `closedConversations`) até o atendente escolher outra manualmente.
+  const closeConversation = useCallback(async (conversationId, resolution, resolutionNote) => {
     try {
-      await apiClient.updateConversationStatus(conversationId, 'CLOSED', resolution);
+      await apiClient.updateConversationStatus(conversationId, 'CLOSED', resolution, resolutionNote);
       let closed = null;
       setConversations((prev) =>
         prev.filter((conv) => {
           if (conv.id !== conversationId) return true;
-          closed = { ...conv, status: 'CLOSED', resolution };
+          closed = { ...conv, status: 'CLOSED', resolution, resolutionNote: resolutionNote ?? null };
           return false;
         }),
       );
@@ -640,6 +645,7 @@ export function useConversations(currentUserId) {
           prev.some((c) => c.id === closed.id) ? prev : [closed, ...prev],
         );
       }
+      setActiveId((prev) => (prev === conversationId ? null : prev));
       fetchStats();
       return true;
     } catch (error) {

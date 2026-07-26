@@ -587,6 +587,27 @@ button {
   overflow: hidden;
 }
 
+/* B-36: estado vazio quando não há conversa selecionada (ex.: logo depois
+   de encerrar) — antes a área central ficava simplesmente em branco. */
+.empty-chat-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.empty-chat-state-icon {
+  opacity: 0.4;
+}
+
+.empty-chat-state p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 /* ─────────────────────────────────────────────────────────────────
    QUEUE - Lista de Conversas
    ───────────────────────────────────────────────────────────────── */
@@ -1658,6 +1679,7 @@ button {
 }
 
 .confirm-dialog {
+  position: relative;
   width: 100%;
   max-width: 380px;
   padding: 24px;
@@ -1666,6 +1688,47 @@ button {
   color: var(--text);
   box-shadow: var(--shadow-md);
   text-align: center;
+}
+
+/* B-36: 4 ações (Voltar à conversa/Cancelado/Não resolvido/Resolvido) não
+   cabem confortavelmente na largura padrão do .confirm-dialog. */
+.close-dialog {
+  max-width: 440px;
+}
+
+.confirm-dialog-dismiss {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.confirm-dialog-dismiss:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.close-dialog-reason {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
 }
 
 .confirm-icon {
@@ -1691,6 +1754,7 @@ button {
 
 .confirm-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
   margin-top: 20px;

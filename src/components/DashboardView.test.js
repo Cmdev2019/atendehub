@@ -24,7 +24,8 @@ const baseSummary = {
   totalClosed: 8,
   resolved: 5,
   unresolved: 2,
-  unlabeled: 1,
+  cancelled: 1,
+  unlabeled: 0,
 };
 
 describe('DashboardView (B-32)', () => {
@@ -71,7 +72,7 @@ describe('DashboardView (B-32)', () => {
     expect(screen.queryByText('Resumo de conversas (agora)')).not.toBeInTheDocument();
     expect(screen.getByText('Sem resposta do atendente (agora)')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument(); // awaitingReply ("Todas")
-    expect(screen.getByText('1')).toBeInTheDocument(); // myAwaitingReply ("Minhas")
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0); // myAwaitingReply + cancelled (mesmo valor)
   });
 
   it('não mostra mais os textos em <small> dos cards (pedido do usuário)', async () => {
@@ -93,6 +94,7 @@ describe('DashboardView (B-32)', () => {
       totalClosed: 0,
       resolved: 0,
       unresolved: 0,
+      cancelled: 0,
       unlabeled: 0,
     });
     mockApiClient.getConversationStats.mockResolvedValueOnce(baseStats);
@@ -102,6 +104,21 @@ describe('DashboardView (B-32)', () => {
     await waitFor(() => expect(screen.queryByText('Carregando indicadores…')).not.toBeInTheDocument());
 
     expect(screen.getAllByText('Sem dados no período.')).toHaveLength(1);
+  });
+
+  // B-36: cancelamento é um 3º motivo de encerramento, separado de "não
+  // resolvido" — precisa de card e fatia própria, senão o dado some do
+  // dashboard mesmo continuando real no backend.
+  it('mostra o card "Cancelados" e a fatia correspondente no gráfico', async () => {
+    mockApiClient.getDashboardSummary.mockResolvedValueOnce(baseSummary);
+    mockApiClient.getConversationStats.mockResolvedValueOnce(baseStats);
+
+    render(h(DashboardView));
+
+    await waitFor(() => expect(screen.queryByText('Carregando indicadores…')).not.toBeInTheDocument());
+
+    expect(screen.getByText('Cancelados')).toBeInTheDocument();
+    expect(screen.getByText('Resultado do encerramento')).toBeInTheDocument();
   });
 
   it('não quebra a tela se o backend falhar — mantém os indicadores zerados', async () => {

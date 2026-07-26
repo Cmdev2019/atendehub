@@ -127,12 +127,13 @@ describe('ReportService (B-33)', () => {
       expect(result.rows).toHaveLength(0);
     });
 
-    it('calcula total/resolvidas/não resolvidas e tempo médio de resolução por tag', async () => {
+    it('calcula total/resolvidas/não resolvidas/canceladas e tempo médio de resolução por tag', async () => {
       mockPrisma.tag.findMany.mockResolvedValueOnce([{ id: 'tag-1', name: 'Entrega' }]);
       mockPrisma.conversation.count
         .mockResolvedValueOnce(5) // total
         .mockResolvedValueOnce(3) // resolvidas
-        .mockResolvedValueOnce(1); // não resolvidas
+        .mockResolvedValueOnce(1) // não resolvidas
+        .mockResolvedValueOnce(1); // canceladas
       mockPrisma.conversation.findMany.mockResolvedValueOnce([
         { createdAt: new Date('2026-01-01T10:00:00.000Z'), closedAt: new Date('2026-01-01T12:00:00.000Z') }, // 2h
         { createdAt: new Date('2026-01-02T10:00:00.000Z'), closedAt: new Date('2026-01-02T14:00:00.000Z') }, // 4h
@@ -141,7 +142,7 @@ describe('ReportService (B-33)', () => {
       const result = await service.getByTagReport(companyA);
 
       expect(result.rows).toEqual([
-        { tag: 'Entrega', total: 5, resolvidas: 3, naoResolvidas: 1, tempoMedioResolucaoHoras: 3 },
+        { tag: 'Entrega', total: 5, resolvidas: 3, naoResolvidas: 1, canceladas: 1, tempoMedioResolucaoHoras: 3 },
       ]);
     });
 
@@ -185,8 +186,8 @@ describe('ReportService (B-33)', () => {
 
       await service.getByAgentReport(companyA);
 
-      // 4ª chamada de count() é a de "emAberto" (ver ordem no Promise.all do service)
-      const emAbertoCall = mockPrisma.conversation.count.mock.calls[3][0];
+      // 5ª chamada de count() é a de "emAberto" (ver ordem no Promise.all do service)
+      const emAbertoCall = mockPrisma.conversation.count.mock.calls[4][0];
       expect(emAbertoCall.where).toEqual({ companyId: companyA, agentId: 'agent-1', status: 'OPEN' });
       expect(emAbertoCall.where.createdAt).toBeUndefined();
     });
@@ -197,6 +198,7 @@ describe('ReportService (B-33)', () => {
         .mockResolvedValueOnce(0) // atendidas (período)
         .mockResolvedValueOnce(0) // resolvidas
         .mockResolvedValueOnce(0) // não resolvidas
+        .mockResolvedValueOnce(0) // canceladas
         .mockResolvedValueOnce(2); // em aberto (agora)
       mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
 
@@ -230,19 +232,20 @@ describe('ReportService (B-33)', () => {
       expect(rows[0]['Contato']).toBe('Marina');
     });
 
-    it('toByTagExportRows formata tempo médio em horas/minutos e trata null como "—"', () => {
+    it('toByTagExportRows formata tempo médio em horas/minutos, inclui canceladas e trata null como "—"', () => {
       const rows = service.toByTagExportRows([
-        { tag: 'Entrega', total: 5, resolvidas: 3, naoResolvidas: 1, tempoMedioResolucaoHoras: 2.5 },
-        { tag: 'Prioridade', total: 1, resolvidas: 0, naoResolvidas: 0, tempoMedioResolucaoHoras: null },
+        { tag: 'Entrega', total: 5, resolvidas: 3, naoResolvidas: 1, canceladas: 1, tempoMedioResolucaoHoras: 2.5 },
+        { tag: 'Prioridade', total: 1, resolvidas: 0, naoResolvidas: 0, canceladas: 0, tempoMedioResolucaoHoras: null },
       ]);
 
+      expect(rows[0]['Canceladas']).toBe('1');
       expect(rows[0]['Tempo médio de resolução']).toBe('2h 30min');
       expect(rows[1]['Tempo médio de resolução']).toBe('—');
     });
 
-    it('toByAgentExportRows inclui todas as colunas esperadas', () => {
+    it('toByAgentExportRows inclui todas as colunas esperadas, com canceladas', () => {
       const rows = service.toByAgentExportRows([
-        { atendente: 'Ana', atendidas: 5, resolvidas: 3, naoResolvidas: 1, emAberto: 1, tempoMedioResolucaoHoras: 1 },
+        { atendente: 'Ana', atendidas: 5, resolvidas: 3, naoResolvidas: 1, canceladas: 1, emAberto: 1, tempoMedioResolucaoHoras: 1 },
       ]);
 
       expect(rows[0]).toEqual({
@@ -250,6 +253,7 @@ describe('ReportService (B-33)', () => {
         'Atendidas': '5',
         'Resolvidas': '3',
         'Não resolvidas': '1',
+        'Canceladas': '1',
         'Em aberto': '1',
         'Tempo médio de resolução': '1h 0min',
       });

@@ -9,6 +9,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const RESOLUTION_LABELS: Record<string, string> = {
   RESOLVED: 'Resolvido',
   UNRESOLVED: 'Não resolvido',
+  CANCELLED: 'Cancelado',
 };
 
 function formatDateTime(date: Date | null) {
@@ -126,13 +127,16 @@ export class ReportService {
           createdAt: { gte: period.from, lte: period.to },
         };
 
-        const [total, resolvidas, naoResolvidas, closedConvs] = await Promise.all([
+        const [total, resolvidas, naoResolvidas, canceladas, closedConvs] = await Promise.all([
           this.prisma.conversation.count({ where }),
           this.prisma.conversation.count({
             where: { ...where, status: ConversationStatus.CLOSED, resolution: ConversationResolution.RESOLVED },
           }),
           this.prisma.conversation.count({
             where: { ...where, status: ConversationStatus.CLOSED, resolution: ConversationResolution.UNRESOLVED },
+          }),
+          this.prisma.conversation.count({
+            where: { ...where, status: ConversationStatus.CLOSED, resolution: ConversationResolution.CANCELLED },
           }),
           this.prisma.conversation.findMany({
             where: { ...where, status: ConversationStatus.CLOSED },
@@ -145,6 +149,7 @@ export class ReportService {
           total,
           resolvidas,
           naoResolvidas,
+          canceladas,
           tempoMedioResolucaoHoras: avgResolutionHours(closedConvs),
         };
       }),
@@ -155,12 +160,15 @@ export class ReportService {
     return { period, rows: rows.filter((r) => r.total > 0) };
   }
 
-  toByTagExportRows(rows: { tag: string; total: number; resolvidas: number; naoResolvidas: number; tempoMedioResolucaoHoras: number | null }[]): ExportRow[] {
+  toByTagExportRows(
+    rows: { tag: string; total: number; resolvidas: number; naoResolvidas: number; canceladas: number; tempoMedioResolucaoHoras: number | null }[],
+  ): ExportRow[] {
     return rows.map((r) => ({
       'Tag': r.tag,
       'Total': String(r.total),
       'Resolvidas': String(r.resolvidas),
       'Não resolvidas': String(r.naoResolvidas),
+      'Canceladas': String(r.canceladas),
       'Tempo médio de resolução': formatHours(r.tempoMedioResolucaoHoras),
     }));
   }
@@ -178,13 +186,16 @@ export class ReportService {
       agents.map(async (agent) => {
         const periodWhere = { companyId, agentId: agent.id, createdAt: { gte: period.from, lte: period.to } };
 
-        const [atendidas, resolvidas, naoResolvidas, emAberto, closedConvs] = await Promise.all([
+        const [atendidas, resolvidas, naoResolvidas, canceladas, emAberto, closedConvs] = await Promise.all([
           this.prisma.conversation.count({ where: periodWhere }),
           this.prisma.conversation.count({
             where: { ...periodWhere, status: ConversationStatus.CLOSED, resolution: ConversationResolution.RESOLVED },
           }),
           this.prisma.conversation.count({
             where: { ...periodWhere, status: ConversationStatus.CLOSED, resolution: ConversationResolution.UNRESOLVED },
+          }),
+          this.prisma.conversation.count({
+            where: { ...periodWhere, status: ConversationStatus.CLOSED, resolution: ConversationResolution.CANCELLED },
           }),
           // Em aberto é estado ATUAL, não do período — uma conversa aberta
           // há semanas continua relevante pro atendente hoje.
@@ -202,6 +213,7 @@ export class ReportService {
           atendidas,
           resolvidas,
           naoResolvidas,
+          canceladas,
           emAberto,
           tempoMedioResolucaoHoras: avgResolutionHours(closedConvs),
         };
@@ -214,13 +226,22 @@ export class ReportService {
   }
 
   toByAgentExportRows(
-    rows: { atendente: string; atendidas: number; resolvidas: number; naoResolvidas: number; emAberto: number; tempoMedioResolucaoHoras: number | null }[],
+    rows: {
+      atendente: string;
+      atendidas: number;
+      resolvidas: number;
+      naoResolvidas: number;
+      canceladas: number;
+      emAberto: number;
+      tempoMedioResolucaoHoras: number | null;
+    }[],
   ): ExportRow[] {
     return rows.map((r) => ({
       'Atendente': r.atendente,
       'Atendidas': String(r.atendidas),
       'Resolvidas': String(r.resolvidas),
       'Não resolvidas': String(r.naoResolvidas),
+      'Canceladas': String(r.canceladas),
       'Em aberto': String(r.emAberto),
       'Tempo médio de resolução': formatHours(r.tempoMedioResolucaoHoras),
     }));
