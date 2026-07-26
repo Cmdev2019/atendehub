@@ -46,6 +46,7 @@ class ApiClient {
     this.backendAvailable = null;
     this.mockActive = FORCE_MOCK;
     this.modeListeners = new Set();
+    this.sessionExpiredListeners = new Set();
     this.retryTimer = null;
     this.retryDelay = RETRY_DELAY_MIN_MS;
     this.ready = FORCE_MOCK ? Promise.resolve() : this.testConnection();
@@ -69,6 +70,27 @@ class ApiClient {
         cb(active);
       } catch (err) {
         console.error('Erro em listener de modo da API:', err);
+      }
+    });
+  }
+
+  // ── Sessão expirada (refresh falhou) ───────────────────────────────────────
+  // Notifica quem quiser reagir (hoje: AuthContext, que limpa o usuário em
+  // memória) em vez de forçar um window.location.href — este client não é um
+  // componente React e não pode chamar setUser() diretamente. Isso deixa o
+  // app inteiro sair da sessão do mesmo jeito consistente (re-render do
+  // LoginPage no lugar), sem o reload completo perder rascunho/estado da UI.
+  onSessionExpired(callback) {
+    this.sessionExpiredListeners.add(callback);
+    return () => this.sessionExpiredListeners.delete(callback);
+  }
+
+  notifySessionExpired() {
+    this.sessionExpiredListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.error('Erro em listener de sessão expirada:', err);
       }
     });
   }
@@ -181,7 +203,7 @@ class ApiClient {
           return this.request(endpoint, options);
         } else {
           this.clearToken();
-          window.location.href = '/login';
+          this.notifySessionExpired();
           throw new ApiError(401, 'Sessão expirada. Faça login novamente.');
         }
       }

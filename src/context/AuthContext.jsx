@@ -37,6 +37,21 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, []);
 
+  // Sessão expirada (refresh falhou numa requisição, ver api.js#request) —
+  // o ApiClient não é um componente React e não pode chamar setUser()
+  // diretamente; ele só notifica, e este efeito faz a app voltar pro login
+  // do mesmo jeito que um logout normal (sem window.location.href, sem
+  // perder estado de outros componentes desnecessariamente).
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      wsClient.disconnect();
+      setUser(null);
+      setError('Sessão expirada. Faça login novamente.');
+    };
+
+    return apiClient.onSessionExpired(handleSessionExpired);
+  }, []);
+
   const login = useCallback(async (email, password) => {
     try {
       setLoading(true);

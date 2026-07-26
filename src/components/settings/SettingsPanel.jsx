@@ -462,12 +462,15 @@ function UsersSection({ canManage }) {
               className: 'settings-btn', type: 'button', onClick: () => resetPassword(u),
               title: 'Gerar senha temporária para este usuário',
             }, h(Icon, { name: 'lock', size: 14 }), ' Resetar senha'),
-            h('button', {
+            // Backend recusa autodesativação/autoexclusão (ver user.service.ts)
+            // — esconder os botões na própria linha em vez de deixá-los
+            // clicáveis só pra sempre falhar, mesmo padrão do "Resetar senha".
+            u.id !== currentUser?.id && h('button', {
               className: 'settings-btn', type: 'button', onClick: () => toggleActive(u),
               title: u.isActive === false ? 'Reativar usuário' : 'Desativar usuário',
             }, h(Icon, { name: u.isActive === false ? 'play' : 'pause', size: 14 }),
               u.isActive === false ? ' Ativar' : ' Desativar'),
-            h('button', {
+            u.id !== currentUser?.id && h('button', {
               className: 'settings-btn danger', type: 'button', onClick: () => remove(u),
               title: 'Excluir usuário',
             }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),

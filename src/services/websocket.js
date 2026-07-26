@@ -64,13 +64,22 @@ export class WebSocketClient {
           this.reconnectAttempts++;
 
           // Handshake rejeitado por token ("Token não informado" / "Token
-          // inválido ou expirado"): renova via REST e reconecta com o novo
+          // inválido ou expirado"): renova via REST e reconecta com o novo.
+          // try/finally: se apiClient.refreshToken() rejeitar (refresh token
+          // também expirado), refreshingToken precisa voltar a false mesmo
+          // assim — sem isso, a flag travava em true para sempre e nenhuma
+          // reconexão por token nunca mais era tentada nesta sessão de página.
           if (/token/i.test(error.message || '') && !this.refreshingToken) {
             this.refreshingToken = true;
-            const refreshed = await apiClient.refreshToken();
-            this.refreshingToken = false;
-            if (refreshed && this.socket) {
-              this.socket.connect();
+            try {
+              const refreshed = await apiClient.refreshToken();
+              if (refreshed && this.socket) {
+                this.socket.connect();
+              }
+            } catch (refreshErr) {
+              console.warn('⚠️ Falha ao renovar token para reconectar o WebSocket:', refreshErr.message);
+            } finally {
+              this.refreshingToken = false;
             }
           }
         });
