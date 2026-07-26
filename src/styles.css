@@ -2101,6 +2101,59 @@ button {
   grid-template-columns: none;
 }
 
+/* B-32: dashboard também ocupa o workspace inteiro, sem as colunas do grid
+   de conversas — mesmo motivo do .workspace-settings acima. */
+.workspace-dashboard {
+  display: flex;
+  grid-template-columns: none;
+  overflow-y: auto;
+}
+
+.dashboard-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-period-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.dashboard-loading {
+  padding: 20px;
+  color: var(--text-muted);
+}
+
+.dashboard-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  padding: 4px 20px 24px;
+}
+
+.dashboard-chart-card {
+  padding: 16px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.dashboard-chart-card h3 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dashboard-chart-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .settings-panel {
   display: flex;
   flex: 1;

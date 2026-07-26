@@ -378,7 +378,7 @@ export class ConversationService {
       data: {
         status: dto.status,
         ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
-        ...(dto.status === ConversationStatus.CLOSED && { closedAt: now }),
+        ...(dto.status === ConversationStatus.CLOSED && { closedAt: now, resolution: dto.resolution }),
       },
       select: {
         id: true,
@@ -386,6 +386,7 @@ export class ConversationService {
         companyId: true,
         resolvedAt: true,
         closedAt: true,
+        resolution: true,
         updatedAt: true,
         queueId: true,
       },

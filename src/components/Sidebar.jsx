@@ -5,16 +5,18 @@ import { Icon } from './icons';
 
 // WhatsApp/Conectar e o tema saíram do menu vertical — agora vivem em
 // Configurações, junto com usuários, grupos e níveis de acesso.
+// B-32: "Funis" (nunca teve tela) virou "Dashboard" — 1ª opção do menu,
+// antes da Caixa de Entrada (pedido do usuário: dashboard é a 1ª tela).
 const menuItems = [
+  { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: 'chart', badge: '' },
   { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: 'chat', badge: '' },
   { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: 'users', badge: '' },
-  { id: 'funnels', label: 'Funis', shortLabel: 'Funis', icon: 'funnel', badge: '' },
-  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'chart', badge: '' },
+  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'clipboard', badge: '' },
   { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: 'settings', badge: '' },
 ];
 
 // Itens que já possuem uma tela correspondente
-const NAVIGABLE = new Set(['inbox', 'settings']);
+const NAVIGABLE = new Set(['dashboard', 'inbox', 'settings']);
 
 export function Sidebar({ activeView = 'inbox', onNavigate }) {
   const { logout } = useAuth();

@@ -299,14 +299,19 @@ export class MockApiClient {
   }
 
   // Encerrar (B-31): igual ao ConversationService#updateStatus real.
-  async updateConversationStatus(id, status) {
+  // `resolution` (B-32): motivo do encerramento (RESOLVED/UNRESOLVED),
+  // persistido só quando status='CLOSED' — mesma regra do backend real.
+  async updateConversationStatus(id, status, resolution) {
     await this.simulateDelay();
     const conv = mockConversationsList.find((c) => c.id === id);
     if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
     conv.status = status;
     if (status === 'RESOLVED') conv.resolvedAt = new Date().toISOString();
-    if (status === 'CLOSED') conv.closedAt = new Date().toISOString();
-    return { id: conv.id, status: conv.status };
+    if (status === 'CLOSED') {
+      conv.closedAt = new Date().toISOString();
+      conv.resolution = resolution ?? null;
+    }
+    return { id: conv.id, status: conv.status, resolution: conv.resolution ?? null };
   }
 
   async getConversation(id) {
@@ -333,6 +338,37 @@ export class MockApiClient {
       ).length,
       unreadCount: active.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
       unreadConversations: active.filter((c) => (c.unreadCount || 0) > 0).length,
+    };
+  }
+
+  // Resumo do dashboard (B-32) — mesmo cálculo do backend real, sobre o
+  // store de conversas do mock: attended/notAttended por createdAt no
+  // período, resolved/unresolved/unlabeled por closedAt no período.
+  async getDashboardSummary({ from, to } = {}) {
+    await this.simulateDelay();
+    const toDate = to ? new Date(to) : new Date();
+    const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const inPeriod = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return d >= fromDate && d <= toDate;
+    };
+
+    const createdInPeriod = mockConversationsList.filter((c) => inPeriod(c.createdAt));
+    const closedInPeriod = mockConversationsList.filter(
+      (c) => c.status === 'CLOSED' && inPeriod(c.closedAt),
+    );
+
+    return {
+      period: { from: fromDate, to: toDate },
+      totalConversations: createdInPeriod.length,
+      attended: createdInPeriod.filter((c) => c.agent?.id).length,
+      notAttended: createdInPeriod.filter((c) => !c.agent?.id).length,
+      totalClosed: closedInPeriod.length,
+      resolved: closedInPeriod.filter((c) => c.resolution === 'RESOLVED').length,
+      unresolved: closedInPeriod.filter((c) => c.resolution === 'UNRESOLVED').length,
+      unlabeled: closedInPeriod.filter((c) => !c.resolution).length,
     };
   }
 

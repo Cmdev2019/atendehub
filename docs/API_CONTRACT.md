@@ -164,13 +164,40 @@ Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `metadata`, `updat
 `{ "agentId": "..." | null, "departmentId"?: "..." }` — atribui/desatribui. Emite `conversation.assigned`.
 
 ### `PATCH /conversations/:id/status`
-`{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING" }`. Emite `conversation.updated`.
+`{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING", "resolution"?: "RESOLVED" | "UNRESOLVED" }`.
+`resolution` é **obrigatório quando `status: "CLOSED"`** (B-32) — o atendente
+informa se o atendimento foi resolvido ou não ao encerrar; ignorado/não
+persistido em qualquer outra transição. Emite `conversation.updated`.
 
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`.
 
 ### `POST /conversations/:id/tags/:tagId` · `DELETE /conversations/:id/tags/:tagId`
 Atribui/remove uma tag existente da conversa (B1-1). 404 se a tag ou a conversa não pertencerem à empresa do usuário.
+
+---
+
+## Dashboard — `/dashboard`
+
+### `GET /dashboard/summary` (B-32)
+Query: `from?`/`to?` (ISO 8601 — sem eles, últimos 30 dias terminando agora).
+Contagens reais via `count` do Prisma, sempre filtradas por `companyId`.
+```jsonc
+{
+  "period": { "from": "2026-06-26T...", "to": "2026-07-26T..." },
+  "totalConversations": 42,  // createdAt no período
+  "attended": 30,            // createdAt no período && agentId != null
+  "notAttended": 12,         // createdAt no período && agentId == null
+  "totalClosed": 25,         // status=CLOSED && closedAt no período
+  "resolved": 18,            // + resolution=RESOLVED
+  "unresolved": 5,           // + resolution=UNRESOLVED
+  "unlabeled": 2              // + resolution=null (encerradas antes de B-32 existir)
+}
+```
+`attended`/`notAttended` usam `createdAt` (chamados que **entraram** no
+período); `totalClosed`/`resolved`/`unresolved`/`unlabeled` usam `closedAt`
+(só existe depois de encerrada) — são janelas diferentes por natureza, não
+um erro: um chamado pode entrar no período e só ser encerrado depois dele.
 
 ---
 

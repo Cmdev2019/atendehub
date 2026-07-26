@@ -622,14 +622,16 @@ export function useConversations(currentUserId) {
 
   // Encerrar (B-31): fecha a conversa ativa — some da fila ativa e, se a aba
   // "Encerrados" já tiver sido aberta antes, entra nela na hora.
-  const closeConversation = useCallback(async (conversationId) => {
+  // `resolution` (B-32, obrigatório no backend): motivo do encerramento
+  // ('RESOLVED'/'UNRESOLVED'), escolhido pelo atendente antes de confirmar.
+  const closeConversation = useCallback(async (conversationId, resolution) => {
     try {
-      await apiClient.updateConversationStatus(conversationId, 'CLOSED');
+      await apiClient.updateConversationStatus(conversationId, 'CLOSED', resolution);
       let closed = null;
       setConversations((prev) =>
         prev.filter((conv) => {
           if (conv.id !== conversationId) return true;
-          closed = { ...conv, status: 'CLOSED' };
+          closed = { ...conv, status: 'CLOSED', resolution };
           return false;
         }),
       );

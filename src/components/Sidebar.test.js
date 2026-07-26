@@ -55,3 +55,24 @@ describe('Sidebar — aria-current no item ativo (B-14)', () => {
     expect(screen.getByTitle('Caixa de Entrada')).not.toHaveAttribute('aria-current');
   });
 });
+
+// B-32: "Funis" (nunca teve tela) virou "Dashboard", 1ª opção do menu.
+describe('Sidebar — Dashboard no lugar de Funis (B-32)', () => {
+  it('Dashboard é o 1º item do menu e já está navegável', () => {
+    render(h(ConfirmProvider, null, h(Sidebar, { activeView: 'dashboard', onNavigate: jest.fn() })));
+
+    const items = screen.getAllByRole('button', { name: /Dashboard|Mensagens|Contatos|Relatórios|Config/ });
+    expect(items[0]).toHaveAttribute('title', 'Dashboard');
+    expect(items[0]).not.toBeDisabled();
+    expect(screen.queryByTitle(/Funis/)).not.toBeInTheDocument();
+  });
+
+  it('clicar em Dashboard chama onNavigate', () => {
+    const onNavigate = jest.fn();
+    render(h(ConfirmProvider, null, h(Sidebar, { activeView: 'inbox', onNavigate })));
+
+    fireEvent.click(screen.getByTitle('Dashboard'));
+
+    expect(onNavigate).toHaveBeenCalledWith('dashboard');
+  });
+});

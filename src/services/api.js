@@ -284,7 +284,7 @@ class ApiClient {
         return mockApiClient.assignConversation(id, body.agentId);
       }
       if (sub === 'status' && method === 'PATCH') {
-        return mockApiClient.updateConversationStatus(id, body.status);
+        return mockApiClient.updateConversationStatus(id, body.status, body.resolution);
       }
       if (id) return mockApiClient.getConversation(id);
 
@@ -295,6 +295,16 @@ class ApiClient {
         page: listParams.get('page') ? Number(listParams.get('page')) : undefined,
         limit: listParams.get('limit') ? Number(listParams.get('limit')) : undefined,
       });
+    }
+
+    if (resource === 'dashboard') {
+      if (id === 'summary' && method === 'GET') {
+        const params = new URLSearchParams(endpoint.split('?')[1] || '');
+        return mockApiClient.getDashboardSummary({
+          from: params.get('from') || undefined,
+          to: params.get('to') || undefined,
+        });
+      }
     }
 
     if (resource === 'users') {
@@ -478,10 +488,12 @@ class ApiClient {
   }
 
   // Encerrar (B-31): muda o status da conversa (OPEN → CLOSED tipicamente).
-  async updateConversationStatus(id, status) {
+  // `resolution` (B-32) é obrigatório no backend quando status='CLOSED' —
+  // motivo do encerramento (RESOLVED/UNRESOLVED) escolhido pelo atendente.
+  async updateConversationStatus(id, status, resolution) {
     return this.request(`/conversations/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(resolution ? { status, resolution } : { status }),
     });
   }
 
@@ -514,6 +526,19 @@ class ApiClient {
     return this.request(`/conversations/${conversationId}/messages/media`, {
       method: 'POST',
       body: form,
+    });
+  }
+
+  // DASHBOARD (B-32) — resumo com dados reais: chamados atendidos/não
+  // atendidos, soluções resolvidas/não resolvidas. `from`/`to` opcionais
+  // (ISO 8601); sem eles o backend usa os últimos 30 dias.
+  async getDashboardSummary({ from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const query = params.toString();
+    return this.request(`/dashboard/summary${query ? `?${query}` : ''}`, {
+      method: 'GET',
     });
   }
 

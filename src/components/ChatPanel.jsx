@@ -1,6 +1,6 @@
 import { createElement as h, useRef, useEffect, useState } from 'react';
 import { Icon } from './icons';
-import { useConfirm } from '../hooks/useConfirm';
+import { CloseConversationDialog } from './CloseConversationDialog';
 
 const MEDIA_LABELS = {
   IMAGE: 'Foto',
@@ -75,7 +75,7 @@ export function ChatPanel({
   loadingOlderMessages,
   onCloseConversation,
 }) {
-  const confirm = useConfirm();
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -175,14 +175,15 @@ export function ChatPanel({
   };
 
   // Encerrar (B-31) — sai da fila ativa (WAITING/OPEN) e vai pra "Encerrados".
-  // Confirmação porque é uma ação terminal: reabrir depois exige atribuir de
-  // novo (o backend não deixa CLOSED voltar direto pra WAITING/OPEN).
-  const handleClose = async () => {
-    if (!(await confirm(
-      `Encerrar a conversa com ${conversation.contact}? Ela sai da fila de atendimento.`,
-      { danger: true, confirmLabel: 'Encerrar' },
-    ))) return;
-    onCloseConversation?.(conversation.id);
+  // Pede o motivo do encerramento (B-32, resolvido/não resolvido) antes de
+  // confirmar: é uma ação terminal (reabrir depois exige atribuir de novo, o
+  // backend não deixa CLOSED voltar direto pra WAITING/OPEN) e o dado vira
+  // insumo real do dashboard.
+  const handleCloseClick = () => setCloseDialogOpen(true);
+
+  const handleChooseResolution = (resolution) => {
+    setCloseDialogOpen(false);
+    onCloseConversation?.(conversation.id, resolution);
   };
 
   return h(
@@ -211,13 +212,19 @@ export function ChatPanel({
           {
             type: 'button',
             className: 'chat-close-btn',
-            onClick: handleClose,
+            onClick: handleCloseClick,
             title: 'Encerrar esta conversa',
           },
           h(Icon, { name: 'check', size: 14 }),
           ' Encerrar',
         ),
     ),
+    h(CloseConversationDialog, {
+      open: closeDialogOpen,
+      contactName: conversation.contact,
+      onChoose: handleChooseResolution,
+      onCancel: () => setCloseDialogOpen(false),
+    }),
     h(
       'div',
       {

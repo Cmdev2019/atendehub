@@ -989,21 +989,22 @@ describe('useConversations Integration Tests', () => {
       expect(conv.agentId).toBe('user-1');
     });
 
-    it('encerrar: sai da lista ativa e entra em closedConversations', async () => {
+    it('encerrar: sai da lista ativa e entra em closedConversations, com o motivo (B-32)', async () => {
       mockApiClient.getConversations.mockResolvedValueOnce({
         data: [{ id: '1', contact: 'João', status: 'OPEN', messages: [] }],
         pagination: { page: 1, limit: 20, total: 1 },
       });
-      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED' });
+      mockApiClient.updateConversationStatus.mockResolvedValueOnce({ status: 'CLOSED', resolution: 'RESOLVED' });
 
       const { result } = renderHook(() => useConversations());
       await waitFor(() => expect(result.current.conversations).toHaveLength(1));
 
       await act(async () => {
-        await result.current.closeConversation('1');
+        await result.current.closeConversation('1', 'RESOLVED');
       });
 
-      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED');
+      expect(mockApiClient.updateConversationStatus).toHaveBeenCalledWith('1', 'CLOSED', 'RESOLVED');
+      expect(result.current.closedConversations[0].resolution).toBe('RESOLVED');
       expect(result.current.conversations).toHaveLength(0);
       expect(result.current.closedConversations).toHaveLength(1);
       expect(result.current.closedConversations[0].status).toBe('CLOSED');

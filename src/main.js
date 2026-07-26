@@ -12,6 +12,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Metrics } from "./components/Metrics";
+import { DashboardView } from "./components/DashboardView";
 import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
 import { CustomerPanel } from "./components/CustomerPanel";
@@ -25,13 +26,16 @@ initMonitoring(); // B-18
 const h = createElement;
 
 const VIEW_TITLES = {
+  dashboard: "Dashboard",
   inbox: "Caixa de Entrada",
   settings: "Configurações",
 };
 
 // Dashboard - Página principal do sistema
 function Dashboard() {
-  const [view, setView] = useState("inbox");
+  // B-32: dashboard é a 1ª tela do usuário, antes da Caixa de Entrada
+  // (pedido do usuário) — substitui "inbox" como view inicial.
+  const [view, setView] = useState("dashboard");
   const { user } = useAuth();
   const {
     conversations,
@@ -87,6 +91,8 @@ function Dashboard() {
       h(Sidebar, { activeView: view, onNavigate: setView }),
       view === "settings"
         ? h("div", { className: "workspace workspace-settings" }, h(SettingsPanel))
+        : view === "dashboard"
+        ? h("div", { className: "workspace workspace-dashboard" }, h(DashboardView))
         : h(
             "div",
             { className: "workspace-inbox" },

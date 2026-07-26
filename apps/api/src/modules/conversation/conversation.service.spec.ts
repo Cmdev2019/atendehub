@@ -209,6 +209,49 @@ describe('ConversationService — isolamento multi-tenant', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
     });
+
+    // B-32: motivo do encerramento (RESOLVED/UNRESOLVED), informado pelo
+    // atendente ao fechar — vira dado real pro dashboard/relatórios.
+    it('persiste o motivo do encerramento (resolution) ao fechar a conversa', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.OPEN,
+      });
+      mockPrisma.conversation.update.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.CLOSED,
+        companyId: companyA,
+        resolution: 'RESOLVED',
+      });
+
+      await service.updateStatus(companyA, 'conv-1', {
+        status: ConversationStatus.CLOSED,
+        resolution: 'RESOLVED' as any,
+      });
+
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: ConversationStatus.CLOSED, resolution: 'RESOLVED' }),
+        }),
+      );
+    });
+
+    it('não grava resolution em transições que não são para CLOSED', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.WAITING,
+      });
+      mockPrisma.conversation.update.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.OPEN,
+        companyId: companyA,
+      });
+
+      await service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.OPEN });
+
+      const call = mockPrisma.conversation.update.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('resolution');
+    });
   });
 
   describe('markAsRead', () => {

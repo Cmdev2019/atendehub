@@ -68,6 +68,8 @@ export const initialConversations = [
     lastMessageAt: '2026-07-21T08:55:00.000Z',
     lastMessagePreview: 'Sem problema. Vou localizar pelo CPF cadastrado.',
     createdAt: '2026-07-21T08:42:00.000Z',
+    closedAt: '2026-07-21T09:10:00.000Z',
+    resolution: 'RESOLVED',
     contact: { id: 'contact-4', name: 'Rafael Costa', phone: 'rafael.costa@email.com', avatarUrl: null },
     agent: { id: 'agent-3', name: 'Juliana', avatarUrl: null },
     department: { id: 'dept-3', name: 'Financeiro', color: '#f59e0b' },

@@ -1,7 +1,6 @@
 import { render, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createElement as h } from 'react';
 import { ChatPanel } from './ChatPanel';
-import { ConfirmProvider } from '../context/ConfirmContext';
 
 const baseConversation = {
   id: 'conv-1',
@@ -24,10 +23,8 @@ const baseProps = {
   loadingOlderMessages: false,
 };
 
-// ChatPanel usa useConfirm() (B-13, e agora também o botão Encerrar de
-// B-31) — precisa do ConfirmProvider como ancestral, senão o hook lança.
 function renderChatPanel(props = {}) {
-  return render(h(ConfirmProvider, null, h(ChatPanel, { ...baseProps, ...props })));
+  return render(h(ChatPanel, { ...baseProps, ...props }));
 }
 
 describe('ChatPanel — scroll infinito de mensagens antigas (B-4)', () => {
@@ -70,22 +67,35 @@ describe('ChatPanel — scroll infinito de mensagens antigas (B-4)', () => {
 });
 
 // B-31: botão "Encerrar" no cabeçalho da conversa — muda status pra CLOSED
-// via useConversations#closeConversation (fora do escopo deste componente,
-// só o disparo/confirmação são testados aqui).
-describe('ChatPanel — encerrar conversa (B-31)', () => {
-  it('mostra o botão Encerrar numa conversa aberta e chama onCloseConversation após confirmar', async () => {
+// via useConversations#closeConversation. B-32: o clique abre um diálogo que
+// pede o motivo do encerramento (resolvido/não resolvido) antes de confirmar
+// — vira dado real pro dashboard.
+describe('ChatPanel — encerrar conversa (B-31/B-32)', () => {
+  it('mostra o botão Encerrar numa conversa aberta e chama onCloseConversation com RESOLVED', async () => {
     const onCloseConversation = jest.fn();
     renderChatPanel({ onCloseConversation });
 
     fireEvent.click(screen.getByRole('button', { name: 'Encerrar', description: 'Encerrar esta conversa' }));
 
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Encerrar' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resolvido' }));
 
-    await waitFor(() => expect(onCloseConversation).toHaveBeenCalledWith('conv-1'));
+    await waitFor(() => expect(onCloseConversation).toHaveBeenCalledWith('conv-1', 'RESOLVED'));
   });
 
-  it('não chama onCloseConversation se o usuário cancelar a confirmação', async () => {
+  it('chama onCloseConversation com UNRESOLVED ao escolher "Não resolvido"', async () => {
+    const onCloseConversation = jest.fn();
+    renderChatPanel({ onCloseConversation });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Encerrar', description: 'Encerrar esta conversa' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Não resolvido' }));
+
+    await waitFor(() => expect(onCloseConversation).toHaveBeenCalledWith('conv-1', 'UNRESOLVED'));
+  });
+
+  it('não chama onCloseConversation se o usuário cancelar', async () => {
     const onCloseConversation = jest.fn();
     renderChatPanel({ onCloseConversation });
 

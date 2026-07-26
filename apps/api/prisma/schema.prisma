@@ -53,6 +53,14 @@ enum ConversationStatus {
   CLOSED       // encerrada (timeout ou finalização)
 }
 
+// B-32: motivo do encerramento, informado pelo atendente ao clicar em
+// "Encerrar" — sem isso não dava pra distinguir chamado resolvido de
+// abandonado/sem solução nos números do dashboard.
+enum ConversationResolution {
+  RESOLVED
+  UNRESOLVED
+}
+
 enum SenderType {
   AGENT
   CLIENT
@@ -302,6 +310,7 @@ model Conversation {
   slaBreachedAt        DateTime?          // quando o SLA foi violado
   resolvedAt           DateTime?
   closedAt             DateTime?
+  resolution           ConversationResolution? // motivo do encerramento (B-32) — null em conversas encerradas antes deste campo existir
   metadata             Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
