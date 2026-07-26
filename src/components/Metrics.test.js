@@ -30,4 +30,10 @@ describe('Metrics', () => {
   it('lida com stats undefined sem lançar erro', () => {
     expect(() => render(h(Metrics))).not.toThrow();
   });
+
+  // Pedido do usuário: remover os textos em <small> dos cards de indicadores.
+  it('não mostra textos em <small> nos cards (pedido do usuário)', () => {
+    const { container } = render(h(Metrics, { stats: { totalActive: 4 } }));
+    expect(container.querySelectorAll('.metric-card small')).toHaveLength(0);
+  });
 });

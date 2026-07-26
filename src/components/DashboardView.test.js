@@ -58,7 +58,9 @@ describe('DashboardView (B-32)', () => {
     expect(screen.getAllByText('Não atendidos').length).toBeGreaterThan(0);
   });
 
-  it('mostra "Resumo de conversas" e "Sem resposta" com dados em tempo real (B-32)', async () => {
+  // "Resumo de conversas" saiu do dashboard (pedido do usuário) — o mesmo
+  // retrato de agora já existe na Caixa de Entrada via Metrics.jsx.
+  it('não mostra mais "Resumo de conversas" — só "Sem resposta" com dado em tempo real (B-32)', async () => {
     mockApiClient.getDashboardSummary.mockResolvedValueOnce(baseSummary);
     mockApiClient.getConversationStats.mockResolvedValueOnce(baseStats);
 
@@ -66,14 +68,21 @@ describe('DashboardView (B-32)', () => {
 
     await waitFor(() => expect(screen.queryByText('Carregando indicadores…')).not.toBeInTheDocument());
 
-    expect(screen.getByText('Resumo de conversas (agora)')).toBeInTheDocument();
+    expect(screen.queryByText('Resumo de conversas (agora)')).not.toBeInTheDocument();
     expect(screen.getByText('Sem resposta do atendente (agora)')).toBeInTheDocument();
-    expect(screen.getByText('10')).toBeInTheDocument(); // totalActive ("Todas")
-    expect(screen.getAllByText('2')).toHaveLength(2);   // myOpen + unresolved (mesmo valor)
-    expect(screen.getByText('4')).toBeInTheDocument();  // waiting ("Não atendidas")
-    expect(screen.getByText('6')).toBeInTheDocument();  // open ("Em atendimento")
-    expect(screen.getAllByText('1')).toHaveLength(2);   // slaBreached + myAwaitingReply
-    expect(screen.getByText('3')).toBeInTheDocument();  // awaitingReply ("Todas" em sem resposta)
+    expect(screen.getByText('3')).toBeInTheDocument(); // awaitingReply ("Todas")
+    expect(screen.getByText('1')).toBeInTheDocument(); // myAwaitingReply ("Minhas")
+  });
+
+  it('não mostra mais os textos em <small> dos cards (pedido do usuário)', async () => {
+    mockApiClient.getDashboardSummary.mockResolvedValueOnce(baseSummary);
+    mockApiClient.getConversationStats.mockResolvedValueOnce(baseStats);
+
+    const { container } = render(h(DashboardView));
+
+    await waitFor(() => expect(screen.queryByText('Carregando indicadores…')).not.toBeInTheDocument());
+
+    expect(container.querySelectorAll('.metric-card small')).toHaveLength(0);
   });
 
   it('mostra "sem dados" no gráfico quando o período não tem nenhum encerramento', async () => {

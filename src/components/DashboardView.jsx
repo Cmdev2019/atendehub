@@ -4,11 +4,6 @@ import { apiClient } from '../services/api';
 import { Icon } from './icons';
 
 const emptyStats = {
-  totalActive: 0,
-  waiting: 0,
-  open: 0,
-  myOpen: 0,
-  slaBreached: 0,
   awaitingReply: 0,
   myAwaitingReply: 0,
 };
@@ -81,13 +76,12 @@ function StatRow({ label, cards }) {
     h(
       'div',
       { className: 'metrics', 'aria-label': label },
-      cards.map(({ label: cardLabel, value, note }) =>
+      cards.map(({ label: cardLabel, value }) =>
         h(
           'article',
           { key: cardLabel, className: 'metric-card' },
           h('span', null, cardLabel),
           h('strong', null, String(value)),
-          h('small', null, note),
         ),
       ),
     ),
@@ -125,31 +119,22 @@ export function DashboardView() {
 
   const { attendance, resolution } = donutData(summary);
 
-  // "Resumo de conversas" e "Sem resposta" (B-32) são um retrato de AGORA —
-  // GET /conversations/stats, sem filtro de período, igual ao que já
-  // alimenta Metrics.jsx na Caixa de Entrada. Os cards de "Atendidos x não
-  // atendidos"/"Resolvidas x não resolvidas" logo abaixo são outra coisa:
-  // agregados de um PERÍODO (GET /dashboard/summary, últimos 30 dias por
-  // padrão) — por isso vivem em seções separadas, cada uma com seu rótulo.
-  const summaryCards = [
-    { label: 'Todas', value: stats.totalActive, note: 'em WAITING ou OPEN' },
-    { label: 'Minhas', value: stats.myOpen, note: 'atribuídas a mim' },
-    { label: 'Não atendidas', value: stats.waiting, note: 'na fila, sem agente' },
-    { label: 'Em atendimento', value: stats.open, note: 'status: OPEN' },
-    { label: 'Vencidas (SLA)', value: stats.slaBreached, note: 'estouraram o prazo de espera' },
-  ];
-
+  // "Resumo de conversas" (Todas/Minhas/Não atendidas/Em atendimento/
+  // Vencidas por SLA) saiu do dashboard a pedido do usuário — o mesmo
+  // retrato de agora já existe na Caixa de Entrada via Metrics.jsx, então
+  // fica só lá, sem duplicar. "Sem resposta" continua aqui (sem
+  // equivalente na Caixa de Entrada).
   const awaitingReplyCards = [
-    { label: 'Todas', value: stats.awaitingReply, note: 'última mensagem é do cliente' },
-    { label: 'Minhas', value: stats.myAwaitingReply, note: 'atribuídas a mim' },
+    { label: 'Todas', value: stats.awaitingReply },
+    { label: 'Minhas', value: stats.myAwaitingReply },
   ];
 
   const periodCards = [
-    { label: 'Chamados no período', value: summary.totalConversations, note: 'total' },
-    { label: 'Atendidos', value: summary.attended, note: 'tiveram um agente' },
-    { label: 'Não atendidos', value: summary.notAttended, note: 'ainda sem agente' },
-    { label: 'Resolvidos', value: summary.resolved, note: 'de ' + summary.totalClosed + ' encerrados' },
-    { label: 'Não resolvidos', value: summary.unresolved, note: 'de ' + summary.totalClosed + ' encerrados' },
+    { label: 'Chamados no período', value: summary.totalConversations },
+    { label: 'Atendidos', value: summary.attended },
+    { label: 'Não atendidos', value: summary.notAttended },
+    { label: 'Resolvidos', value: summary.resolved },
+    { label: 'Não resolvidos', value: summary.unresolved },
   ];
 
   return h(
@@ -165,7 +150,6 @@ export function DashboardView() {
       : h(
           'div',
           null,
-          h(StatRow, { label: 'Resumo de conversas (agora)', cards: summaryCards }),
           h(StatRow, { label: 'Sem resposta do atendente (agora)', cards: awaitingReplyCards }),
           h(StatRow, { label: 'Últimos 30 dias', cards: periodCards }),
           h(

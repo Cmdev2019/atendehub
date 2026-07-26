@@ -561,11 +561,6 @@ button {
   color: var(--text);
 }
 
-.metric-card small {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
 .conversation-area {
   display: flex;
   flex-direction: column;

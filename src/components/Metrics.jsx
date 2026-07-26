@@ -7,11 +7,11 @@ import { createElement as h } from 'react';
 function toCards(stats) {
   const s = stats || {};
   return [
-    { label: 'Conversas ativas', value: String(s.totalActive ?? 0), note: `${s.waiting ?? 0} aguardando` },
-    { label: 'Em atendimento', value: String(s.open ?? 0), note: 'status: OPEN' },
-    { label: 'Aguardando resposta', value: String(s.waiting ?? 0), note: 'status: WAITING' },
-    { label: 'Resolvidas hoje', value: String(s.resolvedToday ?? 0), note: 'desde 00:00' },
-    { label: 'Mensagens não lidas', value: String(s.unreadCount ?? 0), note: `em ${s.unreadConversations ?? 0} conversa(s)` },
+    { label: 'Conversas ativas', value: String(s.totalActive ?? 0) },
+    { label: 'Em atendimento', value: String(s.open ?? 0) },
+    { label: 'Aguardando resposta', value: String(s.waiting ?? 0) },
+    { label: 'Resolvidas hoje', value: String(s.resolvedToday ?? 0) },
+    { label: 'Mensagens não lidas', value: String(s.unreadCount ?? 0) },
   ];
 }
 
@@ -21,13 +21,12 @@ export function Metrics({ stats }) {
   return h(
     'section',
     { className: 'metrics', 'aria-label': 'Indicadores rápidos' },
-    cards.map(({ label, value, note }) =>
+    cards.map(({ label, value }) =>
       h(
         'article',
         { key: label, className: 'metric-card' },
         h('span', null, label),
         h('strong', null, value),
-        h('small', null, note),
       ),
     ),
   );
