@@ -89,18 +89,16 @@ const emptyStats = {
   unreadConversations: 0,
 };
 
-export function useConversations() {
+// `currentUserId` (B-31) é usado só pra paginar a aba "Meus" no servidor
+// (`agentId` do filtro) — sem ele, essa aba simplesmente não pagina (fica
+// só com o que já veio no fetch inicial/eventos em tempo real).
+export function useConversations(currentUserId) {
   // Começar com mock data como fallback
   const [conversations, setConversations] = useState(initialUiConversations);
   const [activeId, setActiveId] = useState(initialUiConversations[0]?.id);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(emptyStats);
-  // Paginação da fila (B-4) — página 1 vem do fetch inicial; loadMoreConversations
-  // busca as seguintes conforme o usuário rola a lista.
-  const [queuePage, setQueuePage] = useState(1);
-  const [queueHasMore, setQueueHasMore] = useState(false);
-  const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   // true somente após carregar conversas REAIS — evita join/fetch com ids mock
   const [loadedFromApi, setLoadedFromApi] = useState(false);
   // Mensagem de erro do último envio que falhou (visível na UI)
@@ -132,8 +130,6 @@ export function useConversations() {
           setConversations(normalized);
           setActiveId(normalized[0]?.id);
           setLoadedFromApi(true);
-          setQueuePage(1);
-          setQueueHasMore((response.meta?.totalPages ?? 1) > 1);
         }
       } catch (error) {
         console.warn('⚠️ Erro ao buscar conversas:', error.message);
@@ -222,31 +218,84 @@ export function useConversations() {
     }
   }, [closedHasMore, closedLoadingMore, closedPage]);
 
-  // Scroll infinito da fila (B-4) — busca a próxima página e acrescenta ao
-  // final da lista já carregada (dedupe por id: novas conversas podem ter
-  // entrado no topo via socket entre uma página e outra).
-  const loadMoreConversations = useCallback(async () => {
+  // Scroll infinito por aba (B-31) — "Fila"/"Meus"/"Em atendimento" cada uma
+  // pagina sua PRÓPRIA busca filtrada no servidor (status/agentId), igual ao
+  // que "Encerrados" já fazia — antes as 3 dividiam uma única paginação sem
+  // filtro, então a quantidade carregada não batia com o que cada aba
+  // mostrava. Resultado de cada busca é fundido no mesmo array `conversations`
+  // (dedupe por id) — eventos em tempo real continuam simples, só a busca de
+  // mais itens é que agora sabe o filtro certo por aba.
+  const mergeConversations = useCallback((fresh) => {
+    if (!fresh.length) return;
+    setConversations((prev) => {
+      const existingIds = new Set(prev.map((c) => c.id));
+      const toAdd = fresh.filter((c) => !existingIds.has(c.id));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
+    });
+  }, []);
+
+  const [queuePage, setQueuePage] = useState(0);
+  const [queueHasMore, setQueueHasMore] = useState(true);
+  const [queueLoadingMore, setQueueLoadingMore] = useState(false);
+
+  const loadMoreQueueConversations = useCallback(async () => {
     if (!loadedFromApi || !queueHasMore || queueLoadingMore) return;
 
     setQueueLoadingMore(true);
     try {
       const nextPage = queuePage + 1;
-      const response = await apiClient.getConversations({ page: nextPage, limit: 20 });
-      const normalized = (response.data || []).map(toUiConversation);
-
-      setConversations((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const fresh = normalized.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...fresh];
-      });
+      const response = await apiClient.getConversations({ status: 'WAITING', page: nextPage, limit: 20 });
+      mergeConversations((response.data || []).map(toUiConversation));
       setQueuePage(nextPage);
       setQueueHasMore(nextPage < (response.meta?.totalPages ?? nextPage));
     } catch (error) {
-      console.warn('⚠️ Erro ao carregar mais conversas:', error.message);
+      console.warn('⚠️ Erro ao carregar mais conversas da fila:', error.message);
     } finally {
       setQueueLoadingMore(false);
     }
-  }, [loadedFromApi, queueHasMore, queueLoadingMore, queuePage]);
+  }, [loadedFromApi, queueHasMore, queueLoadingMore, queuePage, mergeConversations]);
+
+  const [minePage, setMinePage] = useState(0);
+  const [mineHasMore, setMineHasMore] = useState(true);
+  const [mineLoadingMore, setMineLoadingMore] = useState(false);
+
+  const loadMoreMineConversations = useCallback(async () => {
+    if (!loadedFromApi || !currentUserId || !mineHasMore || mineLoadingMore) return;
+
+    setMineLoadingMore(true);
+    try {
+      const nextPage = minePage + 1;
+      const response = await apiClient.getConversations({ status: 'OPEN', agentId: currentUserId, page: nextPage, limit: 20 });
+      mergeConversations((response.data || []).map(toUiConversation));
+      setMinePage(nextPage);
+      setMineHasMore(nextPage < (response.meta?.totalPages ?? nextPage));
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar mais conversas atribuídas a mim:', error.message);
+    } finally {
+      setMineLoadingMore(false);
+    }
+  }, [loadedFromApi, currentUserId, mineHasMore, mineLoadingMore, minePage, mergeConversations]);
+
+  const [openPage, setOpenPage] = useState(0);
+  const [openHasMore, setOpenHasMore] = useState(true);
+  const [openLoadingMore, setOpenLoadingMore] = useState(false);
+
+  const loadMoreOpenConversations = useCallback(async () => {
+    if (!loadedFromApi || !openHasMore || openLoadingMore) return;
+
+    setOpenLoadingMore(true);
+    try {
+      const nextPage = openPage + 1;
+      const response = await apiClient.getConversations({ status: 'OPEN', page: nextPage, limit: 20 });
+      mergeConversations((response.data || []).map(toUiConversation));
+      setOpenPage(nextPage);
+      setOpenHasMore(nextPage < (response.meta?.totalPages ?? nextPage));
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar mais conversas em atendimento:', error.message);
+    } finally {
+      setOpenLoadingMore(false);
+    }
+  }, [loadedFromApi, openHasMore, openLoadingMore, openPage, mergeConversations]);
 
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
@@ -763,9 +812,15 @@ export function useConversations() {
     sendError,
     loading,
     stats,
-    loadMoreConversations,
+    loadMoreQueueConversations,
     queueHasMore,
     queueLoadingMore,
+    loadMoreMineConversations,
+    mineHasMore,
+    mineLoadingMore,
+    loadMoreOpenConversations,
+    openHasMore,
+    openLoadingMore,
     loadMoreMessages,
     loadingOlderMessages,
     availableTags,

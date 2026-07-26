@@ -712,76 +712,114 @@ describe('useConversations Integration Tests', () => {
     expect(result.current.draft).toBe('');
   });
 
-  describe('scroll infinito da fila (B-4)', () => {
-    it('carrega a próxima página e acrescenta ao final da lista', async () => {
-      mockApiClient.getConversations.mockResolvedValueOnce({
-        data: [{ id: '1', contact: 'João', messages: [] }],
-        meta: { total: 2, page: 1, limit: 1, totalPages: 2 },
-      });
-
-      const { result } = renderHook(() => useConversations());
-
-      await waitFor(() => {
-        expect(result.current.conversations).toHaveLength(1);
-        expect(result.current.queueHasMore).toBe(true);
-      });
-
-      mockApiClient.getConversations.mockResolvedValueOnce({
-        data: [{ id: '2', contact: 'Maria', messages: [] }],
-        meta: { total: 2, page: 2, limit: 1, totalPages: 2 },
-      });
-
-      await act(async () => {
-        await result.current.loadMoreConversations();
-      });
-
-      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
-      expect(result.current.conversations).toHaveLength(2);
-      expect(result.current.conversations[1].id).toBe('2');
-      expect(result.current.queueHasMore).toBe(false);
-    });
-
-    it('não busca mais quando já está na última página', async () => {
+  // Cada etapa (B-31) pagina sua PRÓPRIA busca filtrada no servidor — antes
+  // as 3 abas ativas dividiam uma paginação genérica sem filtro, o que não
+  // batia com a quantidade real de conversas de cada etapa.
+  describe('scroll infinito por etapa de atendimento (B-31)', () => {
+    it('"Fila" (loadMoreQueueConversations) busca status=WAITING e acrescenta à lista', async () => {
       mockApiClient.getConversations.mockResolvedValueOnce({
         data: [{ id: '1', contact: 'João', messages: [] }],
         meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
       });
 
       const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
 
-      await waitFor(() => {
-        expect(result.current.queueHasMore).toBe(false);
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '2', contact: 'Maria', status: 'WAITING', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
       });
 
       await act(async () => {
-        await result.current.loadMoreConversations();
+        await result.current.loadMoreQueueConversations();
       });
 
-      // Só a chamada inicial — loadMore não dispara uma 2ª
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ status: 'WAITING', page: 1, limit: 20 });
+      expect(result.current.conversations).toHaveLength(2);
+      expect(result.current.queueHasMore).toBe(false);
+    });
+
+    it('"Meus" (loadMoreMineConversations) filtra por status=OPEN e agentId do usuário logado', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations('user-1'));
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '2', contact: 'Maria', status: 'OPEN', agentId: 'user-1', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      await act(async () => {
+        await result.current.loadMoreMineConversations();
+      });
+
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ status: 'OPEN', agentId: 'user-1', page: 1, limit: 20 });
+      expect(result.current.conversations).toHaveLength(2);
+      expect(result.current.mineHasMore).toBe(false);
+    });
+
+    it('"Meus" não busca sem currentUserId (evita filtrar por agentId indefinido)', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      await act(async () => {
+        await result.current.loadMoreMineConversations();
+      });
+
+      // Só a chamada inicial — sem currentUserId, loadMore não dispara
       expect(mockApiClient.getConversations).toHaveBeenCalledTimes(1);
+    });
+
+    it('"Em atendimento" (loadMoreOpenConversations) filtra por status=OPEN, sem restringir agente', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '2', contact: 'Maria', status: 'OPEN', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+
+      await act(async () => {
+        await result.current.loadMoreOpenConversations();
+      });
+
+      expect(mockApiClient.getConversations).toHaveBeenLastCalledWith({ status: 'OPEN', page: 1, limit: 20 });
+      expect(result.current.conversations).toHaveLength(2);
+      expect(result.current.openHasMore).toBe(false);
     });
 
     it('não duplica conversa que já chegou via socket antes da próxima página carregar', async () => {
       mockApiClient.getConversations.mockResolvedValueOnce({
         data: [{ id: '1', contact: 'João', messages: [] }],
-        meta: { total: 2, page: 1, limit: 1, totalPages: 2 },
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
       });
 
       const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
 
-      await waitFor(() => {
-        expect(result.current.queueHasMore).toBe(true);
-      });
-
-      // Página 2 retorna uma conversa que, por coincidência, já está na lista
-      // (ex.: chegou via conversation.created entre as duas chamadas)
+      // Página 1 do filtro retorna uma conversa que, por coincidência, já
+      // está na lista (ex.: chegou via conversation.created antes)
       mockApiClient.getConversations.mockResolvedValueOnce({
-        data: [{ id: '1', contact: 'João', messages: [] }],
-        meta: { total: 2, page: 2, limit: 1, totalPages: 2 },
+        data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
       });
 
       await act(async () => {
-        await result.current.loadMoreConversations();
+        await result.current.loadMoreQueueConversations();
       });
 
       expect(result.current.conversations).toHaveLength(1);

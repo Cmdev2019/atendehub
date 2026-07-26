@@ -62,7 +62,7 @@ describe('ConversationQueue — etapas de atendimento (B-31)', () => {
   it('aba "Meus" mostra só OPEN atribuído ao usuário logado', () => {
     render(h(ConversationQueue, { activeId: null, conversations: mixedConversations, onSelect: jest.fn(), currentUserId: 'user-1' }));
 
-    fireEvent.click(screen.getByRole('tab', { name: /Meus/ }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'mine' } });
 
     expect(screen.getByText('Minha conversa')).toBeInTheDocument();
     expect(screen.queryByText('Conversa de outro')).not.toBeInTheDocument();
@@ -72,7 +72,7 @@ describe('ConversationQueue — etapas de atendimento (B-31)', () => {
   it('aba "Em atendimento" mostra todas as OPEN, de qualquer atendente', () => {
     render(h(ConversationQueue, { activeId: null, conversations: mixedConversations, onSelect: jest.fn(), currentUserId: 'user-1' }));
 
-    fireEvent.click(screen.getByRole('tab', { name: /Em atendimento/ }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'open' } });
 
     expect(screen.getByText('Minha conversa')).toBeInTheDocument();
     expect(screen.getByText('Conversa de outro')).toBeInTheDocument();
@@ -86,9 +86,41 @@ describe('ConversationQueue — etapas de atendimento (B-31)', () => {
       currentUserId: 'user-1', closedConversations, onLoadClosed,
     }));
 
-    fireEvent.click(screen.getByRole('tab', { name: /Encerrados/ }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'closed' } });
 
     expect(onLoadClosed).toHaveBeenCalled();
     expect(screen.getByText('Já encerrada')).toBeInTheDocument();
+  });
+
+  it('seletor mostra a contagem de conversas de cada etapa', () => {
+    render(h(ConversationQueue, { activeId: null, conversations: mixedConversations, onSelect: jest.fn(), currentUserId: 'user-1' }));
+
+    const select = screen.getByLabelText('Etapa de atendimento');
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+
+    expect(options).toEqual([
+      'Fila de atendimento (1)',
+      'Meus (1)',
+      'Em atendimento (2)',
+      'Encerrados',
+    ]);
+  });
+
+  it('scroll infinito de cada aba usa seu próprio fetch/hasMore/loadingMore', () => {
+    const onLoadMoreMine = jest.fn();
+    render(h(ConversationQueue, {
+      activeId: null, conversations: mixedConversations, onSelect: jest.fn(), currentUserId: 'user-1',
+      onLoadMoreMine, mineHasMore: true, mineLoadingMore: false,
+    }));
+
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'mine' } });
+
+    const list = document.querySelector('.queue-list');
+    Object.defineProperty(list, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(list, 'scrollTop', { value: 400, configurable: true });
+    Object.defineProperty(list, 'clientHeight', { value: 200, configurable: true });
+    fireEvent.scroll(list);
+
+    expect(onLoadMoreMine).toHaveBeenCalled();
   });
 });

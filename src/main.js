@@ -43,9 +43,15 @@ function Dashboard() {
     sendMessage,
     sendError,
     stats,
-    loadMoreConversations,
+    loadMoreQueueConversations,
     queueHasMore,
     queueLoadingMore,
+    loadMoreMineConversations,
+    mineHasMore,
+    mineLoadingMore,
+    loadMoreOpenConversations,
+    openHasMore,
+    openLoadingMore,
     loadMoreMessages,
     loadingOlderMessages,
     availableTags,
@@ -58,7 +64,7 @@ function Dashboard() {
     loadMoreClosedConversations,
     attendConversation,
     closeConversation,
-  } = useConversations();
+  } = useConversations(user?.id);
 
   // Atender (B-31): assume a conversa da fila em nome do usuário logado e já
   // abre ela — atendimento começa direto, sem precisar de um segundo clique.
@@ -95,9 +101,15 @@ function Dashboard() {
                   activeId,
                   conversations,
                   onSelect: setActiveId,
-                  onLoadMore: loadMoreConversations,
+                  onLoadMoreQueue: loadMoreQueueConversations,
                   hasMore: queueHasMore,
                   loadingMore: queueLoadingMore,
+                  onLoadMoreMine: loadMoreMineConversations,
+                  mineHasMore,
+                  mineLoadingMore,
+                  onLoadMoreOpen: loadMoreOpenConversations,
+                  openHasMore,
+                  openLoadingMore,
                   closedConversations,
                   closedHasMore,
                   closedLoadingMore,

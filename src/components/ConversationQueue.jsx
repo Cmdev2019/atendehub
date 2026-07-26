@@ -5,12 +5,11 @@ import { Icon } from './icons';
 // carrega antes do usuário bater no fim de verdade, pra parecer contínuo.
 const LOAD_MORE_THRESHOLD_PX = 150;
 
-// Etapas de atendimento (B-31): o backend já tem o status certo pra cada
-// uma (WAITING/OPEN/CLOSED, ConversationStatus) — as abas só filtram a
-// lista já carregada. "Fila"/"Meus"/"Em atendimento" filtram client-side
-// (todas vêm do mesmo fetch da lista ativa, que já exclui CLOSED por
-// padrão); só "Encerrados" tem sua própria busca no servidor (CLOSED
-// nunca está na lista ativa) — ver useConversations.js.
+// Etapas de atendimento (B-31) — cada uma com sua PRÓPRIA busca paginada no
+// servidor (status/agentId certos por aba, ver useConversations.js), fundidas
+// no mesmo array `conversations` e filtradas aqui só pra exibição. Seletor
+// único (não abas em linha, B-31 correção): dropdown compacto que nunca
+// quebra o layout, independente do tamanho da janela.
 const TABS = [
   { id: 'queue', label: 'Fila de atendimento' },
   { id: 'mine', label: 'Meus' },
@@ -29,9 +28,15 @@ export function ConversationQueue({
   activeId,
   conversations,
   onSelect,
-  onLoadMore,
   hasMore,
   loadingMore,
+  onLoadMoreQueue,
+  mineHasMore,
+  mineLoadingMore,
+  onLoadMoreMine,
+  openHasMore,
+  openLoadingMore,
+  onLoadMoreOpen,
   closedConversations = [],
   closedHasMore = false,
   closedLoadingMore = false,
@@ -43,8 +48,7 @@ export function ConversationQueue({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
 
-  const isClosedTab = activeTab === 'closed';
-  const sourceList = isClosedTab ? closedConversations : conversations;
+  const sourceList = activeTab === 'closed' ? closedConversations : conversations;
 
   const tabList = sourceList.filter((conv) => {
     if (activeTab === 'queue') return conv.status === 'WAITING';
@@ -57,32 +61,39 @@ export function ConversationQueue({
     conv.contact.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  // Contagens rápidas nas abas (menos a de encerrados, que não tem custo
-  // baixo pra calcular sem já ter carregado a aba pelo menos uma vez).
+  // Contagens rápidas no seletor (menos a de encerrados, que só reflete o
+  // que já foi carregado, já que a aba busca sob demanda).
   const queueCount = conversations.filter((c) => c.status === 'WAITING').length;
   const mineCount = conversations.filter((c) => c.status === 'OPEN' && c.agentId === currentUserId).length;
   const openCount = conversations.filter((c) => c.status === 'OPEN').length;
   const tabCounts = { queue: queueCount, mine: mineCount, open: openCount, closed: closedConversations.length };
 
-  const handleTabClick = (tabId) => {
+  // Cada aba tem seu próprio par (fetch/estado) — mapa central evita repetir
+  // o mesmo if/else em handleScroll e no rodapé de "carregando mais".
+  const tabPaging = {
+    queue: { loadMore: onLoadMoreQueue, hasMore, loadingMore },
+    mine: { loadMore: onLoadMoreMine, hasMore: mineHasMore, loadingMore: mineLoadingMore },
+    open: { loadMore: onLoadMoreOpen, hasMore: openHasMore, loadingMore: openLoadingMore },
+    closed: { loadMore: onLoadMoreClosed, hasMore: closedHasMore, loadingMore: closedLoadingMore },
+  };
+
+  const handleTabChange = (event) => {
+    const tabId = event.target.value;
     setActiveTab(tabId);
     if (tabId === 'closed') onLoadClosed?.();
   };
 
-  // Scroll infinito (B-4/B-31) — "Encerrados" pagina a busca própria dela;
-  // as outras 3 abas recarregam a mesma lista ativa (só filtram diferente
-  // no cliente, ver comentário no topo do arquivo — não é 100% preciso por
-  // aba, mas mantém a paginação real existente sem duplicar o fetch).
+  // Scroll infinito (B-4/B-31) — cada aba busca a página seguinte do seu
+  // próprio filtro (ver tabPaging acima); a lista visível reflete exatamente
+  // a quantidade de conversas daquela etapa, não mais um total genérico.
   const handleScroll = (e) => {
     if (searchTerm) return;
-    const loadMoreFn = isClosedTab ? onLoadMoreClosed : onLoadMore;
-    const hasMoreFlag = isClosedTab ? closedHasMore : hasMore;
-    const loadingFlag = isClosedTab ? closedLoadingMore : loadingMore;
-    if (!loadMoreFn || !hasMoreFlag || loadingFlag) return;
+    const { loadMore, hasMore: tabHasMore, loadingMore: tabLoadingMore } = tabPaging[activeTab];
+    if (!loadMore || !tabHasMore || tabLoadingMore) return;
 
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     if (scrollHeight - scrollTop - clientHeight < LOAD_MORE_THRESHOLD_PX) {
-      loadMoreFn();
+      loadMore();
     }
   };
 
@@ -117,22 +128,24 @@ export function ConversationQueue({
     ),
     h(
       'div',
-      { className: 'queue-tabs', role: 'tablist', 'aria-label': 'Etapas de atendimento' },
-      TABS.map((tab) =>
-        h(
-          'button',
-          {
-            key: tab.id,
-            type: 'button',
-            role: 'tab',
-            className: `queue-tab${activeTab === tab.id ? ' active' : ''}`,
-            'aria-selected': activeTab === tab.id,
-            onClick: () => handleTabClick(tab.id),
-          },
-          h('span', { className: 'queue-tab-label' }, tab.label),
-          tabCounts[tab.id] > 0 && h('span', { className: 'queue-tab-count' }, tabCounts[tab.id]),
+      { className: 'queue-tab-select-wrap' },
+      h(
+        'select',
+        {
+          className: 'queue-tab-select',
+          'aria-label': 'Etapa de atendimento',
+          value: activeTab,
+          onChange: handleTabChange,
+        },
+        TABS.map((tab) =>
+          h(
+            'option',
+            { key: tab.id, value: tab.id },
+            tabCounts[tab.id] > 0 ? `${tab.label} (${tabCounts[tab.id]})` : tab.label,
+          ),
         ),
       ),
+      h(Icon, { name: 'chevron-down', size: 14, className: 'queue-tab-select-icon' }),
     ),
     h('input', {
       type: 'search',
@@ -200,9 +213,7 @@ export function ConversationQueue({
       ) : (
         h('div', { className: 'queue-empty' }, EMPTY_MESSAGES[activeTab])
       ),
-      loadingMore && !isClosedTab &&
-        h('div', { className: 'queue-loading-more' }, 'Carregando mais conversas…'),
-      closedLoadingMore && isClosedTab &&
+      tabPaging[activeTab].loadingMore &&
         h('div', { className: 'queue-loading-more' }, 'Carregando mais conversas…'),
     ),
   );
