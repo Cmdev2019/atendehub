@@ -64,7 +64,16 @@ docker compose up -d         # postgres, redis, minio, evolution
 3. **Evolution não resolve `localhost:9000`** — mídia enviada a ela vai em
    base64; a URL do MinIO é só para o painel.
 4. Em dev no Windows, API e front rodam em janelas próprias minimizadas
-   ("AtendeHub API" / "AtendeHub Front") para sobreviverem à sessão.
+   ("AtendeHub API" / "AtendeHub Front") para sobreviverem à sessão. **Sempre
+   subir via `scripts/dev-api.ps1`/`scripts/dev-front.ps1`** (nunca
+   `Start-Process ... npm run start:dev` direto) — os scripts matam qualquer
+   instância anterior antes de subir a nova. Sem isso, duas janelas da mesma
+   API acabam concorrendo pela porta 3001/3000: uma fica com o processo vivo
+   mas sem responder, e a API "cai" sem nenhum erro visível (B-37).
+   ```powershell
+   Start-Process powershell -ArgumentList '-NoExit','-File','C:\...\scripts\dev-api.ps1' -WindowStyle Minimized
+   Start-Process powershell -ArgumentList '-NoExit','-File','C:\...\scripts\dev-front.ps1' -WindowStyle Minimized
+   ```
 
 ## Convenções
 
