@@ -141,9 +141,11 @@ Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `department
 // Ordenação: lastMessageAt desc, createdAt desc
 ```
 
-### `GET /conversations/stats` (B-2) — métricas agregadas da empresa
-Contagens reais via `count`/`aggregate` do Prisma, **independentes de paginação**
-(diferente do `data[]` de `GET /conversations`, que só reflete a página carregada).
+### `GET /conversations/stats` (B-2, ampliado no B-32) — métricas agregadas da empresa
+Contagens reais via `count`/`aggregate`/`findMany` do Prisma, **independentes de
+paginação** (diferente do `data[]` de `GET /conversations`, que só reflete a
+página carregada). Snapshot em **tempo real** (não é filtrado por período —
+para métricas por período, ver `GET /dashboard/summary`).
 **Atenção de rota:** declarado antes de `GET /:id` no controller — "stats" seria
 interpretado como `:id` senão.
 ```jsonc
@@ -153,7 +155,11 @@ interpretado como `:id` senão.
   "open": 9,               // status = OPEN
   "resolvedToday": 3,      // resolvedAt >= hoje 00:00 (qualquer status)
   "unreadCount": 12,       // soma de unreadCount nas conversas ativas
-  "unreadConversations": 4 // quantas conversas ativas têm unreadCount > 0
+  "unreadConversations": 4, // quantas conversas ativas têm unreadCount > 0
+  "myOpen": 2,              // OPEN atribuídas ao requisitante (do JWT, não é parâmetro)
+  "slaBreached": 1,         // ativas com slaBreachedAt setado
+  "awaitingReply": 3,       // OPEN cuja ÚLTIMA mensagem é do cliente (ninguém respondeu ainda)
+  "myAwaitingReply": 1      // igual acima, só do requisitante
 }
 ```
 

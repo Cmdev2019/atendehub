@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus, Channel } from '@prisma/client';
+import { ConversationStatus, Channel, SenderType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
@@ -129,35 +129,67 @@ export class ConversationService {
     };
   }
 
-  // ── Métricas agregadas (B-2) — contagens reais da empresa inteira, ────────
-  // independentes de paginação (a listagem em findAll() só reflete a página
-  // carregada no front, que passou a paginar de verdade em B-4).
-  async getStats(companyId: string) {
+  // ── Métricas agregadas (B-2, ampliado no B-32) — contagens reais da ────────
+  // empresa inteira, independentes de paginação (a listagem em findAll() só
+  // reflete a página carregada no front). `userId` é sempre o requisitante
+  // (do JWT) — "minhas"/"minhas sem resposta" são sempre sobre quem chamou,
+  // nunca um parâmetro livre (evitaria vazar contagem de outro agente).
+  async getStats(companyId: string, userId: string) {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
     const activeWhere = { companyId, status: { not: ConversationStatus.CLOSED } };
 
-    const [totalActive, waiting, open, resolvedToday, unreadAgg, unreadConversations] =
-      await Promise.all([
-        this.prisma.conversation.count({ where: activeWhere }),
-        this.prisma.conversation.count({
-          where: { ...activeWhere, status: ConversationStatus.WAITING },
-        }),
-        this.prisma.conversation.count({
-          where: { ...activeWhere, status: ConversationStatus.OPEN },
-        }),
-        this.prisma.conversation.count({
-          where: { companyId, resolvedAt: { gte: startOfToday } },
-        }),
-        this.prisma.conversation.aggregate({
-          where: activeWhere,
-          _sum: { unreadCount: true },
-        }),
-        this.prisma.conversation.count({
-          where: { ...activeWhere, unreadCount: { gt: 0 } },
-        }),
-      ]);
+    const [
+      totalActive,
+      waiting,
+      open,
+      resolvedToday,
+      unreadAgg,
+      unreadConversations,
+      myOpen,
+      slaBreached,
+      openConversations,
+    ] = await Promise.all([
+      this.prisma.conversation.count({ where: activeWhere }),
+      this.prisma.conversation.count({
+        where: { ...activeWhere, status: ConversationStatus.WAITING },
+      }),
+      this.prisma.conversation.count({
+        where: { ...activeWhere, status: ConversationStatus.OPEN },
+      }),
+      this.prisma.conversation.count({
+        where: { companyId, resolvedAt: { gte: startOfToday } },
+      }),
+      this.prisma.conversation.aggregate({
+        where: activeWhere,
+        _sum: { unreadCount: true },
+      }),
+      this.prisma.conversation.count({
+        where: { ...activeWhere, unreadCount: { gt: 0 } },
+      }),
+      this.prisma.conversation.count({
+        where: { ...activeWhere, status: ConversationStatus.OPEN, agentId: userId },
+      }),
+      this.prisma.conversation.count({
+        where: { ...activeWhere, slaBreachedAt: { not: null } },
+      }),
+      // "Sem resposta" (B-32) não é um campo direto — precisa saber quem
+      // mandou a ÚLTIMA mensagem de cada conversa em atendimento. `take: 1`
+      // por conversa (via nested select) evita N+1 de verdade: o Postgres
+      // resolve isso como um lateral join, uma única query.
+      this.prisma.conversation.findMany({
+        where: { ...activeWhere, status: ConversationStatus.OPEN },
+        select: {
+          agentId: true,
+          messages: { take: 1, orderBy: { sentAt: 'desc' }, select: { senderType: true } },
+        },
+      }),
+    ]);
+
+    const awaitingReplyConversations = openConversations.filter(
+      (conv) => conv.messages[0]?.senderType === SenderType.CLIENT,
+    );
 
     return {
       totalActive,
@@ -166,6 +198,10 @@ export class ConversationService {
       resolvedToday,
       unreadCount: unreadAgg._sum.unreadCount ?? 0,
       unreadConversations,
+      myOpen,
+      slaBreached,
+      awaitingReply: awaitingReplyConversations.length,
+      myAwaitingReply: awaitingReplyConversations.filter((conv) => conv.agentId === userId).length,
     };
   }
 

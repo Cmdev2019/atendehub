@@ -3,6 +3,16 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recha
 import { apiClient } from '../services/api';
 import { Icon } from './icons';
 
+const emptyStats = {
+  totalActive: 0,
+  waiting: 0,
+  open: 0,
+  myOpen: 0,
+  slaBreached: 0,
+  awaitingReply: 0,
+  myAwaitingReply: 0,
+};
+
 const emptySummary = {
   totalConversations: 0,
   attended: 0,
@@ -60,7 +70,32 @@ function DonutCard({ title, data, colors }) {
   );
 }
 
+// Fileira de cards numéricos — mesmo padrão visual de Metrics.jsx, mas
+// dentro do dashboard (rótulo próprio por seção, já que aqui misturamos
+// dado em tempo real com dado por período, ver comentário mais abaixo).
+function StatRow({ label, cards }) {
+  return h(
+    'section',
+    { className: 'dashboard-stat-group' },
+    h('h3', { className: 'dashboard-stat-group-title' }, label),
+    h(
+      'div',
+      { className: 'metrics', 'aria-label': label },
+      cards.map(({ label: cardLabel, value, note }) =>
+        h(
+          'article',
+          { key: cardLabel, className: 'metric-card' },
+          h('span', null, cardLabel),
+          h('strong', null, String(value)),
+          h('small', null, note),
+        ),
+      ),
+    ),
+  );
+}
+
 export function DashboardView() {
+  const [stats, setStats] = useState(emptyStats);
   const [summary, setSummary] = useState(emptySummary);
   const [loading, setLoading] = useState(true);
 
@@ -69,8 +104,13 @@ export function DashboardView() {
 
     (async () => {
       try {
-        const result = await apiClient.getDashboardSummary();
-        if (!cancelled && result) setSummary(result);
+        const [statsResult, summaryResult] = await Promise.all([
+          apiClient.getConversationStats(),
+          apiClient.getDashboardSummary(),
+        ]);
+        if (cancelled) return;
+        if (statsResult) setStats(statsResult);
+        if (summaryResult) setSummary(summaryResult);
       } catch (error) {
         console.warn('⚠️ Erro ao buscar resumo do dashboard:', error.message);
       } finally {
@@ -85,7 +125,26 @@ export function DashboardView() {
 
   const { attendance, resolution } = donutData(summary);
 
-  const cards = [
+  // "Resumo de conversas" e "Sem resposta" (B-32) são um retrato de AGORA —
+  // GET /conversations/stats, sem filtro de período, igual ao que já
+  // alimenta Metrics.jsx na Caixa de Entrada. Os cards de "Atendidos x não
+  // atendidos"/"Resolvidas x não resolvidas" logo abaixo são outra coisa:
+  // agregados de um PERÍODO (GET /dashboard/summary, últimos 30 dias por
+  // padrão) — por isso vivem em seções separadas, cada uma com seu rótulo.
+  const summaryCards = [
+    { label: 'Todas', value: stats.totalActive, note: 'em WAITING ou OPEN' },
+    { label: 'Minhas', value: stats.myOpen, note: 'atribuídas a mim' },
+    { label: 'Não atendidas', value: stats.waiting, note: 'na fila, sem agente' },
+    { label: 'Em atendimento', value: stats.open, note: 'status: OPEN' },
+    { label: 'Vencidas (SLA)', value: stats.slaBreached, note: 'estouraram o prazo de espera' },
+  ];
+
+  const awaitingReplyCards = [
+    { label: 'Todas', value: stats.awaitingReply, note: 'última mensagem é do cliente' },
+    { label: 'Minhas', value: stats.myAwaitingReply, note: 'atribuídas a mim' },
+  ];
+
+  const periodCards = [
     { label: 'Chamados no período', value: summary.totalConversations, note: 'total' },
     { label: 'Atendidos', value: summary.attended, note: 'tiveram um agente' },
     { label: 'Não atendidos', value: summary.notAttended, note: 'ainda sem agente' },
@@ -100,26 +159,15 @@ export function DashboardView() {
       'div',
       { className: 'section-header' },
       h('h2', null, h(Icon, { name: 'chart', size: 16 }), ' Dashboard'),
-      h('span', { className: 'dashboard-period-note' }, 'Últimos 30 dias'),
     ),
     loading
       ? h('p', { className: 'dashboard-loading' }, 'Carregando indicadores…')
       : h(
           'div',
           null,
-          h(
-            'section',
-            { className: 'metrics', 'aria-label': 'Indicadores do dashboard' },
-            cards.map(({ label, value, note }) =>
-              h(
-                'article',
-                { key: label, className: 'metric-card' },
-                h('span', null, label),
-                h('strong', null, String(value)),
-                h('small', null, note),
-              ),
-            ),
-          ),
+          h(StatRow, { label: 'Resumo de conversas (agora)', cards: summaryCards }),
+          h(StatRow, { label: 'Sem resposta do atendente (agora)', cards: awaitingReplyCards }),
+          h(StatRow, { label: 'Últimos 30 dias', cards: periodCards }),
           h(
             'section',
             { className: 'dashboard-charts' },

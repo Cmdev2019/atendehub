@@ -39,7 +39,7 @@ export class ConversationController {
   // interpretado como o :id (rotas Express casam na ordem declarada).
   @Get('stats')
   getStats(@CurrentUser() user: AuthUserDto) {
-    return this.conversationService.getStats(user.companyId);
+    return this.conversationService.getStats(user.companyId, user.id);
   }
 
   // GET /api/v1/conversations/:id

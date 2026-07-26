@@ -321,23 +321,37 @@ export class MockApiClient {
     return conv;
   }
 
-  // Métricas agregadas (B-2) — mesmo shape do endpoint real, calculado sobre
-  // o store de conversas do mock (não paginado, como o real também não é).
+  // Métricas agregadas (B-2, ampliado no B-32) — mesmo shape do endpoint
+  // real, calculado sobre o store de conversas do mock (não paginado, como
+  // o real também não é). "Minhas"/"minhas sem resposta" usam o id embutido
+  // no token (mesmo truque de getCurrentUser/refreshToken) — nunca um
+  // parâmetro, igual ao backend real (sempre o requisitante autenticado).
   async getConversationStats() {
     await this.simulateDelay();
     const active = mockConversationsList.filter((c) => c.status !== 'CLOSED');
+    const open = active.filter((c) => c.status === 'OPEN');
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
+    const userId = this.token?.split('_')[1];
+
+    const awaitingReplyConvs = open.filter((c) => {
+      const last = c.messages?.[c.messages.length - 1];
+      return last?.senderType === 'CLIENT';
+    });
 
     return {
       totalActive: active.length,
       waiting: active.filter((c) => c.status === 'WAITING').length,
-      open: active.filter((c) => c.status === 'OPEN').length,
+      open: open.length,
       resolvedToday: mockConversationsList.filter(
         (c) => c.resolvedAt && new Date(c.resolvedAt) >= startOfToday,
       ).length,
       unreadCount: active.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
       unreadConversations: active.filter((c) => (c.unreadCount || 0) > 0).length,
+      myOpen: open.filter((c) => c.agent?.id === userId).length,
+      slaBreached: active.filter((c) => c.slaBreached || c.slaBreachedAt).length,
+      awaitingReply: awaitingReplyConvs.length,
+      myAwaitingReply: awaitingReplyConvs.filter((c) => c.agent?.id === userId).length,
     };
   }
 

@@ -2116,9 +2116,13 @@ button {
   min-width: 0;
 }
 
-.dashboard-period-note {
+.dashboard-stat-group-title {
+  margin: 4px 20px 0;
   font-size: 0.8rem;
+  font-weight: 600;
   color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .dashboard-loading {

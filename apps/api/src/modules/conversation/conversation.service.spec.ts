@@ -15,7 +15,7 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 // nunca ser contornado por um update direto com só { id }.
 const mockPrisma = {
   conversation: {
-    findMany: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
     count: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
@@ -77,19 +77,23 @@ describe('ConversationService — isolamento multi-tenant', () => {
     });
   });
 
-  describe('getStats (B-2)', () => {
+  describe('getStats (B-2, ampliado no B-32)', () => {
     it('sempre filtra por companyId em todas as contagens', async () => {
       mockPrisma.conversation.count.mockResolvedValue(0);
       mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: 0 } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
 
-      await service.getStats(companyA);
+      await service.getStats(companyA, requesterId);
 
-      // 4 chamadas de count (totalActive, waiting, open, resolvedToday) +
-      // 1 de count pra unreadConversations — todas precisam ter companyId
+      // 7 contagens (totalActive, waiting, open, resolvedToday,
+      // unreadConversations, myOpen, slaBreached) — todas com companyId
       mockPrisma.conversation.count.mock.calls.forEach((call) => {
         expect(call[0].where).toEqual(expect.objectContaining({ companyId: companyA }));
       });
       expect(mockPrisma.conversation.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ companyId: companyA }) }),
+      );
+      expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ companyId: companyA }) }),
       );
     });
@@ -100,10 +104,13 @@ describe('ConversationService — isolamento multi-tenant', () => {
         .mockResolvedValueOnce(4)  // waiting
         .mockResolvedValueOnce(6)  // open
         .mockResolvedValueOnce(2)  // resolvedToday
-        .mockResolvedValueOnce(3); // unreadConversations
+        .mockResolvedValueOnce(3)  // unreadConversations
+        .mockResolvedValueOnce(5)  // myOpen
+        .mockResolvedValueOnce(1); // slaBreached
       mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: 15 } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
 
-      const result = await service.getStats(companyA);
+      const result = await service.getStats(companyA, requesterId);
 
       expect(result).toEqual({
         totalActive: 10,
@@ -112,14 +119,19 @@ describe('ConversationService — isolamento multi-tenant', () => {
         resolvedToday: 2,
         unreadCount: 15,
         unreadConversations: 3,
+        myOpen: 5,
+        slaBreached: 1,
+        awaitingReply: 0,
+        myAwaitingReply: 0,
       });
     });
 
     it('nunca conta conversas CLOSED nos totais ativos', async () => {
       mockPrisma.conversation.count.mockResolvedValue(0);
       mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: null } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
 
-      await service.getStats(companyA);
+      await service.getStats(companyA, requesterId);
 
       const totalActiveCall = mockPrisma.conversation.count.mock.calls[0][0];
       expect(totalActiveCall.where.status).toEqual({ not: ConversationStatus.CLOSED });
@@ -128,10 +140,51 @@ describe('ConversationService — isolamento multi-tenant', () => {
     it('unreadCount vira 0 (não null) quando não há conversas', async () => {
       mockPrisma.conversation.count.mockResolvedValue(0);
       mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: null } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
 
-      const result = await service.getStats(companyA);
+      const result = await service.getStats(companyA, requesterId);
 
       expect(result.unreadCount).toBe(0);
+    });
+
+    it('myOpen filtra OPEN atribuído só ao requisitante (via JWT, não parâmetro livre)', async () => {
+      mockPrisma.conversation.count.mockResolvedValue(0);
+      mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: 0 } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+      await service.getStats(companyA, requesterId);
+
+      const myOpenCall = mockPrisma.conversation.count.mock.calls[5][0];
+      expect(myOpenCall.where).toEqual(
+        expect.objectContaining({ status: ConversationStatus.OPEN, agentId: requesterId }),
+      );
+    });
+
+    it('slaBreached conta conversas ativas com slaBreachedAt setado', async () => {
+      mockPrisma.conversation.count.mockResolvedValue(0);
+      mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: 0 } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+      await service.getStats(companyA, requesterId);
+
+      const slaCall = mockPrisma.conversation.count.mock.calls[6][0];
+      expect(slaCall.where.slaBreachedAt).toEqual({ not: null });
+    });
+
+    it('awaitingReply/myAwaitingReply contam só conversas OPEN cuja última mensagem é do cliente', async () => {
+      mockPrisma.conversation.count.mockResolvedValue(0);
+      mockPrisma.conversation.aggregate.mockResolvedValueOnce({ _sum: { unreadCount: 0 } });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([
+        { agentId: requesterId, messages: [{ senderType: 'CLIENT' }] }, // minha, aguardando
+        { agentId: 'outro-agente', messages: [{ senderType: 'CLIENT' }] }, // de outro, aguardando
+        { agentId: requesterId, messages: [{ senderType: 'AGENT' }] }, // minha, já respondida
+        { agentId: requesterId, messages: [] }, // sem mensagem nenhuma ainda
+      ]);
+
+      const result = await service.getStats(companyA, requesterId);
+
+      expect(result.awaitingReply).toBe(2);
+      expect(result.myAwaitingReply).toBe(1);
     });
   });
 
