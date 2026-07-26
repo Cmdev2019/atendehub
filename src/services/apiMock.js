@@ -104,6 +104,21 @@ const mockTags = [
 const mockConversationsList = initialConversations.map((c) => ({ ...c, messages: [...c.messages] }));
 let mockMessageSeq = 1000;
 
+// Contatos (B-34) — derivados dos mesmos contatos já referenciados nas
+// conversas fixture (nome/telefone/canal batem com o que aparece na fila),
+// enriquecidos com os campos que só a listagem de contatos usa (email,
+// isBlocked, createdAt, contagem de conversas).
+const mockContactsList = mockConversationsList.map((conv) => ({
+  id: conv.contact.id,
+  name: conv.contact.name,
+  phone: conv.contact.phone,
+  email: null,
+  avatarUrl: conv.contact.avatarUrl,
+  channel: conv.channel,
+  isBlocked: false,
+  createdAt: conv.createdAt,
+}));
+
 // Notificações (B-8) — mesmos 2 tipos que o backend real cria (B1-3):
 // SLA estourado (fan-out pra SUPERVISOR+) e conversa atribuída. Seedadas
 // para o admin (user-1) pra o sino já nascer com algo pra mostrar em demo.
@@ -162,6 +177,15 @@ const withTagCount = (tag) => ({
   _count: {
     conversations: mockConversationsList.filter((c) => c.tags?.some((t) => t.id === tag.id)).length,
     contacts: 0,
+  },
+});
+
+// _count real conta via relação Prisma no findAll de contatos; no mock,
+// conta quantas conversas em memória apontam pro contato.
+const withContactCount = (contact) => ({
+  ...contact,
+  _count: {
+    conversations: mockConversationsList.filter((c) => c.contact.id === contact.id).length,
   },
 });
 
@@ -615,6 +639,71 @@ export class MockApiClient {
     };
     if (conv) conv.messages.push(message);
     return message;
+  }
+
+  // ── CONTACTS (B-34) ──────────────────────────────────────────────────────
+  // Busca/paginação e regra de conflito de telefone iguais ao backend real
+  // (contact.service.ts#findAll/create).
+  async getContacts({ search, channel, isBlocked, page = 1, limit = 20 } = {}) {
+    await this.simulateDelay();
+    let list = mockContactsList;
+    if (search) {
+      const term = search.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.name.toLowerCase().includes(term) ||
+          c.phone.toLowerCase().includes(term) ||
+          (c.email || '').toLowerCase().includes(term),
+      );
+    }
+    if (channel) list = list.filter((c) => c.channel === channel);
+    if (isBlocked !== undefined) list = list.filter((c) => c.isBlocked === isBlocked);
+    list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+
+    const total = list.length;
+    const start = (page - 1) * limit;
+    const data = list.slice(start, start + limit).map(withContactCount);
+    return { data, meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  async getContact(id) {
+    await this.simulateDelay();
+    const contact = mockContactsList.find((c) => c.id === id);
+    if (!contact) throw { status: 404, message: 'Contato não encontrado' };
+    return { ...withContactCount(contact), tags: [], conversations: [] };
+  }
+
+  async createContact(data) {
+    await this.simulateDelay();
+    if (mockContactsList.some((c) => c.phone === data.phone)) {
+      throw { status: 409, message: 'Já existe um contato com este número de telefone' };
+    }
+    const contact = {
+      id: nextId('contact'),
+      name: data.name,
+      phone: data.phone,
+      email: data.email || null,
+      avatarUrl: data.avatarUrl || null,
+      channel: data.channel || 'WHATSAPP',
+      isBlocked: false,
+      createdAt: new Date().toISOString(),
+    };
+    mockContactsList.push(contact);
+    return withContactCount(contact);
+  }
+
+  // `phone`/`channel` não são aceitos aqui — mesma regra do backend real
+  // (UpdateContactDto omite os dois de propósito, não dá pra mudar depois
+  // de criado).
+  async updateContact(id, data) {
+    await this.simulateDelay();
+    const contact = mockContactsList.find((c) => c.id === id);
+    if (!contact) throw { status: 404, message: 'Contato não encontrado' };
+    if (data.name !== undefined) contact.name = data.name;
+    if (data.email !== undefined) contact.email = data.email || null;
+    if (data.avatarUrl !== undefined) contact.avatarUrl = data.avatarUrl;
+    if (data.isBlocked !== undefined) contact.isBlocked = data.isBlocked;
+    return withContactCount(contact);
   }
 
   // ── USERS ──────────────────────────────────────────────────────────────────

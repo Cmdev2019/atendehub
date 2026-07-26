@@ -315,6 +315,22 @@ class ApiClient {
       });
     }
 
+    if (resource === 'contacts') {
+      if (!id && method === 'GET') {
+        const params = new URLSearchParams(endpoint.split('?')[1] || '');
+        return mockApiClient.getContacts({
+          search: params.get('search') || undefined,
+          channel: params.get('channel') || undefined,
+          isBlocked: params.has('isBlocked') ? params.get('isBlocked') === 'true' : undefined,
+          page: params.get('page') ? Number(params.get('page')) : undefined,
+          limit: params.get('limit') ? Number(params.get('limit')) : undefined,
+        });
+      }
+      if (!id && method === 'POST') return mockApiClient.createContact(body);
+      if (id && method === 'PATCH') return mockApiClient.updateContact(id, body);
+      if (id && method === 'GET') return mockApiClient.getContact(id);
+    }
+
     if (resource === 'users') {
       if (!id && method === 'GET') return mockApiClient.getUsers();
       if (!id && method === 'POST') return mockApiClient.createUser(body);
@@ -588,9 +604,33 @@ class ApiClient {
     return { blob, filename: match ? match[1] : `relatorio.${format}` };
   }
 
-  // CONTACTS
-  async getContacts() {
-    return this.request('/contacts', { method: 'GET' });
+  // CONTACTS (B-34)
+  async getContacts({ search, channel, isBlocked, page = 1, limit = 20 } = {}) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (search) params.set('search', search);
+    if (channel) params.set('channel', channel);
+    if (isBlocked !== undefined) params.set('isBlocked', String(isBlocked));
+    return this.request(`/contacts?${params}`, { method: 'GET' });
+  }
+
+  async getContact(id) {
+    return this.request(`/contacts/${id}`, { method: 'GET' });
+  }
+
+  async createContact(data) {
+    return this.request('/contacts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // `phone`/`channel` não são aceitos aqui — o backend recusa mudar depois
+  // de criado (UpdateContactDto omite os dois de propósito).
+  async updateContact(id, data) {
+    return this.request(`/contacts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   }
 
   // USERS

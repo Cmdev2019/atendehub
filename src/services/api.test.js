@@ -204,6 +204,79 @@ describe('Mock API Client', () => {
     });
   });
 
+  // B-34: contatos — listagem paginada/busca, cadastro e edição.
+  describe('getContacts / getContact / createContact / updateContact', () => {
+    it('lista contatos paginados, ordenados por nome', async () => {
+      const result = await mockApiClient.getContacts({ page: 1, limit: 2 });
+
+      expect(result.meta).toEqual(expect.objectContaining({ page: 1, limit: 2 }));
+      expect(result.data).toHaveLength(2);
+      const names = result.data.map((c) => c.name);
+      expect([...names].sort()).toEqual(names);
+    });
+
+    it('busca por nome/telefone/e-mail (case-insensitive)', async () => {
+      const result = await mockApiClient.getContacts({ search: 'marina' });
+      expect(result.data.some((c) => c.name === 'Marina Alves')).toBe(true);
+      expect(result.data.every((c) => c.name.toLowerCase().includes('marina'))).toBe(true);
+    });
+
+    it('getContact retorna o contato pelo id, com tags/conversations no shape', async () => {
+      const list = await mockApiClient.getContacts();
+      const first = list.data[0];
+
+      const contact = await mockApiClient.getContact(first.id);
+
+      expect(contact.id).toBe(first.id);
+      expect(contact).toHaveProperty('tags');
+      expect(contact).toHaveProperty('conversations');
+    });
+
+    it('getContact lança 404 pra id inexistente', async () => {
+      await expect(mockApiClient.getContact('nao-existe')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('createContact cria e devolve o contato com _count.conversations', async () => {
+      const created = await mockApiClient.createContact({
+        name: 'Novo Contato',
+        phone: '5511900000000',
+        channel: 'WHATSAPP',
+      });
+
+      expect(created.name).toBe('Novo Contato');
+      expect(created._count.conversations).toBe(0);
+
+      const list = await mockApiClient.getContacts({ search: 'Novo Contato' });
+      expect(list.data.some((c) => c.id === created.id)).toBe(true);
+    });
+
+    it('createContact rejeita telefone já usado por outro contato (409)', async () => {
+      const list = await mockApiClient.getContacts();
+      const existingPhone = list.data[0].phone;
+
+      await expect(
+        mockApiClient.createContact({ name: 'Duplicado', phone: existingPhone, channel: 'WHATSAPP' }),
+      ).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('updateContact muda nome/e-mail mas ignora phone/channel enviados por engano', async () => {
+      const list = await mockApiClient.getContacts();
+      const target = list.data[0];
+      const originalPhone = target.phone;
+
+      const updated = await mockApiClient.updateContact(target.id, {
+        name: 'Nome Atualizado',
+        email: 'novo@email.com',
+        phone: '0000000000',
+        channel: 'EMAIL',
+      });
+
+      expect(updated.name).toBe('Nome Atualizado');
+      expect(updated.email).toBe('novo@email.com');
+      expect(updated.phone).toBe(originalPhone);
+    });
+  });
+
   // B-33: relatórios (base de atendimento, por tipo/tag, por atendente) e
   // exportação (CSV no mock — PDF exige o backend real com PDFKit).
   describe('getReport / downloadReport', () => {

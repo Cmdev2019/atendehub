@@ -91,3 +91,18 @@ describe('Sidebar — Relatórios navegável (B-33)', () => {
     expect(onNavigate).toHaveBeenCalledWith('reports');
   });
 });
+
+// B-34: "Contatos" ganhou tela própria e deixou de ser "em breve".
+describe('Sidebar — Contatos navegável (B-34)', () => {
+  it('Contatos não está mais desabilitado e chama onNavigate ao clicar', () => {
+    const onNavigate = jest.fn();
+    render(h(ConfirmProvider, null, h(Sidebar, { activeView: 'inbox', onNavigate })));
+
+    const contactsButton = screen.getByTitle('Contatos');
+    expect(contactsButton).not.toBeDisabled();
+
+    fireEvent.click(contactsButton);
+
+    expect(onNavigate).toHaveBeenCalledWith('contacts');
+  });
+});
