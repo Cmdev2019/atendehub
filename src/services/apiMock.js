@@ -87,6 +87,21 @@ const mockQueues = [
   },
 ];
 
+// Auto-atendimento (B-35) — nasce desativado e sem opção nenhuma, igual ao
+// comportamento real do backend pra uma empresa que nunca configurou nada
+// (AutoAttendanceService#getFlow devolve um registro "vazio", não 404).
+let mockAutoAttendanceFlow = {
+  id: null,
+  isActive: false,
+  greetingMessage: null,
+  businessHours: null,
+  outOfHoursMessage: null,
+  inactivityTimeoutSecs: null,
+  inactivityMessage: null,
+  closingMessage: null,
+};
+const mockAutoAttendanceOptions = [];
+
 // Catálogo de tags da empresa (B-27) — mesmos ids/nomes/cores já embutidos
 // nas conversas de `initialConversations`, pra o catálogo bater com o que
 // já aparece atribuído nas fixtures de demonstração.
@@ -164,6 +179,16 @@ const stripCount = (dept) => ({
   ...dept,
   _count: { users: dept.users.length },
 });
+
+const withAutoAttendanceOptionRelations = (option) => {
+  const dept = mockDepartments.find((d) => d.id === option.departmentId);
+  const queue = mockQueues.find((q) => q.id === option.queueId);
+  return {
+    ...option,
+    department: dept ? { id: dept.id, name: dept.name } : null,
+    queue: queue ? { id: queue.id, name: queue.name } : null,
+  };
+};
 
 const withQueueRelations = (queue) => {
   const dept = mockDepartments.find((d) => d.id === queue.departmentId);
@@ -997,6 +1022,77 @@ export class MockApiClient {
     if (idx === -1) throw { status: 404, message: 'Fila não encontrada' };
     mockQueues.splice(idx, 1);
     return { success: true };
+  }
+
+  // ── AUTO-ATENDIMENTO (B-35) ──────────────────────────────────────────────
+  async getAutoAttendanceFlow() {
+    await this.simulateDelay();
+    return {
+      ...mockAutoAttendanceFlow,
+      menuOptions: [...mockAutoAttendanceOptions]
+        .sort((a, b) => a.order - b.order)
+        .map(withAutoAttendanceOptionRelations),
+    };
+  }
+
+  async updateAutoAttendanceFlow(data) {
+    await this.simulateDelay();
+    mockAutoAttendanceFlow = {
+      ...mockAutoAttendanceFlow,
+      ...data,
+      id: mockAutoAttendanceFlow.id || nextId('flow'),
+    };
+    return { ...mockAutoAttendanceFlow };
+  }
+
+  async getAutoAttendanceMenuOptions() {
+    await this.simulateDelay();
+    return [...mockAutoAttendanceOptions].sort((a, b) => a.order - b.order).map(withAutoAttendanceOptionRelations);
+  }
+
+  async createAutoAttendanceMenuOption(data) {
+    await this.simulateDelay();
+    if (data.action === 'ROUTE_TO_DEPARTMENT' && !mockDepartments.some((d) => d.id === data.departmentId)) {
+      throw { status: 400, message: 'Departamento não encontrado' };
+    }
+    if (data.action === 'ROUTE_TO_QUEUE' && !mockQueues.some((q) => q.id === data.queueId)) {
+      throw { status: 400, message: 'Fila não encontrada' };
+    }
+    const option = {
+      id: nextId('auto-option'),
+      order: data.order ?? mockAutoAttendanceOptions.length + 1,
+      label: data.label,
+      action: data.action,
+      departmentId: data.departmentId || null,
+      queueId: data.queueId || null,
+    };
+    mockAutoAttendanceOptions.push(option);
+    return withAutoAttendanceOptionRelations(option);
+  }
+
+  async updateAutoAttendanceMenuOption(id, data) {
+    await this.simulateDelay();
+    const option = mockAutoAttendanceOptions.find((o) => o.id === id);
+    if (!option) throw { status: 404, message: 'Opção de menu não encontrada' };
+    Object.assign(option, data);
+    return withAutoAttendanceOptionRelations(option);
+  }
+
+  async removeAutoAttendanceMenuOption(id) {
+    await this.simulateDelay();
+    const idx = mockAutoAttendanceOptions.findIndex((o) => o.id === id);
+    if (idx === -1) throw { status: 404, message: 'Opção de menu não encontrada' };
+    mockAutoAttendanceOptions.splice(idx, 1);
+    return { success: true };
+  }
+
+  async reorderAutoAttendanceMenuOptions(orderedIds) {
+    await this.simulateDelay();
+    orderedIds.forEach((id, index) => {
+      const option = mockAutoAttendanceOptions.find((o) => o.id === id);
+      if (option) option.order = index + 1;
+    });
+    return [...mockAutoAttendanceOptions].sort((a, b) => a.order - b.order).map(withAutoAttendanceOptionRelations);
   }
 
   // ── TAGS (B-27) ──────────────────────────────────────────────────────────

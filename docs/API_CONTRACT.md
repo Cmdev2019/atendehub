@@ -43,6 +43,7 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 | `MessageType` | `TEXT` · `IMAGE` · `VIDEO` · `AUDIO` · `DOCUMENT` · `STICKER` · `LOCATION` · `CONTACT_CARD` · `TEMPLATE` · `REACTION` · `DELETED` |
 | `MessageStatus` | `PENDING` · `SENT` · `DELIVERED` · `READ` · `FAILED` |
 | `QueueStrategy` | `ROUND_ROBIN` · `MANUAL` · `LEAST_BUSY` |
+| `AutoAttendanceAction` | `ROUTE_TO_DEPARTMENT` · `ROUTE_TO_QUEUE` · `END_CONVERSATION` |
 | `Plan` | `FREE` · `STARTER` · `PROFESSIONAL` · `ENTERPRISE` |
 
 ---
@@ -442,6 +443,54 @@ conversa aberta, se a `WhatsAppConnection` tiver `departmentId` e existir uma
 `Queue` ativa para esse departamento, a conversa nasce com `departmentId` e
 `queueId` já preenchidos (usada pela Fase B2 para o SLA). Sem fila ativa no
 departamento, a conversa nasce como hoje (`departmentId`/`queueId` nulos).
+
+---
+
+## Auto-atendimento — `/auto-attendance` (B-35)
+
+Config única por empresa (1:1) — todas as rotas requerem `ADMIN+` pra escrita,
+autenticado (qualquer role) pra leitura. Estado de "onde o contato está no
+menu agora" é efêmero (Redis, TTL 24h), não fica no banco.
+
+### `GET /auto-attendance`
+Devolve a config da empresa. Se a empresa nunca configurou nada, devolve um
+registro "vazio" desativado (`id: null, isActive: false, ...`) em vez de 404
+— a tela de Configurações sempre tem algo pra mostrar/editar.
+
+Shape: `{ id, isActive, greetingMessage, businessHours, outOfHoursMessage, inactivityTimeoutSecs, inactivityMessage, closingMessage, createdAt, updatedAt, menuOptions: [...] }`
+
+`businessHours` é um objeto livre por dia da semana (chaves `mon`..`sun`,
+inglês, 3 letras): `{ mon: [{start:"09:00",end:"18:00"}], ... }`. Dia ausente
+da chave = fechado o dia inteiro. `null`/ausente = sem restrição de horário
+(roda o dia inteiro).
+
+### `PATCH /auto-attendance` — requer `ADMIN`
+Body: todos os campos opcionais — `{ isActive?, greetingMessage?, businessHours?, outOfHoursMessage?, inactivityTimeoutSecs? (≥30), inactivityMessage?, closingMessage? }`.
+Faz upsert (cria o registro na 1ª chamada). Mandar `businessHours: null`
+explicitamente limpa a restrição de horário.
+
+### `GET /auto-attendance/options` · `POST /auto-attendance/options` — requer `ADMIN` pra escrita
+Item: `{ id, order, label, action (ROUTE_TO_DEPARTMENT|ROUTE_TO_QUEUE|END_CONVERSATION), departmentId, queueId, department: {id,name}|null, queue: {id,name}|null }`.
+`POST` body: `{ order, label (≤120), action, departmentId? (obrigatório se ROUTE_TO_DEPARTMENT), queueId? (obrigatório se ROUTE_TO_QUEUE) }` — `departmentId`/`queueId` precisam pertencer à mesma empresa.
+
+### `PATCH /auto-attendance/options/:id` · `DELETE /auto-attendance/options/:id` — requer `ADMIN`
+Mesmos campos do `POST`, todos opcionais. `DELETE` devolve `{ success: true }`.
+
+### `PATCH /auto-attendance/options/reorder` — requer `ADMIN`
+Body: `{ orderedIds: string[] }` — precisa conter exatamente o conjunto de
+ids já existentes no flow (400 se faltar/sobrar algum). Reatribui `order`
+sequencial (1, 2, 3...) na ordem da lista.
+
+**Execução (webhook da Evolution):** numa conversa nova, se `isActive` e
+dentro do horário configurado, envia a saudação (`Queue.greetingMsg` da fila
+resolvida tem prioridade sobre `greetingMessage` da empresa) e, se houver
+opções de menu, o menu numerado — o contato responde com o número ou o texto
+exato de uma opção. `ROUTE_TO_DEPARTMENT`/`ROUTE_TO_QUEUE` reposicionam
+`departmentId`/`queueId` da conversa (sem atribuir agente); `END_CONVERSATION`
+encerra como `resolution: UNRESOLVED`. Sem resposta dentro de
+`inactivityTimeoutSecs`, envia `inactivityMessage` + `closingMessage` e
+encerra automaticamente do mesmo jeito. Fora do horário configurado, envia só
+`outOfHoursMessage` (sem saudação/menu).
 
 ---
 

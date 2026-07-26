@@ -9,6 +9,7 @@ import { ConversationModule } from '../conversation/conversation.module';
 import { MessageModule } from '../message/message.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { EventsModule } from '../events/events.module';
+import { AutoAttendanceModule } from '../auto-attendance/auto-attendance.module';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 
 @Module({
@@ -21,6 +22,7 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
     MessageModule,
     WhatsappModule,
     EventsModule,
+    AutoAttendanceModule,
   ],
   controllers: [WebhookController],
   providers: [WebhookService, MediaDownloadService, WebhookProcessor],

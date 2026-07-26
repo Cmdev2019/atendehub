@@ -472,14 +472,67 @@ export class ConversationService {
     });
   }
 
+  // ── Roteamento pelo menu de auto-atendimento (B-35) ───────────────────────
+  // Deliberadamente separado de assign(): não atribui agente nem gera
+  // auditoria/notificação "conversa atribuída a você" (ninguém foi atribuído
+  // ainda, só encaminhada) — só reposiciona departamento/fila e realinha o
+  // prazo de SLA para o da fila de destino.
+  async routeAutoAttendance(
+    companyId: string,
+    conversationId: string,
+    target: { departmentId?: string; queueId?: string },
+  ) {
+    let queue: { id: string; departmentId: string | null; maxWaitSecs: number } | null = null;
+
+    if (target.queueId) {
+      queue = await this.prisma.queue.findFirst({
+        where: { id: target.queueId, companyId },
+        select: { id: true, departmentId: true, maxWaitSecs: true },
+      });
+    } else if (target.departmentId) {
+      queue = await this.prisma.queue.findFirst({
+        where: { companyId, departmentId: target.departmentId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, departmentId: true, maxWaitSecs: true },
+      });
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        departmentId: target.departmentId ?? queue?.departmentId ?? undefined,
+        queueId: queue?.id ?? undefined,
+      },
+    });
+
+    if (queue) {
+      await this.scheduleSlaCheck(conversationId, companyId, queue.maxWaitSecs);
+    }
+
+    this.eventsService.emitConversationUpdated({
+      companyId,
+      conversationId,
+      changes: { departmentId: target.departmentId ?? queue?.departmentId ?? null, queueId: queue?.id ?? null },
+    });
+  }
+
   // ── Upsert via webhook (cria ou retorna conversa existente) ───────────────
+  // Devolve `isNew` explícito (B-35) — antes, quem chamava tinha que adivinhar
+  // se a conversa acabou de nascer comparando `createdAt` contra um limiar de
+  // 2s (heurística frágil, sujeita a falso negativo sob latência). O
+  // auto-atendimento só pode disparar a saudação/menu numa conversa
+  // realmente nova, então essa ambiguidade deixou de ser aceitável.
   async upsertFromWebhook(
     companyId: string,
     contactId: string,
     whatsappConnectionId: string,
     channel: Channel = Channel.WHATSAPP,
     departmentId?: string | null,
-  ) {
+  ): Promise<{
+    conversation: Awaited<ReturnType<typeof this.prisma.conversation.create>>;
+    isNew: boolean;
+    queue: { id: string; maxWaitSecs: number; greetingMsg: string | null } | null;
+  }> {
     // Verifica se já existe conversa aberta para este contato — SEM filtrar
     // por whatsappConnectionId: a conversa é com o CONTATO, não com uma
     // sessão específica da conexão. Filtrar também pela conexão fazia toda
@@ -500,23 +553,24 @@ export class ConversationService {
       // Reaponta para a conexão atual caso a sessão tenha sido reparada
       // (senão o envio falha com "conexão não associada" numa conversa viva)
       if (existing.whatsappConnectionId !== whatsappConnectionId) {
-        return this.prisma.conversation.update({
+        const updated = await this.prisma.conversation.update({
           where: { id: existing.id },
           data: { whatsappConnectionId },
         });
+        return { conversation: updated, isNew: false, queue: null };
       }
-      return existing;
+      return { conversation: existing, isNew: false, queue: null };
     }
 
     // Resolve a fila ativa do departamento da conexão (B1-2): sem isso a
     // conversa nasce sempre com queueId null e o SLA (Fase B2) nunca tem
     // maxWaitSecs real para usar.
-    let queue: { id: string; maxWaitSecs: number } | null = null;
+    let queue: { id: string; maxWaitSecs: number; greetingMsg: string | null } | null = null;
     if (departmentId) {
       queue = await this.prisma.queue.findFirst({
         where: { companyId, departmentId, isActive: true },
         orderBy: { createdAt: 'asc' },
-        select: { id: true, maxWaitSecs: true },
+        select: { id: true, maxWaitSecs: true, greetingMsg: true },
       });
     }
 
@@ -539,7 +593,7 @@ export class ConversationService {
       await this.scheduleSlaCheck(created.id, companyId, queue.maxWaitSecs);
     }
 
-    return created;
+    return { conversation: created, isNew: true, queue };
   }
 
   // ── Atualizar preview e timestamp da última mensagem ──────────────────────

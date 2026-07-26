@@ -97,6 +97,14 @@ enum QueueStrategy {
   LEAST_BUSY   // vai para quem tem menos conversas abertas
 }
 
+// B-35: o que uma opção do menu de auto-atendimento faz quando o contato
+// responde com o número/rótulo dela.
+enum AutoAttendanceAction {
+  ROUTE_TO_DEPARTMENT // encaminha para um departamento (fila ativa dele é resolvida na hora)
+  ROUTE_TO_QUEUE      // encaminha direto para uma fila específica
+  END_CONVERSATION    // encerra sem atendente (resolution=UNRESOLVED)
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // EMPRESA (root do multi-tenant)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -124,6 +132,7 @@ model Company {
   webhooks            Webhook[]
   auditLogs           AuditLog[]
   notifications       Notification[]
+  autoAttendanceFlow  AutoAttendanceFlow?
 
   @@map("companies")
 }
@@ -198,6 +207,7 @@ model Department {
   queues              Queue[]
   whatsappConnections WhatsAppConnection[]
   conversations       Conversation[]
+  autoAttendanceMenuOptions AutoAttendanceMenuOption[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -223,10 +233,57 @@ model Queue {
   company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   department   Department? @relation(fields: [departmentId], references: [id])
   conversations Conversation[]
+  autoAttendanceMenuOptions AutoAttendanceMenuOption[]
 
   @@unique([companyId, name])
   @@index([companyId])
   @@map("queues")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AUTO-ATENDIMENTO (B-35)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Config única por empresa (1:1) — saudação/horário/inatividade/encerramento.
+// Menu de opções vive em AutoAttendanceMenuOption (1:N). Estado de "onde o
+// contato está no menu agora" é efêmero e fica no Redis, não aqui.
+model AutoAttendanceFlow {
+  id                     String   @id @default(cuid())
+  companyId              String   @unique
+  isActive               Boolean  @default(false)
+  greetingMessage        String?  @db.Text // fallback quando a fila resolvida não tem Queue.greetingMsg próprio
+  businessHours          Json?    // { mon: [{start:"09:00",end:"18:00"}], tue: [...], ... } — dia ausente = fechado
+  outOfHoursMessage      String?  @db.Text
+  inactivityTimeoutSecs  Int?     // silêncio do contato após o menu ser enviado
+  inactivityMessage      String?  @db.Text
+  closingMessage         String?  @db.Text // enviada ao encerrar automaticamente (inatividade ou opção "encerrar")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  company     Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  menuOptions AutoAttendanceMenuOption[]
+
+  @@map("auto_attendance_flows")
+}
+
+model AutoAttendanceMenuOption {
+  id           String               @id @default(cuid())
+  flowId       String
+  order        Int                  // "1 - Suporte", "2 - Financeiro"...
+  label        String
+  action       AutoAttendanceAction
+  departmentId String?              // usado quando action=ROUTE_TO_DEPARTMENT
+  queueId      String?              // usado quando action=ROUTE_TO_QUEUE
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  flow       AutoAttendanceFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  department Department?        @relation(fields: [departmentId], references: [id])
+  queue      Queue?             @relation(fields: [queueId], references: [id])
+
+  @@unique([flowId, order])
+  @@index([flowId])
+  @@map("auto_attendance_menu_options")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

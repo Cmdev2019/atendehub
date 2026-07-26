@@ -25,6 +25,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ReportModule } from './modules/report/report.module';
+import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { ReportModule } from './modules/report/report.module';
     // ── Produto (B-32+) ───────────────────────────────────────────────────────
     DashboardModule,
     ReportModule,
+    AutoAttendanceModule,
     // ── Tempo real ────────────────────────────────────────────────────────────
     EventsModule,
     // ── Integrações ───────────────────────────────────────────────────────────

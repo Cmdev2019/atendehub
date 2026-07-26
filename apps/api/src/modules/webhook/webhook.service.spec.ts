@@ -16,6 +16,7 @@ describe('WebhookService — extractPhoneFromJid', () => {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
   );
 
   const extract = (jid?: string | null) => (service as any).extractPhoneFromJid(jid);
@@ -73,6 +74,10 @@ describe('WebhookService — processamento de eventos', () => {
     emitMessageUpdated: jest.fn(),
   };
   const mockMediaDownloadService = { downloadFromEvolution: jest.fn(), downloadAndStore: jest.fn() };
+  const mockAutoAttendanceEngine = {
+    handleNewConversation: jest.fn().mockResolvedValue(undefined),
+    handleReply: jest.fn().mockResolvedValue(false),
+  };
 
   let service: WebhookService;
 
@@ -90,6 +95,7 @@ describe('WebhookService — processamento de eventos', () => {
       mockEvolutionService as any,
       mockEventsService as any,
       mockMediaDownloadService as any,
+      mockAutoAttendanceEngine as any,
     );
     mockPrisma.whatsAppConnection.findUnique.mockResolvedValue(connection);
   });
@@ -132,7 +138,11 @@ describe('WebhookService — processamento de eventos', () => {
         isBlocked: false,
         avatarUrl: 'http://minio/avatar.jpg',
       });
-      mockConversationService.upsertFromWebhook.mockResolvedValueOnce(oldConversation);
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
       mockMessageService.createFromWebhook.mockResolvedValueOnce({
         id: 'msg-1',
         status: 'SENT',
@@ -184,7 +194,11 @@ describe('WebhookService — processamento de eventos', () => {
         phone: '5512999999999',
         isBlocked: false,
       });
-      mockConversationService.upsertFromWebhook.mockResolvedValueOnce(oldConversation);
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
       mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date() });
 
       await service.handleEvent({
@@ -215,10 +229,14 @@ describe('WebhookService — processamento de eventos', () => {
         avatarUrl: null,
       });
       mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
-        id: 'conv-novo',
-        status: 'WAITING',
-        channel: 'WHATSAPP',
-        createdAt: new Date(), // recém-criada
+        conversation: {
+          id: 'conv-novo',
+          status: 'WAITING',
+          channel: 'WHATSAPP',
+          createdAt: new Date(),
+        },
+        isNew: true,
+        queue: null,
       });
       mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date() });
 
@@ -235,6 +253,101 @@ describe('WebhookService — processamento de eventos', () => {
       expect(mockEventsService.emitConversationCreated).toHaveBeenCalledWith(
         expect.objectContaining({ companyId, conversation: expect.objectContaining({ id: 'conv-novo' }) }),
       );
+    });
+
+    it('conversa nova aciona o auto-atendimento (B-35) repassando a saudação da fila resolvida', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Novo',
+        phone: '5512988888888',
+        isBlocked: false,
+        avatarUrl: null,
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: { id: 'conv-novo', status: 'WAITING', channel: 'WHATSAPP', createdAt: new Date() },
+        isNew: true,
+        queue: { id: 'queue-1', maxWaitSecs: 300, greetingMsg: 'Bem-vindo à fila!' },
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date() });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512988888888@s.whatsapp.net', fromMe: false, id: 'wa-3' },
+          pushName: 'Cliente Novo',
+          message: { conversation: 'Primeira mensagem' },
+        },
+      });
+
+      expect(mockAutoAttendanceEngine.handleNewConversation).toHaveBeenCalledWith({
+        companyId,
+        conversationId: 'conv-novo',
+        contactPhone: '5512988888888',
+        sessionName: 'session-1',
+        queueGreetingMsg: 'Bem-vindo à fila!',
+      });
+      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+    });
+
+    it('mensagem de texto numa conversa já existente é repassada como possível resposta de menu', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-1', status: 'SENT', sentAt: new Date() });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+          message: { conversation: '2' },
+        },
+      });
+
+      expect(mockAutoAttendanceEngine.handleReply).toHaveBeenCalledWith({
+        companyId,
+        conversationId: 'conv-1',
+        contactPhone: '5512999999999',
+        sessionName: 'session-1',
+        text: '2',
+      });
+      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
+    });
+
+    it('mensagem fromMe nunca aciona o auto-atendimento (só reação a mensagem de verdade do cliente)', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date() });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: true, id: 'wa-2' },
+          message: { conversation: 'Já te retorno' },
+        },
+      });
+
+      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
     });
 
     it('ignora mensagens de contato bloqueado (não cria conversa nem mensagem)', async () => {

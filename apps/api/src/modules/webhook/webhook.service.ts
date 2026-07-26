@@ -8,6 +8,7 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
 import { MediaDownloadService } from './media-download.service';
+import { AutoAttendanceEngineService } from '../auto-attendance/auto-attendance-engine.service';
 
 // ─── Tipos dos payloads da Evolution API v2 ───────────────────────────────────
 interface EvolutionMessageKey {
@@ -63,6 +64,7 @@ export class WebhookService {
     private readonly evolutionService: EvolutionService,
     private readonly eventsService: EventsService,
     private readonly mediaDownloadService: MediaDownloadService,
+    private readonly autoAttendanceEngine: AutoAttendanceEngineService,
   ) {}
 
   // ── Entry point — roteia pelo tipo de evento ──────────────────────────────
@@ -172,17 +174,17 @@ export class WebhookService {
       });
     }
 
-    // Upsert da conversa
-    const conversation = await this.conversationService.upsertFromWebhook(
-      companyId,
-      contact.id,
-      whatsappConnectionId,
-      undefined,
-      departmentId,
-    );
-
-    // Guarda se a conversa já existia antes do upsert
-    const existing = conversation.createdAt < new Date(Date.now() - 2000);
+    // Upsert da conversa — `isNew` explícito (B-35), sem depender de heurística
+    // de timestamp (frágil sob latência e usada por baixo pra saber se dispara
+    // o auto-atendimento, que só pode rodar numa conversa que acabou de nascer)
+    const { conversation, isNew: isNewConversation, queue } =
+      await this.conversationService.upsertFromWebhook(
+        companyId,
+        contact.id,
+        whatsappConnectionId,
+        undefined,
+        departmentId,
+      );
 
     // Determina tipo e conteúdo da mensagem
     const { type, content, mediaUrl, mimeType, fileName } = this.extractMessageContent(message);
@@ -225,9 +227,32 @@ export class WebhookService {
       await this.conversationService.updateLastMessage(conversation.id, content);
     }
 
-    // ── Emite evento em tempo real ─────────────────────────────────────────
-    const isNewConversation = !existing;
+    // ── Auto-atendimento (B-35) ─────────────────────────────────────────────
+    // Nunca reage a mensagens fromMe (o próprio negócio respondendo pelo
+    // celular) — só a mensagens de verdade do cliente.
+    if (!key.fromMe) {
+      if (isNewConversation) {
+        await this.autoAttendanceEngine.handleNewConversation({
+          companyId,
+          conversationId: conversation.id,
+          contactPhone: contact.phone,
+          sessionName,
+          queueGreetingMsg: queue?.greetingMsg ?? null,
+        });
+      } else if (type === MessageType.TEXT && content) {
+        // Só interpreta texto como resposta de menu — mídia/figurinha etc.
+        // enquanto o menu está aberto não é tratada como seleção inválida
+        await this.autoAttendanceEngine.handleReply({
+          companyId,
+          conversationId: conversation.id,
+          contactPhone: contact.phone,
+          sessionName,
+          text: content,
+        });
+      }
+    }
 
+    // ── Emite evento em tempo real ─────────────────────────────────────────
     if (isNewConversation) {
       this.eventsService.emitConversationCreated({
         companyId,

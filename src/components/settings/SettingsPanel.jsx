@@ -828,6 +828,346 @@ function QueuesSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seção: Auto-atendimento (B-35) — saudação, menu de opções (estilo URA),
+// horário de atendimento, inatividade e encerramento automático. CRUD requer
+// ADMIN+ (mesma regra do backend). Um único fluxo por empresa — nasce
+// desativado até o admin configurar algo e ligar o toggle.
+// ─────────────────────────────────────────────────────────────────────────────
+const AUTO_ATTENDANCE_ACTION_LABELS = {
+  ROUTE_TO_DEPARTMENT: 'Encaminhar para departamento',
+  ROUTE_TO_QUEUE: 'Encaminhar para fila',
+  END_CONVERSATION: 'Encerrar a conversa',
+};
+const AUTO_ATTENDANCE_ACTIONS = ['ROUTE_TO_DEPARTMENT', 'ROUTE_TO_QUEUE', 'END_CONVERSATION'];
+
+const WEEKDAYS = [
+  { key: 'mon', label: 'Segunda' },
+  { key: 'tue', label: 'Terça' },
+  { key: 'wed', label: 'Quarta' },
+  { key: 'thu', label: 'Quinta' },
+  { key: 'fri', label: 'Sexta' },
+  { key: 'sat', label: 'Sábado' },
+  { key: 'sun', label: 'Domingo' },
+];
+
+const emptyHours = () =>
+  WEEKDAYS.reduce((acc, d) => ({ ...acc, [d.key]: { enabled: false, start: '09:00', end: '18:00' } }), {});
+
+function AutoAttendanceSection() {
+  const confirm = useConfirm();
+  const [flow, setFlow] = useState(null);
+  const [departments, setDepartments] = useState([]);
+  const [queues, setQueues] = useState([]);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    isActive: false,
+    greetingMessage: '',
+    outOfHoursMessage: '',
+    inactivityTimeoutSecs: '',
+    inactivityMessage: '',
+    closingMessage: '',
+    hours: emptyHours(),
+  });
+
+  const emptyOptionForm = { label: '', action: 'ROUTE_TO_DEPARTMENT', departmentId: '', queueId: '' };
+  const [optionForm, setOptionForm] = useState(emptyOptionForm);
+  const [optionBusy, setOptionBusy] = useState(false);
+
+  const hydrateForm = (f) => {
+    const hours = WEEKDAYS.reduce((acc, d) => {
+      const range = f.businessHours?.[d.key]?.[0];
+      acc[d.key] = range
+        ? { enabled: true, start: range.start, end: range.end }
+        : { enabled: false, start: '09:00', end: '18:00' };
+      return acc;
+    }, {});
+    setForm({
+      isActive: !!f.isActive,
+      greetingMessage: f.greetingMessage || '',
+      outOfHoursMessage: f.outOfHoursMessage || '',
+      inactivityTimeoutSecs: f.inactivityTimeoutSecs ?? '',
+      inactivityMessage: f.inactivityMessage || '',
+      closingMessage: f.closingMessage || '',
+      hours,
+    });
+  };
+
+  const load = useCallback(async () => {
+    try {
+      const [f, deps, qs] = await Promise.all([
+        apiClient.getAutoAttendanceFlow(),
+        apiClient.getDepartments().catch(() => []),
+        apiClient.getQueues().catch(() => []),
+      ]);
+      setFlow(f);
+      hydrateForm(f);
+      setDepartments(unwrap(deps));
+      setQueues(unwrap(qs));
+      setError(null);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const setDayEnabled = (day) => (e) =>
+    setForm((f) => ({ ...f, hours: { ...f.hours, [day]: { ...f.hours[day], enabled: e.target.checked } } }));
+  const setDayTime = (day, field) => (e) =>
+    setForm((f) => ({ ...f, hours: { ...f.hours, [day]: { ...f.hours[day], [field]: e.target.value } } }));
+
+  const saveFlow = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    const anyDayEnabled = WEEKDAYS.some((d) => form.hours[d.key].enabled);
+    const businessHours = anyDayEnabled
+      ? WEEKDAYS.reduce((acc, d) => {
+          if (form.hours[d.key].enabled) {
+            acc[d.key] = [{ start: form.hours[d.key].start, end: form.hours[d.key].end }];
+          }
+          return acc;
+        }, {})
+      : null; // nenhum dia marcado = sem restrição de horário (limpa o campo)
+    const payload = {
+      isActive: form.isActive,
+      greetingMessage: form.greetingMessage.trim() || undefined,
+      businessHours,
+      outOfHoursMessage: form.outOfHoursMessage.trim() || undefined,
+      inactivityTimeoutSecs: form.inactivityTimeoutSecs ? Number(form.inactivityTimeoutSecs) : undefined,
+      inactivityMessage: form.inactivityMessage.trim() || undefined,
+      closingMessage: form.closingMessage.trim() || undefined,
+    };
+    try {
+      await apiClient.updateAutoAttendanceFlow(payload);
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setOptionField = (field) => (e) => setOptionForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const submitOption = async (e) => {
+    e.preventDefault();
+    if (!optionForm.label.trim()) return;
+    setOptionBusy(true);
+    setError(null);
+    const payload = {
+      order: (flow?.menuOptions?.length || 0) + 1,
+      label: optionForm.label.trim(),
+      action: optionForm.action,
+      departmentId: optionForm.action === 'ROUTE_TO_DEPARTMENT' ? (optionForm.departmentId || undefined) : undefined,
+      queueId: optionForm.action === 'ROUTE_TO_QUEUE' ? (optionForm.queueId || undefined) : undefined,
+    };
+    try {
+      await apiClient.createAutoAttendanceMenuOption(payload);
+      setOptionForm(emptyOptionForm);
+      // Aguarda o reload antes de liberar o botão de novo (finally) — sem
+      // isso, um 2º clique rápido calcularia `order` a partir do `flow`
+      // ainda desatualizado (mesmo comprimento de antes) e colidiria com a
+      // opção recém-criada, batendo na constraint única do backend real.
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setOptionBusy(false);
+    }
+  };
+
+  const removeOption = async (option) => {
+    if (!(await confirm(`Excluir a opção "${option.label}" do menu?`, { danger: true }))) return;
+    try {
+      await apiClient.removeAutoAttendanceMenuOption(option.id);
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  const moveOption = async (index, direction) => {
+    const options = flow?.menuOptions || [];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= options.length) return;
+    const reordered = [...options];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    try {
+      await apiClient.reorderAutoAttendanceMenuOptions(reordered.map((o) => o.id));
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  if (!flow) return h('div', { className: 'settings-section' }, h('p', { className: 'settings-hint' }, 'Carregando…'));
+
+  const options = flow.menuOptions || [];
+
+  return h(
+    'div',
+    { className: 'settings-section' },
+    h('h3', null, h(Icon, { name: 'chat', size: 17 }), ' Auto-atendimento'),
+    h('p', { className: 'settings-hint' },
+      'Responde o contato automaticamente assim que uma conversa nova chega: mensagem de ' +
+      'saudação, menu de opções, horário de atendimento e encerramento por inatividade.'),
+    error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
+
+    h(
+      'form',
+      { className: 'settings-form-grid', onSubmit: saveFlow },
+      h(
+        'label',
+        { className: 'settings-toggle-row', style: { gridColumn: '1 / -1' } },
+        h('input', { type: 'checkbox', checked: form.isActive, onChange: (e) => setForm((f) => ({ ...f, isActive: e.target.checked })) }),
+        ' Auto-atendimento ativo',
+      ),
+      h('textarea', {
+        className: 'settings-input', placeholder: 'Mensagem de saudação (enviada assim que a conversa começa)',
+        rows: 2, maxLength: 1000, value: form.greetingMessage, onChange: setField('greetingMessage'),
+        style: { gridColumn: '1 / -1' },
+      }),
+      h('textarea', {
+        className: 'settings-input', placeholder: 'Mensagem fora do horário de atendimento',
+        rows: 2, maxLength: 1000, value: form.outOfHoursMessage, onChange: setField('outOfHoursMessage'),
+        style: { gridColumn: '1 / -1' },
+      }),
+      h('input', {
+        className: 'settings-input', type: 'number', min: 30, placeholder: 'Tempo de inatividade até encerrar (segundos)',
+        value: form.inactivityTimeoutSecs, onChange: setField('inactivityTimeoutSecs'),
+      }),
+      h('div'), // preenche a 2ª coluna da grid
+      h('textarea', {
+        className: 'settings-input', placeholder: 'Mensagem de inatividade (antes de encerrar)',
+        rows: 2, maxLength: 1000, value: form.inactivityMessage, onChange: setField('inactivityMessage'),
+        style: { gridColumn: '1 / -1' },
+      }),
+      h('textarea', {
+        className: 'settings-input', placeholder: 'Mensagem de encerramento automático',
+        rows: 2, maxLength: 1000, value: form.closingMessage, onChange: setField('closingMessage'),
+        style: { gridColumn: '1 / -1' },
+      }),
+
+      h(
+        'div',
+        { style: { gridColumn: '1 / -1' } },
+        h('div', { className: 'settings-row-title', style: { marginBottom: 8 } }, 'Horário de atendimento'),
+        h('p', { className: 'settings-hint', style: { marginBottom: 10 } },
+          'Dias sem marcação ficam fora do expediente — a mensagem de fora do horário é enviada no lugar da saudação/menu. ' +
+          'Sem nenhum dia marcado, o auto-atendimento roda o dia inteiro.'),
+        h(
+          'div',
+          { className: 'settings-hours-grid' },
+          WEEKDAYS.map((d) =>
+            h(
+              'div',
+              { key: d.key, className: 'settings-hours-row' },
+              h(
+                'label',
+                { className: 'settings-toggle-row' },
+                h('input', { type: 'checkbox', checked: form.hours[d.key].enabled, onChange: setDayEnabled(d.key) }),
+                ` ${d.label}`,
+              ),
+              h('input', {
+                className: 'settings-input', type: 'time', disabled: !form.hours[d.key].enabled,
+                value: form.hours[d.key].start, onChange: setDayTime(d.key, 'start'),
+              }),
+              h('input', {
+                className: 'settings-input', type: 'time', disabled: !form.hours[d.key].enabled,
+                value: form.hours[d.key].end, onChange: setDayTime(d.key, 'end'),
+              }),
+            ),
+          ),
+        ),
+      ),
+
+      h('button', {
+        className: 'settings-btn primary', type: 'submit', disabled: saving,
+      }, h(Icon, { name: 'check', size: 14 }), ' Salvar auto-atendimento'),
+    ),
+
+    h(
+      'div',
+      null,
+      h('h3', { style: { fontSize: '1.05rem' } }, 'Menu de opções'),
+      h('p', { className: 'settings-hint' },
+        'Enviado logo após a saudação. O contato responde com o número da opção (ou o texto exato dela) ' +
+        'para ser encaminhado ou encerrar a conversa sozinho.'),
+
+      h(
+        'form',
+        { className: 'settings-form-grid', onSubmit: submitOption },
+        h('input', {
+          className: 'settings-input', placeholder: 'Rótulo da opção (ex.: Suporte técnico)', required: true,
+          maxLength: 120, value: optionForm.label, onChange: setOptionField('label'),
+        }),
+        h(
+          'select',
+          { className: 'settings-input', value: optionForm.action, onChange: setOptionField('action') },
+          AUTO_ATTENDANCE_ACTIONS.map((a) => h('option', { key: a, value: a }, AUTO_ATTENDANCE_ACTION_LABELS[a])),
+        ),
+        optionForm.action === 'ROUTE_TO_DEPARTMENT' && h(
+          'select',
+          { className: 'settings-input', value: optionForm.departmentId, onChange: setOptionField('departmentId'), required: true },
+          h('option', { value: '' }, 'Selecione o departamento…'),
+          departments.map((d) => h('option', { key: d.id, value: d.id }, d.name)),
+        ),
+        optionForm.action === 'ROUTE_TO_QUEUE' && h(
+          'select',
+          { className: 'settings-input', value: optionForm.queueId, onChange: setOptionField('queueId'), required: true },
+          h('option', { value: '' }, 'Selecione a fila…'),
+          queues.map((q) => h('option', { key: q.id, value: q.id }, q.name)),
+        ),
+        h('button', {
+          className: 'settings-btn primary', type: 'submit', disabled: optionBusy || !optionForm.label.trim(),
+        }, h(Icon, { name: 'plus', size: 14 }), ' Adicionar opção'),
+      ),
+
+      h(
+        'div',
+        { className: 'settings-list', style: { marginTop: 16 } },
+        options.length === 0
+          ? h('p', { className: 'settings-hint' }, 'Nenhuma opção de menu criada ainda.')
+          : options.map((option, index) =>
+              h(
+                'div',
+                { key: option.id, className: 'settings-item' },
+                h(
+                  'div',
+                  { className: 'settings-item-main' },
+                  h('div', { className: 'settings-row-title' }, `${option.order} — ${option.label}`),
+                  h('div', { className: 'settings-hint' },
+                    AUTO_ATTENDANCE_ACTION_LABELS[option.action] +
+                    (option.department ? `: ${option.department.name}` : '') +
+                    (option.queue ? `: ${option.queue.name}` : '')),
+                ),
+                h(
+                  'div',
+                  { className: 'settings-item-actions' },
+                  h('button', {
+                    className: 'settings-btn', type: 'button', disabled: index === 0,
+                    onClick: () => moveOption(index, -1), title: 'Mover para cima',
+                  }, h(Icon, { name: 'chevron-up', size: 14, label: 'Mover para cima' })),
+                  h('button', {
+                    className: 'settings-btn', type: 'button', disabled: index === options.length - 1,
+                    onClick: () => moveOption(index, 1), title: 'Mover para baixo',
+                  }, h(Icon, { name: 'chevron-down', size: 14, label: 'Mover para baixo' })),
+                  h('button', {
+                    className: 'settings-btn danger', type: 'button', onClick: () => removeOption(option),
+                    title: 'Excluir opção',
+                  }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
+                ),
+              ),
+            ),
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Seção: Tags (B-27) — CRUD requer SUPERVISOR+ (mesma regra do backend);
 // atribuir/remover tag numa conversa é feito no CustomerPanel, não aqui.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1187,6 +1527,7 @@ export function SettingsPanel() {
     // excluir tag exige SUPERVISOR+ (tag.controller.ts) — mesmo corte já
     // usado pra "Usuários e níveis" (canViewUsers).
     { id: 'tags', label: 'Tags', icon: 'tag', visible: canViewUsers },
+    { id: 'auto-attendance', label: 'Auto-atendimento', icon: 'chat', visible: canManage },
   ].filter((s) => s.visible);
 
   const [active, setActive] = useState(sections[0]?.id ?? 'appearance');
@@ -1224,6 +1565,7 @@ export function SettingsPanel() {
       active === 'groups' && canManage && h(GroupsSection),
       active === 'queues' && canManage && h(QueuesSection),
       active === 'tags' && canViewUsers && h(TagsSection),
+      active === 'auto-attendance' && canManage && h(AutoAttendanceSection),
     ),
   );
 }

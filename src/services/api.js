@@ -385,6 +385,22 @@ class ApiClient {
       if (id && method === 'DELETE') return mockApiClient.deleteTag(id);
     }
 
+    if (resource === 'auto-attendance') {
+      if (!id && method === 'GET') return mockApiClient.getAutoAttendanceFlow();
+      if (!id && method === 'PATCH') return mockApiClient.updateAutoAttendanceFlow(body);
+      if (id === 'options' && !sub && method === 'GET') return mockApiClient.getAutoAttendanceMenuOptions();
+      if (id === 'options' && !sub && method === 'POST') return mockApiClient.createAutoAttendanceMenuOption(body);
+      if (id === 'options' && sub === 'reorder' && method === 'PATCH') {
+        return mockApiClient.reorderAutoAttendanceMenuOptions(body.orderedIds);
+      }
+      if (id === 'options' && sub && method === 'PATCH') {
+        return mockApiClient.updateAutoAttendanceMenuOption(sub, body);
+      }
+      if (id === 'options' && sub && method === 'DELETE') {
+        return mockApiClient.removeAutoAttendanceMenuOption(sub);
+      }
+    }
+
     if (resource === 'notifications') {
       const currentUser = await mockApiClient.getCurrentUser();
       if (!id && method === 'GET') {
@@ -766,6 +782,43 @@ class ApiClient {
 
   async deleteQueue(id) {
     return this.request(`/queues/${id}`, { method: 'DELETE' });
+  }
+
+  // AUTO-ATENDIMENTO (B-35)
+  async getAutoAttendanceFlow() {
+    return this.request('/auto-attendance', { method: 'GET' });
+  }
+
+  async updateAutoAttendanceFlow(data) {
+    return this.request('/auto-attendance', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createAutoAttendanceMenuOption(data) {
+    return this.request('/auto-attendance/options', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAutoAttendanceMenuOption(id, data) {
+    return this.request(`/auto-attendance/options/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeAutoAttendanceMenuOption(id) {
+    return this.request(`/auto-attendance/options/${id}`, { method: 'DELETE' });
+  }
+
+  async reorderAutoAttendanceMenuOptions(orderedIds) {
+    return this.request('/auto-attendance/options/reorder', {
+      method: 'PATCH',
+      body: JSON.stringify({ orderedIds }),
+    });
   }
 
   // TAGS (B-27) — CRUD requer SUPERVISOR+; atribuir/remover de uma conversa

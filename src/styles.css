@@ -2791,6 +2791,29 @@ button {
   color: var(--text);
 }
 
+/* ── Auto-atendimento (B-35) ─────────────────────────────────────────────── */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-hours-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-hours-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .settings-panel {
     flex-direction: column;
