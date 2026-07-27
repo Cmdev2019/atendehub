@@ -16,7 +16,7 @@ WhatsApp via Evolution API.
 | Camada | Tecnologia |
 |---|---|
 | Front-end | **Vite 6 + React 19 (JavaScript)** — na raiz do repo |
-| Back-end | NestJS 10 + TypeScript — `apps/api` |
+| Back-end | NestJS 11 + TypeScript — `apps/api` |
 | ORM | Prisma |
 | Banco | PostgreSQL 16 |
 | Cache / Filas | Redis 7 + Bull |
@@ -113,12 +113,13 @@ Code com o celular (WhatsApp → Dispositivos conectados). O status muda para
 ## Testes e build
 
 ```bash
-npm test               # front (Jest) — 74 testes
-npm run build          # front (vite build)
-cd apps/api && npm run build   # backend (nest build)
+npm test                        # front (Jest) — 302 testes
+npm run build                   # front (vite build)
+cd apps/api && npm test         # backend (Jest) — 265 testes
+cd apps/api && npm run build    # backend (nest build)
 ```
 
-> O backend ainda não tem testes — é a Fase 4 do roadmap.
+> CI roda as duas suítes a cada push (`.github/workflows/api-ci.yml` e `web-ci.yml`).
 
 ## Serviços e URLs (desenvolvimento)
 
@@ -134,7 +135,12 @@ cd apps/api && npm run build   # backend (nest build)
 > 🔒 Estes valores são defaults de desenvolvimento. Em produção, **todos os
 > segredos devem ser trocados** (checklist na Fase 6 do roadmap).
 
-## Estado atual (2026-07-16)
+## Estado atual (2026-07-26)
+
+**Fases 0-8 do roadmap de estabilização: 70/70 concluídas. Backlog de
+produto: B-1 a B-37, 100% concluído** (dashboard, relatórios, contatos,
+etapas de atendimento, auto-atendimento, CI, hardening de segurança, LGPD
+e mais — detalhe item a item no roadmap).
 
 | Área | Status |
 |---|---|
@@ -143,12 +149,15 @@ cd apps/api && npm run build   # backend (nest build)
 | Envio/recepção de mensagens WhatsApp (validado ponta a ponta) | ✅ |
 | Mídia: figurinhas/fotos/áudio no chat + envio de prints (Ctrl+V) | ✅ |
 | Fotos de perfil dos contatos | ✅ |
-| Configurações: conexões WhatsApp (QR), usuários/níveis, grupos, tema | ✅ |
+| Fila de atendimento, atribuição, encerramento com motivo | ✅ |
+| Dashboard, relatórios (CSV/PDF) e base de contatos | ✅ |
+| Auto-atendimento (saudação, menu, horário, inatividade) | ✅ |
+| Configurações: conexões WhatsApp (QR), usuários/níveis, grupos, filas, tags, tema | ✅ |
 | Modo demonstração explícito (banner) e resiliência de conexão | ✅ |
-| SLA (detecção de violação) | ⬜ módulo escrito, não ativado (Fase 3) |
-| Testes no backend | ⬜ (Fase 4) |
-| Métricas com dados reais | ⬜ (B-2) |
-| CI / deploy de produção | ⬜ (Fase 7) |
+| SLA (detecção de violação) | ✅ |
+| Testes automatizados (front + backend) | ✅ |
+| CI real no GitHub Actions | ✅ |
+| Deploy de produção | ⬜ falta domínio/certificado SSL (checklist pronto, ver roadmap) |
 
 O detalhamento item a item, com evidências e changelog, está no
 [`ROADMAP_ESTABILIZACAO.md`](ROADMAP_ESTABILIZACAO.md).
