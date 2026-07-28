@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CODEOWNERS — revisão obrigatória por área
+#
+# Só surte efeito com proteção de branch ativada em master exigindo revisão
+# de code owner. Substitua os placeholders pelos usuários/times reais do
+# GitHub antes de ativar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Padrão: tudo exige revisão do mantenedor
+*                                   @Cmdev2019
+
+# ── Governança: mudança aqui afeta todo o repositório ────────────────────────
+/docs/00-Governanca/                @Cmdev2019
+/docs/05-ADR/                       @Cmdev2019
+/.github/                           @Cmdev2019
+/CONTRIBUTING.md                    @Cmdev2019
+/SECURITY.md                        @Cmdev2019
+/CLAUDE.md                          @Cmdev2019
+
+# ── Backend ──────────────────────────────────────────────────────────────────
+/apps/api/                          @Cmdev2019
+
+# ── Banco: migration exige revisão dupla ─────────────────────────────────────
+/apps/api/prisma/                   @Cmdev2019
+/apps/api/prisma/migrations/        @Cmdev2019
+
+# ── Segurança: autenticação, autorização e storage ───────────────────────────
+/apps/api/src/modules/auth/         @Cmdev2019
+/apps/api/src/shared/storage/       @Cmdev2019
+/apps/api/src/modules/webhook/      @Cmdev2019
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+/src/                               @Cmdev2019
+
+# ── Infraestrutura e pipeline ────────────────────────────────────────────────
+/infra/                             @Cmdev2019
+/.github/workflows/                 @Cmdev2019
+/docker-compose.yml                 @Cmdev2019
+/docker-compose.prod.yml            @Cmdev2019
+
+# ── Contrato de API: quebra consumidor externo ───────────────────────────────
+/docs/09-APIs/                      @Cmdev2019

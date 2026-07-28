@@ -56,9 +56,12 @@ apps/api/src/generated/
 coverage/
 .nyc_output/
 
-# Variáveis de ambiente
-.env
-.env.local
-.env.*.local
+# ── Credenciais geradas pelo seed ──────────────────────────────────────────────
 .seed-credentials-*.txt
+
+# ── Artefatos gerados de documentação ──────────────────────────────────────────
+# PDF é artefato: a fonte markdown é que é versionada. Git não remove blob do
+# histórico, então binário commitado infla o repositório para sempre.
+docs/**/*.pdf
+docs/**/*.docx
 

@@ -1,0 +1,43 @@
+name: ✨ Funcionalidade
+description: Propor funcionalidade ou melhoria
+title: "[feat] "
+labels: ["enhancement", "triagem"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Que problema resolve
+      description: Descreva o problema, não a solução. Quem sente isso hoje e com que frequência?
+    validations: { required: true }
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Proposta
+    validations: { required: true }
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      description: Em formato Gherkin resumido.
+      value: |
+        - **Dado** ..., **quando** ..., **então** ...
+    validations: { required: true }
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade sugerida
+      options:
+        - P0 — bloqueia produção
+        - P1 — bloqueia venda Enterprise
+        - P2 — paridade competitiva
+        - P3 — diferencial
+  - type: input
+    id: versao
+    attributes:
+      label: Versão alvo sugerida
+      placeholder: "v1.1, v2.0..."
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Incluindo não fazer nada.

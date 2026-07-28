@@ -1,7 +1,7 @@
 // Fixtures de demonstração — mesmo shape do contrato real da API (F1-3),
 // para que o normalizador (toUiConversation/toUiMessage em useConversations.js)
 // seja o ÚNICO caminho de transformação, em mock ou em produção.
-// Ver docs/API_CONTRACT.md para o shape de referência.
+// Ver docs/09-APIs/API_CONTRACT.md para o shape de referência.
 export const initialConversations = [
   {
     id: 'conv-1',

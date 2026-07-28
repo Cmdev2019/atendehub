@@ -3,7 +3,7 @@ import { apiClient } from '../services/api';
 import { wsClient } from '../services/websocket';
 
 // B-8: o backend não empurra notificação por socket (só REST, ver B1-3 em
-// docs/API_CONTRACT.md) — refaz o fetch nos 2 eventos que de fato criam uma
+// docs/09-APIs/API_CONTRACT.md) — refaz o fetch nos 2 eventos que de fato criam uma
 // notificação lá (sla.breached e conversation.assigned), reaproveitando o
 // mesmo padrão de fetchStats() em useConversations.js. Callbacks nomeados +
 // off(event, callback) porque outros hooks já ouvem os mesmos eventos e o

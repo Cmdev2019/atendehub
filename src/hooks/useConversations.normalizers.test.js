@@ -10,7 +10,7 @@ jest.mock('../services/websocket', () => ({
 import { toUiConversation, toUiMessage } from './useConversations';
 
 // F1-6: testes dedicados do adapter/normalizador entre o contrato real da
-// API (docs/API_CONTRACT.md) e o shape consumido pelos componentes.
+// API (docs/09-APIs/API_CONTRACT.md) e o shape consumido pelos componentes.
 describe('toUiMessage', () => {
   it('converte mensagem do contrato da API para o shape da UI', () => {
     const apiMessage = {

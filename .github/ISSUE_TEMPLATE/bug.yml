@@ -1,0 +1,60 @@
+name: 🐛 Defeito
+description: Reportar comportamento incorreto
+title: "[bug] "
+labels: ["bug", "triagem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir: confira se já não existe item registrado em `ROADMAP_ESTABILIZACAO.md`.
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que acontece
+      description: Descreva o comportamento observado.
+    validations: { required: true }
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que deveria acontecer
+    validations: { required: true }
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Como reproduzir
+      value: |
+        1.
+        2.
+        3.
+    validations: { required: true }
+  - type: dropdown
+    id: severidade
+    attributes:
+      label: Severidade
+      options:
+        - S1 — plataforma indisponível ou perda de dados
+        - S2 — funcionalidade crítica degradada
+        - S3 — degradação parcial ou tenant único
+        - S4 — sem impacto operacional
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options: [api, web, banco, infra, whatsapp, webhook, websocket, autenticação, relatórios, outro]
+    validations: { required: true }
+  - type: textarea
+    id: ambiente
+    attributes:
+      label: Ambiente
+      value: |
+        - Ambiente: local / staging / produção
+        - Navegador (se front):
+        - Empresa/tenant (se aplicável):
+        - requestId (se houver):
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs e evidências
+      description: ⚠️ Remova dados pessoais (telefone, nome, conteúdo de mensagem) antes de colar.
+      render: shell

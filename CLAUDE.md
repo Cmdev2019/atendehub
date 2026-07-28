@@ -14,9 +14,9 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
    `apps/api`, Prisma/PostgreSQL e filas (Bull/Redis). Criado em 2026-07-21:
    decisão de fechar todo o backend e banco antes de retomar o frontend.
    Mesmas regras de documento vivo do item acima.
-3. **`docs/API_CONTRACT.md`** — contrato real da API (shapes, enums, eventos
+3. **`docs/09-APIs/API_CONTRACT.md`** — contrato real da API (shapes, enums, eventos
    socket). Atualizar no mesmo commit que alterar um endpoint.
-4. `docs/archive/` — relatórios históricos; **não** são fonte de verdade.
+4. `docs/99-Arquivo/` — relatórios históricos; **não** são fonte de verdade.
 
 ## Arquitetura
 
