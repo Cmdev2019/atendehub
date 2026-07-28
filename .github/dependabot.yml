@@ -7,6 +7,21 @@ updates:
     commit-message: { prefix: "chore(deps)" }
     labels: ["dependências", "web"]
     groups:
+      # react e react-dom SEMPRE sobem juntos. Separados, o PR de `react`
+      # sozinho quebrou 27 das 31 suítes (2026-07-28): o react-dom ficava na
+      # versão anterior e a incompatibilidade estourava já no import do
+      # @testing-library/react, antes de qualquer teste rodar.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      # Ferramental de teste também é acoplado entre si (jest + ambiente +
+      # transformador): subir um item isolado costuma quebrar a suíte inteira.
+      testing:
+        patterns:
+          - "jest"
+          - "jest-*"
+          - "babel-jest"
+          - "@testing-library/*"
+          - "identity-obj-proxy"
       dev-dependencies:
         dependency-type: development
 

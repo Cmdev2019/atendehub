@@ -1,33 +1,28 @@
 name: Web CI
 
+# Sem filtro de `paths` de propósito. Com filtro, um PR que só toca docs/ não
+# dispara este workflow, o status check `web` nunca é reportado, e a proteção
+# de branch fica esperando para sempre ("Expected — Waiting for status to be
+# reported"). O custo de rodar sempre é ~2 min; o de um PR travado é maior.
 on:
   push:
     branches: [master]
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'vite.config.js'
-      - 'jest.config.js'
-      - 'jest.setup.js'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/web-ci.yml'
   pull_request:
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'vite.config.js'
-      - 'jest.config.js'
-      - 'jest.setup.js'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/web-ci.yml'
+
+# Push novo na mesma ref cancela o run anterior — evita fila de runs obsoletos
+# e economiza minutos (repositório privado tem cota mensal).
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # Nome do job = nome do status check. Precisa ser distinto do job da API:
+  # ambos se chamavam `build`, produzindo dois checks homônimos que a proteção
+  # de branch não conseguia diferenciar.
+  web:
+    name: web
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4

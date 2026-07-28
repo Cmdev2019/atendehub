@@ -1,23 +1,26 @@
 name: API CI
 
+# Sem filtro de `paths` de propósito — ver comentário equivalente em web-ci.yml.
 on:
   push:
     branches: [master]
-    paths:
-      - 'apps/api/**'
-      - '.github/workflows/api-ci.yml'
   pull_request:
-    paths:
-      - 'apps/api/**'
-      - '.github/workflows/api-ci.yml'
+
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
     working-directory: apps/api
 
 jobs:
-  build:
+  # Nome do job = nome do status check. Antes era `build` nos dois workflows,
+  # o que gerava dois checks homônimos indistinguíveis para a proteção de branch.
+  api:
+    name: api
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4

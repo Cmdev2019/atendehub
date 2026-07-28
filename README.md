@@ -303,15 +303,24 @@ gitGraph
 
 ## Fluxo CI/CD
 
-| Etapa | Gatilho | O que roda | Bloqueia merge? |
-|---|---|---|---|
-| **CI API** | push/PR em `apps/api/**` | lint · `tsc --noEmit` · 265 testes | ✅ |
-| **CI Web** | push/PR em `src/**` e configs | 302 testes · `vite build` | ✅ |
-| Segurança | *planejado* | CodeQL · Trivy · gitleaks · audit | ✅ |
-| E2E | *planejado* | Playwright contra staging | ✅ |
-| Build & push | *planejado* | imagem + SBOM + assinatura | — |
-| Deploy staging | *planejado* | automático a cada merge | — |
-| Deploy produção | *planejado* | manual, a partir de tag, canário 10% | — |
+| Etapa | Status check | Gatilho | O que roda | Bloqueia merge? |
+|---|---|---|---|---|
+| **API CI** | `api` | todo push em `master` e todo PR | lint · `tsc --noEmit` · 265 testes | ✅ |
+| **Web CI** | `web` | todo push em `master` e todo PR | 302 testes · `vite build` | ✅ |
+| Segurança | — | *planejado* | CodeQL · Trivy · gitleaks · audit | ✅ |
+| E2E | — | *planejado* | Playwright contra staging | ✅ |
+| Build & push | — | *planejado* | imagem + SBOM + assinatura | — |
+| Deploy staging | — | *planejado* | automático a cada merge | — |
+| Deploy produção | — | *planejado* | manual, a partir de tag, canário 10% | — |
+
+Os workflows **não usam filtro de `paths`** de propósito: com filtro, um PR que só
+toca `docs/` não dispara nenhum workflow, o status check exigido nunca é reportado e o PR fica
+travado em *"Waiting for status to be reported"*. Ambos usam `concurrency` com
+`cancel-in-progress`, então push novo na mesma branch cancela o run anterior.
+
+> ⚠️ **Proteção de branch indisponível.** O repositório é privado no plano Free, que não suporta
+> branches protegidos nem rulesets. Os status checks `api` e `web` rodam e reportam, mas **não
+> bloqueiam merge**, e `master` aceita force-push. Para ativar: GitHub Pro ou repositório público.
 
 Detalhamento em [`docs/27-CI-CD/`](docs/27-CI-CD/).
 
