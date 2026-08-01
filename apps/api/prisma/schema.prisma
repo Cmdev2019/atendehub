@@ -418,7 +418,12 @@ model Message {
 
   @@index([conversationId])
   @@index([conversationId, sentAt])
-  @@index([externalId])
+  // B-48: era @@index (não bloqueava duplicata) — vira @@unique pra fechar a
+  // corrida de idempotência (findFirst+create não é atômico) no nível que
+  // realmente garante consistência sob concorrência real: o Postgres. NULL
+  // não colide (mensagem de agente sem externalId ainda não é afetada) —
+  // ver MessageService#createUnique.
+  @@unique([externalId])
   @@map("messages")
 }
 

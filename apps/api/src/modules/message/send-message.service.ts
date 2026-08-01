@@ -10,6 +10,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
+import { MessageService } from './message.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
 // Arquivo recebido via multer (memory storage)
@@ -29,6 +30,7 @@ export class SendMessageService {
     private readonly storage: StorageService,
     private readonly evolution: EvolutionService,
     private readonly eventsService: EventsService,
+    private readonly messageService: MessageService,
   ) {}
 
   // ── Carrega a conversa e aplica as regras de envio (compartilhado) ────────
@@ -153,8 +155,13 @@ export class SendMessageService {
     }
 
     // ── 4. Salva no banco ──────────────────────────────────────────────────
-    const message = await this.prisma.message.create({
-      data: {
+    // B-48: `createUnique` (não `prisma.message.create` direto) — o eco do
+    // webhook desta mesma mensagem (MESSAGES_UPSERT fromMe:true) pode chegar
+    // e ser processado pela Evolution quase simultâneo a este retorno, e os
+    // dois caminhos gravam o mesmo `externalId`. Sem a escrita atômica, essa
+    // corrida cria 2 linhas de Message pro mesmo envio.
+    const { message } = await this.messageService.createUnique(
+      {
         conversationId,
         senderId,
         senderType: SenderType.AGENT,
@@ -164,7 +171,7 @@ export class SendMessageService {
         externalId,
         quotedMessageId: dto.quotedMessageId ?? null,
       },
-      select: {
+      {
         id: true,
         senderType: true,
         content: true,
@@ -175,7 +182,7 @@ export class SendMessageService {
         quotedMessageId: true,
         sender: { select: { id: true, name: true, avatarUrl: true } },
       },
-    });
+    );
 
     // ── 5. Cria registro Attachment para mensagens de mídia ───────────────
     if (dto.type !== MessageType.TEXT && dto.mediaUrl) {
@@ -294,8 +301,10 @@ export class SendMessageService {
     }
 
     // ── 3. Persiste mensagem + attachment ──────────────────────────────────
-    const message = await this.prisma.message.create({
-      data: {
+    // B-48: mesma corrida contra o eco do webhook do #send acima — ver
+    // comentário lá.
+    const { message } = await this.messageService.createUnique(
+      {
         conversationId,
         senderId,
         senderType: SenderType.AGENT,
@@ -304,7 +313,7 @@ export class SendMessageService {
         status: MessageStatus.SENT,
         externalId,
       },
-      select: {
+      {
         id: true,
         senderType: true,
         content: true,
@@ -314,7 +323,7 @@ export class SendMessageService {
         externalId: true,
         sender: { select: { id: true, name: true, avatarUrl: true } },
       },
-    });
+    );
 
     const attachment = await this.prisma.attachment.create({
       data: {

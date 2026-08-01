@@ -4,8 +4,9 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { MessageType, Role, ConversationStatus, SenderType, MessageStatus } from '@prisma/client';
+import { MessageType, Role, ConversationStatus, SenderType, MessageStatus, Prisma } from '@prisma/client';
 import { SendMessageService } from './send-message.service';
+import { MessageService } from './message.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
@@ -21,7 +22,7 @@ describe('SendMessageService', () => {
 
   const mockPrisma = {
     conversation: { findFirst: jest.fn(), update: jest.fn() },
-    message: { create: jest.fn() },
+    message: { create: jest.fn(), findUniqueOrThrow: jest.fn() },
     attachment: { create: jest.fn() },
   };
   const mockStorage = { upload: jest.fn() };
@@ -54,6 +55,11 @@ describe('SendMessageService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SendMessageService,
+        // Real (não mock) — só embrulha mockPrisma.message.create com a
+        // captura de P2002 do B-48; os testes seguem asserindo em cima do
+        // mockPrisma.message.create, que é quem `createUnique` chama por
+        // baixo.
+        MessageService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: StorageService, useValue: mockStorage },
         { provide: EvolutionService, useValue: mockEvolution },
@@ -236,6 +242,45 @@ describe('SendMessageService', () => {
             agentId: senderId,
           }),
         }),
+      );
+    });
+  });
+
+  // B-48: o eco do webhook (MESSAGES_UPSERT fromMe:true) desta mesma mensagem
+  // pode ser processado pelo Bull e gravar a Message ANTES deste create()
+  // aqui terminar — os dois caminhos escrevem o mesmo externalId. Antes do
+  // B-48 isso não colidia (não havia @@unique); agora colide, e precisa
+  // resolver sem 500 pro agente que só queria mandar uma mensagem.
+  describe('corrida com o eco do próprio webhook (B-48)', () => {
+    it('quando o eco do webhook já criou a mensagem primeiro (P2002), reaproveita a linha existente em vez de derrubar o envio', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({ ...baseConversation });
+      mockEvolution.sendTextMessage.mockResolvedValueOnce({ key: { id: 'wa-msg-1' } });
+      mockPrisma.message.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {
+          code: 'P2002',
+          clientVersion: '5.22.0',
+        }),
+      );
+      mockPrisma.message.findUniqueOrThrow.mockResolvedValueOnce({
+        id: 'msg-vencedor-da-corrida',
+        senderType: SenderType.AGENT,
+        content: 'Olá!',
+        type: MessageType.TEXT,
+        status: MessageStatus.DELIVERED,
+        sentAt: new Date(),
+        externalId: 'wa-msg-1',
+        quotedMessageId: null,
+        sender: null,
+      });
+      mockPrisma.conversation.update.mockResolvedValueOnce({});
+
+      const result = await service.send(companyId, conversationId, senderId, Role.AGENT, textDto);
+
+      expect(result.id).toBe('msg-vencedor-da-corrida');
+      // O envio segue até o fim usando a linha que já existe — attachment/
+      // preview/evento não quebram por causa da corrida.
+      expect(mockEvents.emitNewMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId, conversationId }),
       );
     });
   });

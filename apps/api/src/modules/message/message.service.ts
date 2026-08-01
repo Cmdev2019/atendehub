@@ -3,7 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { MessageType, MessageStatus, SenderType } from '@prisma/client';
+import { MessageType, MessageStatus, SenderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ListMessagesDto } from './dto/list-messages.dto';
 
@@ -169,6 +169,43 @@ export class MessageService {
     });
   }
 
+  // ── Criação atômica com dedup por externalId (B-48) ───────────────────────
+  // Substitui o antigo padrão findFirst()+create(): sob concorrência real
+  // (dois workers do Bull processando o mesmo evento, ou o worker do
+  // webhook correndo contra o próprio SendMessageService quando o eco da
+  // mensagem que o agente acabou de enviar chega quase simultâneo — ver
+  // SendMessageService#send/#sendMediaFile) o findFirst dos dois lados
+  // acontecia ANTES de qualquer create existir, e nada impedia as duas
+  // gravações. Sem essa janela: tenta criar direto, e só cai pro caminho de
+  // "já existe" se o INSERT esbarrar mesmo no `@@unique([externalId])" do
+  // schema — a checagem de unicidade passa a ser feita pelo Postgres dentro
+  // da própria escrita, não por uma leitura solta antes dela.
+  async createUnique<S extends Prisma.MessageSelect>(
+    data: Prisma.MessageUncheckedCreateInput,
+    select: S,
+  ): Promise<{ message: Prisma.MessageGetPayload<{ select: S }>; isNew: boolean }> {
+    try {
+      const message = await this.prisma.message.create({ data, select });
+      return { message, isNew: true };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        typeof data.externalId === 'string'
+      ) {
+        // Perdeu a corrida: outro processo já inseriu esse externalId entre
+        // a hora que este create foi tentado e o commit dele. A linha
+        // vencedora já existe e é a fonte da verdade — devolve ela.
+        const message = await this.prisma.message.findUniqueOrThrow({
+          where: { externalId: data.externalId },
+          select,
+        });
+        return { message, isNew: false };
+      }
+      throw err;
+    }
+  }
+
   // ── Criar mensagem recebida via webhook ───────────────────────────────────
   // B-39: `isNew` no retorno é o que permite ao WebhookService distinguir um
   // processamento de verdade de um retry idempotente do Bull — sem ele, um
@@ -185,16 +222,8 @@ export class MessageService {
     senderId?: string;
     metadata?: Record<string, any>;
   }): Promise<{ id: string; status: MessageStatus; sentAt: Date; isNew: boolean }> {
-    // Evita duplicatas pelo externalId
-    const existing = await this.prisma.message.findFirst({
-      where: { externalId: data.externalId },
-      select: { id: true, status: true, sentAt: true },
-    });
-
-    if (existing) return { ...existing, isNew: false };
-
-    const created = await this.prisma.message.create({
-      data: {
+    const { message, isNew } = await this.createUnique(
+      {
         conversationId: data.conversationId,
         senderId: data.senderId,
         senderType: data.senderType,
@@ -204,14 +233,10 @@ export class MessageService {
         status: MessageStatus.DELIVERED,
         metadata: data.metadata,
       },
-      select: {
-        id: true,
-        status: true,
-        sentAt: true,
-      },
-    });
+      { id: true, status: true, sentAt: true },
+    );
 
-    return { ...created, isNew: true };
+    return { ...message, isNew };
   }
 
   // ── Atualizar status da mensagem (ex: lida) ───────────────────────────────
