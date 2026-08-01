@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus, Channel, SenderType } from '@prisma/client';
+import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
@@ -522,6 +522,20 @@ export class ConversationService {
   // 2s (heurística frágil, sujeita a falso negativo sob latência). O
   // auto-atendimento só pode disparar a saudação/menu numa conversa
   // realmente nova, então essa ambiguidade deixou de ser aceitável.
+  //
+  // B-49: o findFirst abaixo sozinho não bastava sob concorrência real — dois
+  // workers processando duas mensagens do MESMO contato quase ao mesmo tempo
+  // (nem precisa de retry do Bull: cliente mandando 2 mensagens seguidas já
+  // é o bastante) os dois liam "não existe" antes de qualquer create
+  // terminar, e nasciam 2 conversas WAITING pro mesmo contato — pior que
+  // duplicar mensagem, porque a conversa do cliente fica "split-brain" entre
+  // 2 tickets (um agente responde numa, mensagens futuras resolvem pra
+  // outra). O findFirst continua aqui como fast-path — a maioria das
+  // mensagens cai numa conversa JÁ existente, então ler antes evita tentar
+  // um INSERT fadado a falhar em quase toda chamada. Quem fecha a corrida de
+  // verdade é o índice único PARCIAL do Postgres (`conversations_active_
+  // per_contact_key`, migration do B-49 — não expressável via `@@unique` do
+  // Prisma, que não tem `WHERE` na DSL) + a captura de P2002 no create().
   async upsertFromWebhook(
     companyId: string,
     contactId: string,
@@ -540,26 +554,10 @@ export class ConversationService {
     // apagada) sempre que o WhatsApp era desconectado/reparado — o contato
     // ganhava uma conversa nova a cada reconexão e a antiga travava para
     // sempre (agente não conseguia responder: "sem conexão associada").
-    const existing = await this.prisma.conversation.findFirst({
-      where: {
-        companyId,
-        contactId,
-        status: { in: [ConversationStatus.WAITING, ConversationStatus.OPEN] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const existing = await this.findActiveConversation(companyId, contactId);
 
     if (existing) {
-      // Reaponta para a conexão atual caso a sessão tenha sido reparada
-      // (senão o envio falha com "conexão não associada" numa conversa viva)
-      if (existing.whatsappConnectionId !== whatsappConnectionId) {
-        const updated = await this.prisma.conversation.update({
-          where: { id: existing.id },
-          data: { whatsappConnectionId },
-        });
-        return { conversation: updated, isNew: false, queue: null };
-      }
-      return { conversation: existing, isNew: false, queue: null };
+      return this.reconnectIfNeeded(existing, whatsappConnectionId);
     }
 
     // Resolve a fila ativa do departamento da conexão (B1-2): sem isso a
@@ -574,26 +572,65 @@ export class ConversationService {
       });
     }
 
-    // Cria nova conversa
-    const created = await this.prisma.conversation.create({
-      data: {
+    try {
+      const created = await this.prisma.conversation.create({
+        data: {
+          companyId,
+          contactId,
+          whatsappConnectionId,
+          channel,
+          status: ConversationStatus.WAITING,
+          departmentId: departmentId ?? undefined,
+          queueId: queue?.id,
+        },
+      });
+
+      // Produtor de SLA (B2-3): só agenda quando há fila ativa resolvida —
+      // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
+      if (queue) {
+        await this.scheduleSlaCheck(created.id, companyId, queue.maxWaitSecs);
+      }
+
+      return { conversation: created, isNew: true, queue };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Perdeu a corrida: outro processo já criou (ou reabriu) a conversa
+        // ativa deste contato entre o findFirst acima e este create. A linha
+        // vencedora já existe — mesmo tratamento do caminho "existing" logo
+        // no topo, nunca duplica nem derruba o processamento do webhook.
+        const winner = await this.findActiveConversation(companyId, contactId);
+        if (!winner) throw err; // não deveria acontecer — o índice garante que existe
+        return this.reconnectIfNeeded(winner, whatsappConnectionId);
+      }
+      throw err;
+    }
+  }
+
+  private async findActiveConversation(companyId: string, contactId: string) {
+    return this.prisma.conversation.findFirst({
+      where: {
         companyId,
         contactId,
-        whatsappConnectionId,
-        channel,
-        status: ConversationStatus.WAITING,
-        departmentId: departmentId ?? undefined,
-        queueId: queue?.id,
+        status: { in: [ConversationStatus.WAITING, ConversationStatus.OPEN] },
       },
+      orderBy: { createdAt: 'desc' },
     });
+  }
 
-    // Produtor de SLA (B2-3): só agenda quando há fila ativa resolvida —
-    // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
-    if (queue) {
-      await this.scheduleSlaCheck(created.id, companyId, queue.maxWaitSecs);
+  private async reconnectIfNeeded(
+    conversation: NonNullable<Awaited<ReturnType<typeof this.findActiveConversation>>>,
+    whatsappConnectionId: string,
+  ) {
+    // Reaponta para a conexão atual caso a sessão tenha sido reparada (senão
+    // o envio falha com "conexão não associada" numa conversa viva).
+    if (conversation.whatsappConnectionId !== whatsappConnectionId) {
+      const updated = await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { whatsappConnectionId },
+      });
+      return { conversation: updated, isNew: false, queue: null };
     }
-
-    return { conversation: created, isNew: true, queue };
+    return { conversation, isNew: false, queue: null };
   }
 
   // ── Atualizar preview e timestamp da última mensagem ──────────────────────

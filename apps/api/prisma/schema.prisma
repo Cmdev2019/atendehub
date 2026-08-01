@@ -388,6 +388,16 @@ model Conversation {
   @@index([companyId, contactId])
   @@index([companyId, agentId])
   @@index([companyId, lastMessageAt])
+  // B-49: existe também um índice ÚNICO PARCIAL — no máximo 1 conversa por
+  // (companyId, contactId) enquanto status IN (WAITING, OPEN) — criado à mão
+  // na migration `..._b49_conversation_active_unique_per_contact`
+  // (`conversations_active_per_contact_key`). O Prisma não tem `WHERE` na
+  // sintaxe de `@@unique`/`@@index` (sem suporte a índice parcial na DSL até
+  // a v5), então não dá pra declarar aqui — só documentar pra ninguém achar
+  // que é dead code numa introspecção futura e derrubar sem querer.
+  // Conversas RESOLVED/CLOSED do mesmo contato continuam coexistindo livre
+  // (histórico de atendimentos passados) — só o estado ATIVO é protegido.
+  // Ver ConversationService#upsertFromWebhook.
   @@map("conversations")
 }
 
