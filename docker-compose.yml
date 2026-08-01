@@ -68,12 +68,16 @@ services:
     networks:
       - atendehub_net
 
-  # Bucket "atendehub-media" e política de leitura pública são criados pela
-  # própria API no boot (StorageService#onModuleInit — makeBucket +
-  # setBucketPolicy) — não precisa de container auxiliar (B-5, removido
-  # 2026-07-24: usava minio/mc:RELEASE.2025-06-13T11-33-47Z, tag que saiu do
-  # Docker Hub e travava o `docker compose up`; era redundante mesmo antes
-  # disso, já que a API faz exatamente o mesmo trabalho).
+  # Bucket "atendehub-media" é criado pela própria API no boot
+  # (StorageService#onModuleInit — makeBucket) — não precisa de container
+  # auxiliar (B-5, removido 2026-07-24: usava
+  # minio/mc:RELEASE.2025-06-13T11-33-47Z, tag que saiu do Docker Hub e
+  # travava o `docker compose up`; era redundante mesmo antes disso, já que
+  # a API faz exatamente o mesmo trabalho). Bucket é PRIVADO (B-38,
+  # 2026-07-29) — onModuleInit ativamente REVOGA qualquer bucket policy
+  # (setBucketPolicy(bucket, '') a cada boot, hardening de 2026-08-01 pós-
+  # auditoria — uma policy pública herdada de código antigo não sumia
+  # sozinha) em vez de aplicar uma pública como fazia antes do B-38.
 
   # ── Evolution API v2 (camada WhatsApp / Baileys) ─────────────────────────────
   evolution:

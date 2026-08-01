@@ -122,16 +122,28 @@ export class StorageService implements OnModuleInit {
         this.logger.log(`Bucket "${this.bucket}" criado.`);
       }
 
-      // B-38: nenhuma bucket policy é aplicada — bucket permanece PRIVADO
-      // (comportamento padrão do MinIO/S3 na ausência de policy). Mídia só é
-      // acessível via URL assinada (presignUrl/presignDeep), nunca por leitura
-      // pública anônima.
+      // B-38 (hardening pós-auditoria, achado ao vivo por E2E contra MinIO
+      // real): a versão original do B-38 só PARAVA de aplicar a policy
+      // pública em boots futuros — não revogava a policy pública que uma
+      // versão anterior do código já tinha aplicado em boots passados.
+      // Bucket policy é estado PERSISTENTE no MinIO, não efêmero: qualquer
+      // ambiente (dev, staging ou produção) onde o código pré-B-38 rodou
+      // pelo menos uma vez continuava com leitura pública ativa mesmo depois
+      // do "fix" — provado ao vivo (GET anônimo devolvendo 200, policy
+      // `{"Effect":"Allow","Principal":{"AWS":["*"]}}` ainda presente).
+      // `setBucketPolicy(bucket, '')` limpa QUALQUER policy existente
+      // (idempotente — nenhum efeito se já não houver nenhuma), a cada boot,
+      // então a exposição legada não sobrevive ao próximo deploy em nenhum
+      // ambiente, independente de quando ele rodou a última vez o código
+      // antigo.
+      await this.client.setBucketPolicy(this.bucket, '');
+
       this.logger.log(
-        `StorageService inicializado — bucket: ${this.bucket} (privado; URLs assinadas por ${this.defaultExpirySeconds}s)`,
+        `StorageService inicializado — bucket: ${this.bucket} (privado; policy pública revogada se existisse; URLs assinadas por ${this.defaultExpirySeconds}s)`,
       );
     } catch (err: any) {
       this.logger.error(
-        `Falha ao verificar/criar bucket MinIO: ${err.message}`,
+        `Falha ao verificar/criar/proteger bucket MinIO: ${err.message}`,
       );
       // Não lança exceção para permitir o boot mesmo sem MinIO (dev local)
     }

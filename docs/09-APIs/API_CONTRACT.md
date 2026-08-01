@@ -290,7 +290,11 @@ Query: `limit=50` · `before?` (id de mensagem — cursor para paginação retro
   "externalId": "3EB0...",           // id da mensagem no WhatsApp
   "sender": { "id", "name", "avatarUrl", "role" } | null,  // null p/ CLIENT
   "attachments": [{
-    "id", "url",                     // URL pública no MinIO (localhost:9000)
+    "id", "url",                     // URL ASSINADA e temporária (B-38) — bucket é
+                                      // privado; expira em MEDIA_SIGNED_URL_EXPIRATION
+                                      // segundos (600 por padrão). Não cachear/persistir
+                                      // no cliente além da sessão — re-buscar o recurso
+                                      // (ex.: recarregar a conversa) gera uma URL nova.
     "mimeType",                      // ex.: image/webp
     "fileName", "size", "width", "height", "duration"
   }]
@@ -405,7 +409,9 @@ declaração do controller — "me" seria interpretado como `:id` senão.
 Só aceita `image/*`, limite 5MB (menor que os 16MB de `messages/media` —
 é uma foto de perfil). Sobe pro MinIO via `StorageService` (mesmo padrão de
 `messages/media`) e atualiza `avatarUrl`. Retorna `201` com o `USER_SELECT`
-atualizado (`avatarUrl` já apontando pra URL pública do MinIO).
+atualizado (`avatarUrl` sai já presignado — mesma regra de expiração do B-38
+descrita em `attachments[].url` de `GET .../messages`; o valor persistido em
+`User.avatarUrl` no banco é a URL interna, nunca exposta como tal).
 
 ---
 

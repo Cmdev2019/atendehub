@@ -11,7 +11,7 @@ jest.mock('minio', () => ({
   Client: jest.fn().mockImplementation(() => ({
     bucketExists: jest.fn().mockResolvedValue(true),
     makeBucket: jest.fn(),
-    setBucketPolicy: jest.fn(),
+    setBucketPolicy: jest.fn().mockResolvedValue(undefined),
     removeObject: jest.fn().mockResolvedValue(undefined),
     putObject: jest.fn().mockResolvedValue(undefined),
     presignedGetObject: jest
@@ -50,24 +50,39 @@ describe('StorageService', () => {
     jest.clearAllMocks();
   });
 
-  // ── B-38: bucket nunca pode virar público ──────────────────────────────────
+  // ── B-38: bucket nunca pode ficar público — nem por omissão, nem por legado ──
   describe('onModuleInit', () => {
-    it('cria o bucket se necessário e NUNCA aplica bucket policy (bucket permanece privado)', async () => {
+    it('cria o bucket se necessário e revoga qualquer bucket policy (bucket privado)', async () => {
       client.bucketExists.mockResolvedValue(false);
 
       await service.onModuleInit();
 
       expect(client.makeBucket).toHaveBeenCalledWith('atendehub-media');
-      expect(client.setBucketPolicy).not.toHaveBeenCalled();
+      expect(client.setBucketPolicy).toHaveBeenCalledWith('atendehub-media', '');
     });
 
-    it('não aplica policy nenhuma mesmo quando o bucket já existe', async () => {
+    // Achado na auditoria pós-hardening (2026-08-01, E2E contra MinIO real):
+    // a versão original do B-38 só evitava aplicar policy pública em boots
+    // NOVOS — não revogava uma policy pública que uma versão anterior do
+    // código já tivesse deixado gravada no bucket (bucket policy é estado
+    // persistente no MinIO, sobrevive a redeploys). Provado ao vivo: bucket
+    // de dev continuava com leitura pública ativa (GET anônimo → 200) mesmo
+    // depois do B-38 "concluído". `setBucketPolicy(bucket, '')` a cada boot
+    // fecha isso: idempotente se já não houver policy, revoga se houver.
+    it('revoga uma bucket policy pública LEGADA (deixada por uma versão anterior do código) mesmo quando o bucket já existe', async () => {
       client.bucketExists.mockResolvedValue(true);
 
       await service.onModuleInit();
 
       expect(client.makeBucket).not.toHaveBeenCalled();
-      expect(client.setBucketPolicy).not.toHaveBeenCalled();
+      expect(client.setBucketPolicy).toHaveBeenCalledWith('atendehub-media', '');
+    });
+
+    it('não derruba o boot se a chamada de bucket policy falhar (ex.: MinIO fora do ar em dev)', async () => {
+      client.bucketExists.mockResolvedValue(true);
+      client.setBucketPolicy.mockRejectedValueOnce(new Error('MinIO fora do ar'));
+
+      await expect(service.onModuleInit()).resolves.not.toThrow();
     });
   });
 

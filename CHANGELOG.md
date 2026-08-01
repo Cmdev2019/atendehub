@@ -32,6 +32,40 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 ### Removido
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
+### Segurança
+- **B-38 (2026-07-29):** bucket de mídia do MinIO deixa de ser público em leitura — mitiga risco de
+  violação da LGPD Art. 46 (dado pessoal de cliente — foto, áudio, documento — acessível por qualquer
+  pessoa com a URL, sem autenticação). Mídia passa a ser servida exclusivamente por URL assinada
+  (expiração configurável via `MEDIA_SIGNED_URL_EXPIRATION`, padrão 600s). Impacto: nenhuma mudança de
+  contrato para o consumidor da API (`attachments[].url`/`avatarUrl` continuam sendo strings de URL) —
+  só passam a expirar, documentado em `docs/09-APIs/API_CONTRACT.md`. Arquivos:
+  `apps/api/src/shared/storage/storage.service.ts` (`onModuleInit`, `presignUrl`, `presignDeep`),
+  `apps/api/src/shared/storage/media-presign.interceptor.ts` (novo), `apps/api/src/app.module.ts`.
+- **B-38 — hardening pós-auditoria (2026-08-01):** achado ao vivo por teste E2E contra MinIO real
+  durante auditoria pós-implementação — a correção original de 2026-07-29 só evitava aplicar uma
+  policy pública em boots *futuros*; não revogava uma policy pública que uma versão anterior do
+  código já tivesse deixado gravada no bucket (bucket policy é estado persistente no MinIO, não
+  efêmero). Ambientes onde o código pré-B-38 já tinha rodado ao menos uma vez continuavam com leitura
+  pública ativa mesmo com o "fix" aplicado — confirmado com evidência real (GET anônimo devolvendo
+  200, policy `Principal:{"AWS":["*"]}` ainda presente no bucket de dev). `StorageService#onModuleInit`
+  agora chama `setBucketPolicy(bucket, '')` a cada boot, revogando qualquer policy herdada
+  (idempotente quando já não há nenhuma). Risco mitigado: exposição pública residual sobrevivendo ao
+  deploy do "fix" em qualquer ambiente que já tivesse rodado a versão antiga. Arquivo:
+  `apps/api/src/shared/storage/storage.service.ts`. Ver `B38_AUDITORIA_POS_HARDENING.pdf` (raiz do
+  repo) para o relatório completo.
+
+### Corrigido
+- **B-39 (2026-07-29):** retry da fila de webhook (Bull) estava inoperante — exceção de
+  `WebhookService#handleEvent` era engolida antes de chegar ao processor, então `attempts`/`backoff`
+  nunca tinham efeito e uma falha transitória (Postgres/Redis fora do ar, timeout da Evolution) perdia
+  a mensagem do cliente em silêncio. DLQ, classificação de erro transitório/permanente e métricas
+  adicionadas junto.
+- **B-48 (2026-08-01):** race condition de idempotência em `MessageService#createFromWebhook` — sob
+  concorrência real, `findFirst`+`create` não atômico podia gravar a mesma mensagem duas vezes.
+  `@@unique([externalId])` + captura de `P2002`.
+- **B-49 (2026-08-01):** mesma classe de race condition em `ConversationService#upsertFromWebhook` —
+  índice único parcial no Postgres (`WHERE status IN ('WAITING','OPEN')`) + captura de `P2002`.
+
 ---
 
 ## Convenção deste arquivo
