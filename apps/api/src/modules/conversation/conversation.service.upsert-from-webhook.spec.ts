@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bull';
 import { ConversationStatus, Prisma } from '@prisma/client';
 import { ConversationService } from './conversation.service';
@@ -53,6 +54,36 @@ describe('ConversationService#upsertFromWebhook — idempotência (B-49)', () =>
     }).compile();
 
     service = module.get(ConversationService);
+  });
+
+  // "Tripwire" (PRR pós-hardening B-49, Fase 13 — validação futura): não tem
+  // como um teste travar sozinho um `@@unique` parcial quando alguém edita o
+  // enum no schema.prisma (é SQL fora do alcance do Jest). O que dá pra
+  // garantir é isto: se `ConversationStatus` ganhar um 5º valor, ESTE teste
+  // quebra imediatamente (comparação exata, não `toContain`) — obrigando
+  // quem mexeu a vir aqui, ler o comentário de B-49 no schema.prisma e
+  // decidir conscientemente se o status novo entra ou não na lista de
+  // "ativo" abaixo E na migration do índice parcial. Sem isso, um novo
+  // status "ativo" reabriria a race condition do B-49 em silêncio.
+  it('[tripwire] ConversationStatus continua com exatamente 4 valores — um 5º exige decisão consciente sobre findActiveConversation() e a migration do índice parcial (ver comentário B-49 no schema.prisma)', () => {
+    expect(Object.values(ConversationStatus).sort()).toEqual(
+      ['CLOSED', 'OPEN', 'RESOLVED', 'WAITING'].sort(),
+    );
+  });
+
+  it('findActiveConversation (via upsertFromWebhook) considera ativo só WAITING e OPEN — não RESOLVED nem CLOSED', async () => {
+    mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+    mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-novo', status: ConversationStatus.WAITING });
+
+    await service.upsertFromWebhook(companyId, contactId, 'wa-conn-1');
+
+    expect(mockPrisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: [ConversationStatus.WAITING, ConversationStatus.OPEN] },
+        }),
+      }),
+    );
   });
 
   it('conversa ativa já existe com a mesma conexão — devolve ela, isNew=false, sem tentar create', async () => {
@@ -114,6 +145,26 @@ describe('ConversationService#upsertFromWebhook — idempotência (B-49)', () =>
       isNew: false,
       queue: null,
     });
+  });
+
+  // Observabilidade (PRR pós-hardening B-49, 2026-08-01): antes desta sessão
+  // uma corrida de "split-brain" evitada com sucesso não deixava rastro
+  // nenhum em log — mesmo gap corrigido em MessageService no B-48.
+  it('loga um warning (não error) quando resolve uma colisão de P2002 — observabilidade da corrida', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    mockPrisma.conversation.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'conv-vencedora',
+        whatsappConnectionId: 'wa-conn-1',
+        status: ConversationStatus.WAITING,
+      });
+    mockPrisma.conversation.create.mockRejectedValueOnce(p2002());
+
+    await service.upsertFromWebhook(companyId, contactId, 'wa-conn-1');
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(contactId));
+    warnSpy.mockRestore();
   });
 
   it('sob corrida (P2002), se a conversa vencedora está numa conexão diferente, reaponta antes de devolver', async () => {

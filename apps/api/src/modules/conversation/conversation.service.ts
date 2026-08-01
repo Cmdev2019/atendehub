@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -47,6 +48,8 @@ const CONVERSATION_LIST_SELECT = {
 
 @Injectable()
 export class ConversationService {
+  private readonly logger = new Logger(ConversationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsService: EventsService,
@@ -598,6 +601,14 @@ export class ConversationService {
         // ativa deste contato entre o findFirst acima e este create. A linha
         // vencedora já existe — mesmo tratamento do caminho "existing" logo
         // no topo, nunca duplica nem derruba o processamento do webhook.
+        // Observabilidade (PRR pós-hardening B-49, 2026-08-01 — mesmo gap
+        // encontrado e corrigido em MessageService no B-48): sem este log,
+        // uma corrida de "split-brain" evitada com sucesso não deixava
+        // nenhum rastro — impossível monitorar em produção com que
+        // frequência a proteção é de fato exercitada.
+        this.logger.warn(
+          `Colisão de idempotência resolvida via P2002 — contato ${contactId} já tinha conversa ativa (outro worker/réplica venceu a corrida)`,
+        );
         const winner = await this.findActiveConversation(companyId, contactId);
         if (!winner) throw err; // não deveria acontecer — o índice garante que existe
         return this.reconnectIfNeeded(winner, whatsappConnectionId);

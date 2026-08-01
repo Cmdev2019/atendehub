@@ -46,6 +46,16 @@ enum Channel {
   CHAT         // chat do site
 }
 
+// ⚠️ B-49: WAITING e OPEN são os únicos status considerados "ativos" para o
+// índice único parcial `conversations_active_per_contact_key` (migration
+// `20260801211919_b49_conversation_active_unique_per_contact` — no máximo 1
+// conversa ativa por contato). Adicionar um novo status que também deva
+// contar como "ativo" (ex.: um status intermediário de espera) exige, no
+// MESMO commit: (1) nova migration ajustando o `WHERE` do índice parcial —
+// nunca editar a migration já aplicada; (2) atualizar o array em
+// `ConversationService#findActiveConversation`. Esquecer qualquer um dos
+// dois reabre a race condition do B-49 (2 conversas ativas pro mesmo
+// contato) só para o status novo.
 enum ConversationStatus {
   WAITING      // na fila, sem atendente
   OPEN         // em atendimento

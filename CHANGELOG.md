@@ -76,8 +76,26 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   observabilidade — `MessageService` ganhou `Logger` e passou a registrar (nível `warn`) toda colisão
   de `P2002` resolvida, antes invisível em produção. Relatório técnico completo em
   `B48_AUDITORIA_POS_HARDENING.pdf` (raiz do repo).
-- **B-49 (2026-08-01):** mesma classe de race condition em `ConversationService#upsertFromWebhook` —
-  índice único parcial no Postgres (`WHERE status IN ('WAITING','OPEN')`) + captura de `P2002`.
+- **B-49 (2026-08-01):** race condition em `ConversationService#upsertFromWebhook` — sob concorrência
+  real (duas mensagens do mesmo contato processadas quase juntas, nem precisa de retry), o padrão
+  `findFirst`+`create` não atômico podia criar 2 conversas ativas pro mesmo contato. Impacto: pior que
+  duplicar mensagem — a conversa do cliente ficava "split-brain" entre 2 tickets (um agente responde
+  numa, mensagens futuras do cliente resolvem pra outra, a 1ª vira ficha fantasma na fila). Diferente
+  do B-48 (unicidade de coluna inteira), a invariante aqui é condicional — no máximo 1 conversa ATIVA
+  (`WAITING`/`OPEN`) por contato; conversas `RESOLVED`/`CLOSED` continuam coexistindo livremente
+  (histórico). Mitigação: índice único PARCIAL no Postgres
+  (`conversations_active_per_contact_key`, `WHERE status IN ('WAITING','OPEN')` — não expressável via
+  `@@unique`/`@@index` do Prisma, migration SQL manual) + captura de `P2002` em
+  `ConversationService#upsertFromWebhook`, devolvendo a conversa vencedora em vez de duplicar.
+  Validado com concorrência real (2 a 100 chamadas simultâneas, sempre exatamente 1 conversa ativa,
+  todos os chamadores convergindo pro mesmo `conversationId`). Arquivos:
+  `apps/api/prisma/schema.prisma`,
+  `apps/api/prisma/migrations/20260801211919_b49_conversation_active_unique_per_contact/`,
+  `apps/api/src/modules/conversation/conversation.service.ts`. Hardening pós-auditoria (mesmo dia):
+  observabilidade — `ConversationService` ganhou `Logger` e passou a registrar (nível `warn`) toda
+  colisão de `P2002` resolvida, antes invisível em produção (mesmo gap corrigido em `MessageService`
+  no B-48). Relatório técnico em `B49_RELATORIO_TECNICO_CORRECAO_E_VALIDACAO.pdf` e
+  `B49_AUDITORIA_POS_HARDENING.pdf` (raiz do repo).
 
 ---
 
