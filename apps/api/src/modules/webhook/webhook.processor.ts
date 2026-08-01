@@ -6,7 +6,11 @@ import { WebhookService } from './webhook.service';
 import { WebhookMetricsService } from './webhook-metrics.service';
 import { classifyWebhookError, WebhookErrorClass } from './webhook.errors';
 import { WebhookDlqEntry } from './webhook-dlq.types';
-import { formatWebhookLog, WORKER_ID } from './webhook-log.util';
+// Relocado pra shared/logging/ na ACR de 2026-08-01 — formatStructuredLog
+// nunca foi específico de webhook, é reaproveitado hoje também por
+// MessageService/ConversationService (B-48/B-49). Alias mantido pra não
+// reescrever as 8 chamadas abaixo.
+import { formatStructuredLog as formatWebhookLog, WORKER_ID } from '../../shared/logging/structured-log.util';
 import { extractPhoneFromJid } from '../../shared/whatsapp/jid.util';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';

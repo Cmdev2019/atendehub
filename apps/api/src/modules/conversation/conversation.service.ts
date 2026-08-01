@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
+import { ConversationStatus, Channel, SenderType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
+import { formatStructuredLog } from '../../shared/logging/structured-log.util';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
@@ -596,7 +598,7 @@ export class ConversationService {
 
       return { conversation: created, isNew: true, queue };
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      if (isUniqueConstraintViolation(err)) {
         // Perdeu a corrida: outro processo já criou (ou reabriu) a conversa
         // ativa deste contato entre o findFirst acima e este create. A linha
         // vencedora já existe — mesmo tratamento do caminho "existing" logo
@@ -605,9 +607,11 @@ export class ConversationService {
         // encontrado e corrigido em MessageService no B-48): sem este log,
         // uma corrida de "split-brain" evitada com sucesso não deixava
         // nenhum rastro — impossível monitorar em produção com que
-        // frequência a proteção é de fato exercitada.
+        // frequência a proteção é de fato exercitada. `formatStructuredLog`
+        // (ACR 2026-08-01) pelo mesmo motivo do MessageService — formato
+        // consistente com o resto do projeto, não string ad-hoc.
         this.logger.warn(
-          `Colisão de idempotência resolvida via P2002 — contato ${contactId} já tinha conversa ativa (outro worker/réplica venceu a corrida)`,
+          formatStructuredLog('IdempotencyCollisionResolved', { resource: 'Conversation', contactId }),
         );
         const winner = await this.findActiveConversation(companyId, contactId);
         if (!winner) throw err; // não deveria acontecer — o índice garante que existe

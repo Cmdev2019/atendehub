@@ -6,7 +6,7 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { WebhookJobData } from './webhook.processor';
 import { WebhookDlqEntry } from './webhook-dlq.types';
 import { buildWebhookJobOptions } from './webhook-queue.config';
-import { formatWebhookLog } from './webhook-log.util';
+import { formatStructuredLog as formatWebhookLog } from '../../shared/logging/structured-log.util';
 
 export interface WebhookDlqSummary {
   id: string;

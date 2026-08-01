@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { MessageType, MessageStatus, SenderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
+import { formatStructuredLog } from '../../shared/logging/structured-log.util';
 import { ListMessagesDto } from './dto/list-messages.dto';
 
 @Injectable()
@@ -191,11 +193,7 @@ export class MessageService {
       const message = await this.prisma.message.create({ data, select });
       return { message, isNew: true };
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002' &&
-        typeof data.externalId === 'string'
-      ) {
+      if (isUniqueConstraintViolation(err) && typeof data.externalId === 'string') {
         // Perdeu a corrida: outro processo já inseriu esse externalId entre
         // a hora que este create foi tentado e o commit dele. A linha
         // vencedora já existe e é a fonte da verdade — devolve ela.
@@ -204,9 +202,16 @@ export class MessageService {
         // deixava rastro nenhum — impossível saber, em produção, com que
         // frequência a proteção de concorrência é de fato exercitada.
         // `warn`, não `error`: é o mecanismo de defesa funcionando como
-        // projetado, não uma falha.
+        // projetado, não uma falha. `formatWebhookLog` (ACR 2026-08-01,
+        // relocado de modules/webhook/ pra shared/logging/ por ser genérico
+        // o bastante pra qualquer evento estruturado, não só de webhook)
+        // pelo mesmo motivo que WebhookProcessor usa: formato chave=valor
+        // parseável por qualquer coletor de log, igual em todo o projeto.
         this.logger.warn(
-          `Colisão de idempotência resolvida via P2002 — externalId=${data.externalId} já existia (outro worker/réplica venceu a corrida)`,
+          formatStructuredLog('IdempotencyCollisionResolved', {
+            resource: 'Message',
+            externalId: data.externalId,
+          }),
         );
         const message = await this.prisma.message.findUniqueOrThrow({
           where: { externalId: data.externalId },
