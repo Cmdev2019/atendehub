@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventsGateway } from './events.gateway';
+import { StorageService } from '../../shared/storage/storage.service';
 
 // ─── Payloads tipados por evento ─────────────────────────────────────────────
 
@@ -75,7 +76,10 @@ export interface SlaBreachedPayload {
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
-  constructor(private readonly gateway: EventsGateway) {}
+  constructor(
+    private readonly gateway: EventsGateway,
+    private readonly storage: StorageService,
+  ) {}
 
   // ── Nova mensagem recebida ────────────────────────────────────────────────
   emitNewMessage(payload: MessageNewPayload): void {
@@ -92,18 +96,22 @@ export class EventsService {
   }
 
   // ── Mensagem atualizada (anexo de mídia pronto após o message.new) ────────
-  emitMessageUpdated(payload: {
+  // B-38: `attachment.url` sai gravado como URL interna do MinIO — troca por
+  // URL assinada antes de emitir (mesmo tratamento da resposta HTTP, ver
+  // MediaPresignInterceptor).
+  async emitMessageUpdated(payload: {
     companyId: string;
     conversationId: string;
     messageId: string;
     attachment: { id: string; url: string; mimeType: string; fileName?: string | null };
-  }): void {
+  }): Promise<void> {
     const { companyId, conversationId } = payload;
+    const signedPayload = await this.storage.presignDeep(payload);
 
     this.gateway.server
       .to(`conversation:${conversationId}`)
       .to(`company:${companyId}`)
-      .emit('message.updated', payload);
+      .emit('message.updated', signedPayload);
 
     this.logger.debug(`message.updated → msg ${payload.messageId} (anexo pronto)`);
   }
@@ -121,13 +129,14 @@ export class EventsService {
   }
 
   // ── Nova conversa criada ──────────────────────────────────────────────────
-  emitConversationCreated(payload: ConversationCreatedPayload): void {
+  async emitConversationCreated(payload: ConversationCreatedPayload): Promise<void> {
     const { companyId } = payload;
+    const signedPayload = await this.storage.presignDeep(payload);
 
     // Notifica todos da empresa sobre nova conversa na fila
     this.gateway.server
       .to(`company:${companyId}`)
-      .emit('conversation.created', payload);
+      .emit('conversation.created', signedPayload);
 
     this.logger.debug(
       `conversation.created → company:${companyId} | id: ${payload.conversation.id}`,
@@ -147,8 +156,9 @@ export class EventsService {
   }
 
   // ── Conversa atribuída a um agente ────────────────────────────────────────
-  emitConversationAssigned(payload: ConversationAssignedPayload): void {
+  async emitConversationAssigned(payload: ConversationAssignedPayload): Promise<void> {
     const { companyId, conversationId, agentId } = payload;
+    const signedPayload = await this.storage.presignDeep(payload);
 
     // União das salas: conversa + empresa + agente atribuído (sem duplicar
     // para sockets presentes em mais de uma sala)
@@ -160,7 +170,7 @@ export class EventsService {
       broadcast = broadcast.to(`agent:${agentId}`);
     }
 
-    broadcast.emit('conversation.assigned', payload);
+    broadcast.emit('conversation.assigned', signedPayload);
 
     this.logger.debug(
       `conversation.assigned → ${conversationId} | agente: ${agentId ?? 'nenhum'}`,

@@ -170,6 +170,12 @@ export class MessageService {
   }
 
   // ── Criar mensagem recebida via webhook ───────────────────────────────────
+  // B-39: `isNew` no retorno é o que permite ao WebhookService distinguir um
+  // processamento de verdade de um retry idempotente do Bull — sem ele, um
+  // retry reprocessaria mídia/preview/auto-atendimento/eventos de uma
+  // mensagem que já tinha sido tratada com sucesso na tentativa anterior
+  // (dedup por externalId aqui já evitava duplicar a MENSAGEM, mas não os
+  // efeitos colaterais em volta dela).
   async createFromWebhook(data: {
     conversationId: string;
     content: string;
@@ -178,16 +184,16 @@ export class MessageService {
     externalId: string;
     senderId?: string;
     metadata?: Record<string, any>;
-  }) {
+  }): Promise<{ id: string; status: MessageStatus; sentAt: Date; isNew: boolean }> {
     // Evita duplicatas pelo externalId
     const existing = await this.prisma.message.findFirst({
       where: { externalId: data.externalId },
       select: { id: true, status: true, sentAt: true },
     });
 
-    if (existing) return existing;
+    if (existing) return { ...existing, isNew: false };
 
-    return this.prisma.message.create({
+    const created = await this.prisma.message.create({
       data: {
         conversationId: data.conversationId,
         senderId: data.senderId,
@@ -204,6 +210,8 @@ export class MessageService {
         sentAt: true,
       },
     });
+
+    return { ...created, isNew: true };
   }
 
   // ── Atualizar status da mensagem (ex: lida) ───────────────────────────────

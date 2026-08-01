@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   Headers,
   HttpCode,
@@ -8,23 +9,34 @@ import {
   Logger,
   ForbiddenException,
   InternalServerErrorException,
+  UseGuards,
+  Header,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
+import { Role } from '@prisma/client';
 import { timingSafeEqual, createHash } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { WebhookJobData } from './webhook.processor';
+import { WebhookDlqEntry } from './webhook-dlq.types';
+import { buildWebhookJobOptions } from './webhook-queue.config';
+import { WebhookMetricsService } from './webhook-metrics.service';
+import { getRequestId } from '../../shared/logging/request-context';
 
 @Controller('webhooks')
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
   constructor(
-    @InjectQueue(QUEUE_NAMES.WEBHOOK) private readonly webhookQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.WEBHOOK) private readonly webhookQueue: Queue<WebhookJobData>,
+    @InjectQueue(QUEUE_NAMES.WEBHOOK_DLQ) private readonly dlqQueue: Queue<WebhookDlqEntry>,
     private readonly config: ConfigService,
+    private readonly metricsService: WebhookMetricsService,
   ) {}
 
   /**
@@ -103,24 +115,49 @@ export class WebhookController {
       event: this.normalizeEventName(payload.event),
       instance: payload.instance,
       data: payload.data,
+      // B-39: correlaciona a requisição HTTP original com o job/logs/DLQ —
+      // capturado AQUI porque o job roda fora do AsyncLocalStorage da
+      // requisição (RequestIdMiddleware não alcança o processor).
+      requestId: getRequestId(),
+      ...(signatureHeader && { receivedHeaders: { 'x-evolution-signature': signatureHeader } }),
     };
 
     // ── 4. Adiciona job na fila e retorna imediatamente ────────────────────
     // A Evolution API espera um 200 rápido. Processamento acontece em background.
-    await this.webhookQueue.add(normalizedPayload, {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 2000,
-      },
-      removeOnComplete: true,
-    });
+    // B-39: attempts/backoff/timeout/removeOnComplete/removeOnFail vêm de ENV
+    // (WEBHOOK_ATTEMPTS/WEBHOOK_BACKOFF/WEBHOOK_TIMEOUT/...), não mais
+    // hardcoded — ver webhook-queue.config.ts.
+    await this.webhookQueue.add(normalizedPayload, buildWebhookJobOptions(this.config));
 
     this.logger.debug(
-      `Webhook ${normalizedPayload.event} da instância ${normalizedPayload.instance} adicionado à fila`,
+      `Webhook ${normalizedPayload.event} da instância ${normalizedPayload.instance} adicionado à fila ` +
+        `(requestId=${normalizedPayload.requestId ?? '-'})`,
     );
 
     return { received: true };
+  }
+
+  // GET /api/v1/webhooks/metrics
+  // B-39: contadores acumulados (WebhookMetricsService, em memória — 1
+  // réplica, ver B-46) + profundidade AO VIVO das duas filas, direto do
+  // Bull/Redis. Formato de exposição de texto do Prometheus.
+  @Get('metrics')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  async metrics(): Promise<string> {
+    const [webhookCounts, dlqCounts] = await Promise.all([
+      this.webhookQueue.getJobCounts(),
+      this.dlqQueue.getJobCounts(),
+    ]);
+
+    return this.metricsService.toPrometheus({
+      [`${QUEUE_NAMES.WEBHOOK}_waiting`]: webhookCounts.waiting,
+      [`${QUEUE_NAMES.WEBHOOK}_active`]: webhookCounts.active,
+      [`${QUEUE_NAMES.WEBHOOK}_delayed`]: webhookCounts.delayed,
+      [`${QUEUE_NAMES.WEBHOOK}_failed`]: webhookCounts.failed,
+      [QUEUE_NAMES.WEBHOOK_DLQ]: dlqCounts.waiting + dlqCounts.delayed,
+    });
   }
 
   // ── Comparação em tempo constante (previne timing attack) ─────────────────

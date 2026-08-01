@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import { extractPhoneFromJid } from '../../shared/whatsapp/jid.util';
 
 // ─── Tipos de resposta da Evolution API ───────────────────────────────────────
 export interface EvolutionInstance {
@@ -154,17 +155,12 @@ export class EvolutionService {
         status: inst.connectionStatus ?? inst.status,
         profileName: inst.profileName ?? undefined,
         profilePictureUrl: inst.profilePicUrl ?? inst.profilePictureUrl ?? undefined,
-        phoneNumber: this.jidToPhone(inst.ownerJid) ?? inst.phoneNumber ?? inst.number ?? undefined,
+        phoneNumber:
+          (extractPhoneFromJid(inst.ownerJid) || undefined) ?? inst.phoneNumber ?? inst.number ?? undefined,
       };
     } catch {
       return null;
     }
-  }
-
-  // "5512996572530:12@s.whatsapp.net" → "5512996572530"
-  private jidToPhone(jid?: string | null): string | undefined {
-    if (!jid) return undefined;
-    return jid.split('@')[0].split(':')[0] || undefined;
   }
 
   // ── Desconectar instância ──────────────────────────────────────────────────

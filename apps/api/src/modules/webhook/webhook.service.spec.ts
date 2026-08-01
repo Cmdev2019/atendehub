@@ -147,6 +147,7 @@ describe('WebhookService — processamento de eventos', () => {
         id: 'msg-1',
         status: 'SENT',
         sentAt: new Date(),
+        isNew: true,
       });
 
       await service.handleEvent({
@@ -199,7 +200,7 @@ describe('WebhookService — processamento de eventos', () => {
         isNew: false,
         queue: null,
       });
-      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date() });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date(), isNew: true });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -238,7 +239,7 @@ describe('WebhookService — processamento de eventos', () => {
         isNew: true,
         queue: null,
       });
-      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date() });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date(), isNew: true });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -268,7 +269,7 @@ describe('WebhookService — processamento de eventos', () => {
         isNew: true,
         queue: { id: 'queue-1', maxWaitSecs: 300, greetingMsg: 'Bem-vindo à fila!' },
       });
-      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date() });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-3', status: 'SENT', sentAt: new Date(), isNew: true });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -302,7 +303,7 @@ describe('WebhookService — processamento de eventos', () => {
         isNew: false,
         queue: null,
       });
-      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-1', status: 'SENT', sentAt: new Date() });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-1', status: 'SENT', sentAt: new Date(), isNew: true });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -335,7 +336,7 @@ describe('WebhookService — processamento de eventos', () => {
         isNew: false,
         queue: null,
       });
-      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date() });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({ id: 'msg-2', status: 'SENT', sentAt: new Date(), isNew: true });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -368,6 +369,78 @@ describe('WebhookService — processamento de eventos', () => {
 
       expect(mockConversationService.upsertFromWebhook).not.toHaveBeenCalled();
       expect(mockMessageService.createFromWebhook).not.toHaveBeenCalled();
+    });
+
+    // B-39: sem este corte, um retry do Bull pra uma mensagem que já tinha
+    // sido processada com sucesso reemitiria eventos e reacionaria o
+    // auto-atendimento uma 2ª vez pra cliente nenhum pedir.
+    it('idempotência (B-39): quando createFromWebhook diz isNew=false (retry), pula mídia/preview/auto-atendimento/eventos', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({
+        id: 'msg-1',
+        status: 'SENT',
+        sentAt: new Date(),
+        isNew: false, // já existia — Bull reprocessou o mesmo job
+      });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+          message: { conversation: 'Oi, tudo bem?' },
+        },
+      });
+
+      expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
+      expect(mockEventsService.emitNewMessage).not.toHaveBeenCalled();
+      expect(mockEventsService.emitConversationCreated).not.toHaveBeenCalled();
+      expect(mockMediaDownloadService.downloadFromEvolution).not.toHaveBeenCalled();
+    });
+  });
+
+  // B-39: antes deste fix, handleEvent engolia QUALQUER exceção lançada por
+  // um dos handlers (só logger.error, sem relançar) — o WebhookProcessor
+  // nunca via o erro, o Bull marcava o job como sucesso e nenhum retry
+  // disparava. Regressão direta do bug relatado.
+  describe('propagação de erro (B-39 — nunca mais engolir silenciosamente)', () => {
+    it('handleEvent PROPAGA (rejeita) quando um handler de evento lança', async () => {
+      mockPrisma.whatsAppConnection.findUnique.mockRejectedValueOnce(new Error('DB fora do ar'));
+
+      await expect(
+        service.handleEvent({
+          event: 'MESSAGES_UPSERT',
+          instance: 'session-1',
+          data: {
+            key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+            message: { conversation: 'Oi' },
+          },
+        }),
+      ).rejects.toThrow('DB fora do ar');
+    });
+
+    it('propaga também falha em CONNECTION_UPDATE, CONTACTS_UPSERT e MESSAGES_DELETE — nenhum handler engole por conta própria', async () => {
+      mockWhatsappService.handleConnectionUpdate.mockRejectedValueOnce(new Error('falha ao atualizar conexão'));
+
+      await expect(
+        service.handleEvent({
+          event: 'CONNECTION_UPDATE',
+          instance: 'session-1',
+          data: { state: 'open', wuid: '5512999999999:0@s.whatsapp.net' },
+        }),
+      ).rejects.toThrow('falha ao atualizar conexão');
     });
   });
 

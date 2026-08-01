@@ -9,6 +9,7 @@ import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
 import { MediaDownloadService } from './media-download.service';
 import { AutoAttendanceEngineService } from '../auto-attendance/auto-attendance-engine.service';
+import { extractPhoneFromJid, isOpaqueLidJid } from '../../shared/whatsapp/jid.util';
 
 // ─── Tipos dos payloads da Evolution API v2 ───────────────────────────────────
 interface EvolutionMessageKey {
@@ -103,7 +104,15 @@ export class WebhookService {
           this.logger.debug(`Evento ignorado: ${event}`);
       }
     } catch (err: any) {
+      // B-39: antes o erro morria aqui (só logger.error, sem relançar) — o
+      // WebhookProcessor nunca via a exceção, o Bull marcava o job como
+      // concluído com sucesso e nenhum retry disparava. Loga o contexto (o
+      // processor já loga de novo com tentativa/classificação/elapsedTime,
+      // mas isso aqui é o único lugar que sabe qual `event` específico
+      // estava sendo tratado) e PROPAGA — é o processor que decide o que
+      // fazer com o erro (retry, discard, DLQ).
       this.logger.error(`Erro ao processar evento ${event}: ${err.message}`, err.stack);
+      throw err;
     }
   }
 
@@ -205,8 +214,24 @@ export class WebhookService {
       },
     });
 
+    // ── Idempotência (B-39) ──────────────────────────────────────────────────
+    // `createFromWebhook` dedupe por externalId, mas isso só evita duplicar a
+    // MENSAGEM — sem este corte, um retry do Bull (agora que B-39 deixa o
+    // erro propagar de verdade) reprocessaria tudo que vem depois pra uma
+    // mensagem que já tinha sido tratada com sucesso: baixaria a mídia de
+    // novo (criando um 2º Attachment pra mesma mensagem), reemitiria os
+    // eventos de socket, e — o mais sério — acionaria o auto-atendimento de
+    // novo (`handleReply` respondendo a mesma mensagem do cliente duas
+    // vezes, `handleNewConversation` reenviando a saudação).
+    if (!savedMessage.isNew) {
+      this.logger.debug(
+        `Mensagem ${key.id} já tinha sido processada (retry idempotente) — pulando mídia/preview/auto-atendimento/eventos`,
+      );
+      return;
+    }
+
     // ── Download de mídia e criação de Attachment ───────────────────────────
-    if (this.isMediaType(type) && savedMessage) {
+    if (this.isMediaType(type)) {
       this.downloadAndSaveMedia(
         savedMessage.id,
         conversation.id,
@@ -351,7 +376,7 @@ export class WebhookService {
     // Evolution v2 envia o número do dono em "wuid" ("5512...@s.whatsapp.net",
     // às vezes com sufixo de dispositivo ":12"); os demais campos são legado v1.
     const rawJid = data?.wuid ?? data?.phoneNumber ?? data?.me?.id;
-    const phone = rawJid?.split('@')[0]?.split(':')[0] || undefined;
+    const phone = extractPhoneFromJid(rawJid) || undefined;
     const profileName = data?.profileName ?? data?.me?.name;
     const profilePicture = data?.profilePictureUrl ?? undefined;
 
@@ -501,19 +526,16 @@ export class WebhookService {
   }
 
   // ── Extrai o identificador (número ou id opaco) de um JID do WhatsApp ─────
-  // Genérico por domínio em vez de enumerar cada um: cobre @s.whatsapp.net,
-  // @c.us e @lid (identificador de privacidade — WhatsApp esconde o número
-  // real do remetente) sem precisar listar sufixos novos manualmente.
+  // Lógica pura em shared/whatsapp/jid.util.ts (reaproveitada também pelo
+  // EvolutionService e pelo WebhookProcessor) — aqui só soma o log de aviso
+  // específico deste contexto (processamento de mensagem recebida).
   private extractPhoneFromJid(jid?: string | null): string {
-    if (!jid) return '';
-    const [id, domain] = jid.split('@');
-    const phone = (id ?? '').split(':')[0];
-    if (domain === 'lid') {
+    if (isOpaqueLidJid(jid)) {
       this.logger.warn(
         `JID @lid recebido (número real oculto pelo WhatsApp): ${jid} — usando id opaco como chave do contato`,
       );
     }
-    return phone;
+    return extractPhoneFromJid(jid);
   }
 
   // ── Verifica se o tipo de mensagem contém mídia para download ─────────────

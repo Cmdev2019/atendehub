@@ -3,9 +3,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { StorageModule } from './shared/storage/storage.module';
+import { MediaPresignInterceptor } from './shared/storage/media-presign.interceptor';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
@@ -102,6 +103,12 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // B-38: troca toda URL interna do MinIO por URL assinada antes de
+    // qualquer resposta HTTP sair para o cliente — ver MediaPresignInterceptor.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MediaPresignInterceptor,
     },
   ],
 })
