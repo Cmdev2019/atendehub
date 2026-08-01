@@ -61,8 +61,21 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   a mensagem do cliente em silêncio. DLQ, classificação de erro transitório/permanente e métricas
   adicionadas junto.
 - **B-48 (2026-08-01):** race condition de idempotência em `MessageService#createFromWebhook` — sob
-  concorrência real, `findFirst`+`create` não atômico podia gravar a mesma mensagem duas vezes.
-  `@@unique([externalId])` + captura de `P2002`.
+  concorrência real (dois workers do Bull processando o mesmo evento, ou o próprio
+  `SendMessageService` correndo contra o eco do webhook da mensagem que o agente acabou de enviar),
+  o padrão `findFirst`+`create` não atômico podia gravar a mesma mensagem duas vezes. Impacto: sem a
+  correção, mensagem duplicada visível pro cliente/agente e efeitos colaterais duplicados (mídia
+  baixada 2x, auto-atendimento respondendo 2x). Mitigação: `@@unique([externalId])` no schema (troca
+  o `@@index` antigo) + `MessageService#createUnique` novo — `create()` direto, capturando `P2002`
+  como "outro processo venceu a corrida" em vez de erro; atomicidade garantida pelo Postgres dentro
+  do próprio INSERT. Validado com concorrência real (2 a 100 chamadas simultâneas contra Postgres,
+  sempre exatamente 1 registro). Arquivos: `apps/api/prisma/schema.prisma`,
+  `apps/api/prisma/migrations/20260801204336_b48_message_external_id_unique/`,
+  `apps/api/src/modules/message/message.service.ts`,
+  `apps/api/src/modules/message/send-message.service.ts`. Hardening pós-auditoria (mesmo dia):
+  observabilidade — `MessageService` ganhou `Logger` e passou a registrar (nível `warn`) toda colisão
+  de `P2002` resolvida, antes invisível em produção. Relatório técnico completo em
+  `B48_AUDITORIA_POS_HARDENING.pdf` (raiz do repo).
 - **B-49 (2026-08-01):** mesma classe de race condition em `ConversationService#upsertFromWebhook` —
   índice único parcial no Postgres (`WHERE status IN ('WAITING','OPEN')`) + captura de `P2002`.
 

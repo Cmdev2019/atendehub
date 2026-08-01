@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -9,6 +10,8 @@ import { ListMessagesDto } from './dto/list-messages.dto';
 
 @Injectable()
 export class MessageService {
+  private readonly logger = new Logger(MessageService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // ── Garante que a conversa pertence à empresa ─────────────────────────────
@@ -196,6 +199,15 @@ export class MessageService {
         // Perdeu a corrida: outro processo já inseriu esse externalId entre
         // a hora que este create foi tentado e o commit dele. A linha
         // vencedora já existe e é a fonte da verdade — devolve ela.
+        // Observabilidade (auditoria pós-hardening B-48, 2026-08-01): sem
+        // este log, uma colisão de idempotência resolvida com sucesso não
+        // deixava rastro nenhum — impossível saber, em produção, com que
+        // frequência a proteção de concorrência é de fato exercitada.
+        // `warn`, não `error`: é o mecanismo de defesa funcionando como
+        // projetado, não uma falha.
+        this.logger.warn(
+          `Colisão de idempotência resolvida via P2002 — externalId=${data.externalId} já existia (outro worker/réplica venceu a corrida)`,
+        );
         const message = await this.prisma.message.findUniqueOrThrow({
           where: { externalId: data.externalId },
           select,

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { MessageService } from './message.service';
 import { MessageType, MessageStatus, SenderType, Prisma } from '@prisma/client';
 
@@ -75,6 +76,25 @@ describe('MessageService#createFromWebhook — idempotência (B-48/B-39)', () =>
       sentAt: new Date('2026-07-29T10:00:00Z'),
       isNew: false,
     });
+  });
+
+  // Observabilidade (auditoria pós-hardening B-48, 2026-08-01): antes desta
+  // sessão, uma colisão de P2002 resolvida com sucesso não deixava rastro
+  // nenhum em log — impossível saber em produção com que frequência a
+  // proteção de concorrência é de fato exercitada.
+  it('loga um warning (não error) quando resolve uma colisão de P2002 — observabilidade da corrida', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    mockPrisma.message.create.mockRejectedValueOnce(p2002());
+    mockPrisma.message.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'msg-1',
+      status: MessageStatus.DELIVERED,
+      sentAt: new Date('2026-07-29T10:00:00Z'),
+    });
+
+    await service.createFromWebhook(baseInput);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('wa-1'));
+    warnSpy.mockRestore();
   });
 
   it('propaga qualquer outro erro do create (não é P2002) sem tentar buscar nada', async () => {
