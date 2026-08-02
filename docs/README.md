@@ -36,7 +36,7 @@
 
 | # | Área | Conteúdo |
 |---|---|---|
-| [04](04-Arquitetura/) | Arquitetura | C4, fluxogramas, UML, bounded contexts |
+| [04](04-Arquitetura/) | Arquitetura | C4, fluxogramas, UML, bounded contexts, [padrões arquiteturais oficiais](04-Arquitetura/PADROES-ARQUITETURAIS-ATENDEHUB.md) |
 | [05](05-ADR/) | **ADR** | Decisões arquiteturais imutáveis |
 
 ### 💻 Implementação

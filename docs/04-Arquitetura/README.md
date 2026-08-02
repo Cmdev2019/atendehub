@@ -33,6 +33,14 @@ Arquitetos e tech lead. Mudança estrutural exige ADR aprovada em `05-ADR` antes
 
 Os 19 diagramas Mermaid das Fases 6, 7 e 8 do plano de evolução são a base inicial.
 
+Desde a Architecture Consolidation Review de 2026-08-01 (pós B-38/B-39/B-48/B-49), esta pasta também
+contém:
+- [`padroes-consolidados-2026-08.md`](padroes-consolidados-2026-08.md) — inventário arquitetural,
+  padrões mapeados, duplicações encontradas e decisões de consolidação daquela revisão.
+- [`PADROES-ARQUITETURAIS-ATENDEHUB.md`](PADROES-ARQUITETURAIS-ATENDEHUB.md) — referência rápida oficial
+  dos padrões de desenvolvimento (idempotência, concorrência, retry, DLQ, observabilidade, etc.),
+  complementar às ADRs em `05-ADR/`, com matriz de decisão, anti-padrões e checklist de PR.
+
 ---
 
 > Convenções desta pasta seguem [`00-Governanca/CONVENCAO-DE-NOMENCLATURA.md`](../00-Governanca/CONVENCAO-DE-NOMENCLATURA.md).
