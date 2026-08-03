@@ -44,7 +44,7 @@
     "class-validator": "^0.14.1",
     "compression": "^1.7.4",
     "helmet": "^8.0.0",
-    "ioredis": "^5.4.1",
+    "ioredis": "^6.0.0",
     "minio": "^8.0.3",
     "multer": "^2.2.0",
     "nest-winston": "^1.10.0",
