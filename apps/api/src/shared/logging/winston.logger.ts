@@ -12,9 +12,14 @@ const withRequestId = winston.format((info) => {
   return info;
 });
 
-export function createWinstonLogger(isProduction: boolean): LoggerService {
-  return WinstonModule.createLogger({
-    level: isProduction ? 'log' : 'debug',
+// B-52: o nível precisa ser um dos nomes do Winston (error, warn, info, http,
+// verbose, debug, silly) — o `log()` do Nest é gravado como `info` pelo
+// nest-winston. Um nome fora dessa lista (o antigo 'log') fazia o Winston
+// descartar TODA linha em produção, inclusive erros. `debug` fica desligado em
+// produção porque pode carregar dado pessoal (telefone, conteúdo de mensagem).
+export function buildWinstonOptions(isProduction: boolean): winston.LoggerOptions {
+  return {
+    level: isProduction ? 'info' : 'debug',
     transports: [
       new winston.transports.Console({
         format: isProduction
@@ -36,5 +41,9 @@ export function createWinstonLogger(isProduction: boolean): LoggerService {
             ),
       }),
     ],
-  });
+  };
+}
+
+export function createWinstonLogger(isProduction: boolean): LoggerService {
+  return WinstonModule.createLogger(buildWinstonOptions(isProduction));
 }

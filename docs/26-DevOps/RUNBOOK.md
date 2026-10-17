@@ -369,8 +369,16 @@ Passos (sem expor a chave em log ou terminal compartilhado):
   (`RefreshTokenCleanupService`, `@Cron`) legitimamente não têm `requestId`
   — não é bug.
 
-### Nível `debug` aparecendo em produção
-- Não deveria: `main.ts` calcula o nível do winston uma vez, no boot, com
-  base em `NODE_ENV`. Confirmar que `NODE_ENV=production` está de fato
-  setado no ambiente do container — se estiver e ainda assim aparecer
-  `debug`, é regressão em `winston.logger.ts`.
+### Nível de log em produção
+- Em produção o nível é `info` (B-52): `log`, `warn` e `error` do Nest saem
+  em JSON, um objeto por linha; `debug` nunca sai, porque pode carregar dado
+  pessoal (telefone, conteúdo de mensagem). O nível é definido uma vez, no
+  boot, por `buildWinstonOptions` em `apps/api/src/shared/logging/winston.logger.ts`
+  a partir de `NODE_ENV`.
+- **Nenhuma linha de log em produção:** era o sintoma do B-52 (nível com um
+  nome que o Winston não conhece, que fazia ele descartar tudo — inclusive o
+  erro de segredo inválido antes do `process.exit(1)` no boot). Se voltar a
+  acontecer, conferir o nível em `winston.logger.ts`; o teste
+  `winston.logger.spec.ts` existe para pegar exatamente isso.
+- **`debug` aparecendo em produção:** confirmar que `NODE_ENV=production` está
+  de fato setado no container; se estiver, é regressão em `winston.logger.ts`.

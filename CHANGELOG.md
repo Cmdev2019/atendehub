@@ -73,6 +73,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-52 (2026-10-17):** em produção a API não gravava nenhuma linha de log — o nível configurado
+  (`'log'`) não existe no Winston, que descartava todas as mensagens, inclusive erros e o motivo de um
+  boot abortado. Passa a usar `info` em produção (`debug` segue desligado, por poder conter dado
+  pessoal), com testes que verificam a saída real. Arquivo:
+  `apps/api/src/shared/logging/winston.logger.ts`; RUNBOOK atualizado.
 - **B-39 (2026-07-29):** retry da fila de webhook (Bull) estava inoperante — exceção de
   `WebhookService#handleEvent` era engolida antes de chegar ao processor, então `attempts`/`backoff`
   nunca tinham efeito e uma falha transitória (Postgres/Redis fora do ar, timeout da Evolution) perdia
