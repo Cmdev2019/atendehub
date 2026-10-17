@@ -163,6 +163,7 @@ export class SendMessageService {
     const { message } = await this.messageService.createUnique(
       {
         conversationId,
+        whatsappConnectionId: conversation.whatsapp!.id,
         senderId,
         senderType: SenderType.AGENT,
         content: dto.type === MessageType.TEXT ? dto.content : (dto.caption ?? null),
@@ -306,6 +307,7 @@ export class SendMessageService {
     const { message } = await this.messageService.createUnique(
       {
         conversationId,
+        whatsappConnectionId: conversation.whatsapp!.id,
         senderId,
         senderType: SenderType.AGENT,
         content: caption ?? null,

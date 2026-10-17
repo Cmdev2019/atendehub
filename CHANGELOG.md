@@ -40,6 +40,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-58 (2026-10-17):** mensagens deixam de sumir quando duas conexões de WhatsApp cadastradas no
+  AtendeHub conversam entre si (dois números da mesma empresa ou de empresas clientes). O `externalId`
+  da mensagem passa a ser único **por conexão** (`messages.whatsappConnectionId`, preenchido a partir da
+  conversa na migration `b58_message_external_id_unique_per_connection`), e as atualizações de status
+  e exclusões vindas do webhook ficam restritas à conexão do evento — antes alcançavam a mensagem da
+  outra empresa. Impacto no deploy: migration nova (`npm run db:migrate:prod`).
 - **B-44 (2026-10-17):** container da API endurecido — roda como `node` em vez de root, `tini` como
   PID 1 (o `docker stop` deixa de terminar em SIGKILL), `HEALTHCHECK` na imagem, desligamento
   gracioso (`enableShutdownHooks`, 30 s de prazo no compose) e nginx esperando a API ficar saudável. A

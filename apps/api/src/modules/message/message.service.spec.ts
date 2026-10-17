@@ -27,6 +27,7 @@ describe('MessageService#createFromWebhook — idempotência (B-48/B-39)', () =>
 
   const baseInput = {
     conversationId: 'conv-1',
+    whatsappConnectionId: 'conn-1',
     content: 'Oi',
     type: MessageType.TEXT,
     senderType: SenderType.CLIENT,
@@ -66,8 +67,11 @@ describe('MessageService#createFromWebhook — idempotência (B-48/B-39)', () =>
 
     const result = await service.createFromWebhook(baseInput);
 
+    // C-09/B-58: a linha "já existente" é buscada NA MESMA CONEXÃO — só por
+    // externalId, devolveria a mensagem da outra ponta da conversa quando dois
+    // números cadastrados conversam entre si.
     expect(mockPrisma.message.findUniqueOrThrow).toHaveBeenCalledWith({
-      where: { externalId: 'wa-1' },
+      where: { whatsappConnectionId_externalId: { whatsappConnectionId: 'conn-1', externalId: 'wa-1' } },
       select: { id: true, status: true, sentAt: true },
     });
     expect(result).toEqual({
@@ -102,5 +106,30 @@ describe('MessageService#createFromWebhook — idempotência (B-48/B-39)', () =>
 
     await expect(service.createFromWebhook(baseInput)).rejects.toThrow('conexão com o banco caiu');
     expect(mockPrisma.message.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('grava a conexão junto com a mensagem (faz parte da chave única)', async () => {
+    mockPrisma.message.create.mockResolvedValueOnce({ id: 'msg-1', status: MessageStatus.DELIVERED, sentAt: new Date() });
+
+    await service.createFromWebhook(baseInput);
+
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ whatsappConnectionId: 'conn-1', externalId: 'wa-1' }),
+      }),
+    );
+  });
+});
+
+describe('MessageService#updateStatus — escopo por conexão (C-09/B-58)', () => {
+  it('só atualiza a mensagem da conexão de onde veio o evento', async () => {
+    const mockPrisma = { message: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+    const service = new MessageService(mockPrisma as any);
+
+    await service.updateStatus('conn-1', 'wa-1', MessageStatus.READ);
+
+    expect(mockPrisma.message.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { whatsappConnectionId: 'conn-1', externalId: 'wa-1' } }),
+    );
   });
 });
