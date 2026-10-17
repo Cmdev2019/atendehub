@@ -23,6 +23,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-57 (2026-10-17):** Node.js 20 (fora de suporte desde 30/04/2026) substituído pelo **Node.js 24
+  LTS** nas imagens Docker da API e do nginx, na CI e no campo `engines` (`>=24`); actions
+  `checkout`/`setup-node` da v4 (que já avisavam da depreciação do Node 20 nos runners) para a v7.
+  Impacto: desenvolvimento local passa a exigir Node 24.
 - `README.md` reescrito: visão geral, arquitetura, estrutura, contribuição, fluxo Git, CI/CD, releases
 - `docs/API_CONTRACT.md` movido para `docs/09-APIs/`
 - `docs/RUNBOOK.md` movido para `docs/26-DevOps/`

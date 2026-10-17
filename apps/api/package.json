@@ -83,7 +83,7 @@
     "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "overrides": {
     "brace-expansion@^5.0.0": "^5.0.8"

@@ -132,7 +132,7 @@ atendehub/
 ### Pré-requisitos
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- Node.js ≥ 20 e npm ≥ 10
+- Node.js ≥ 24 (LTS) e npm ≥ 10
 
 ### 1. Variáveis de ambiente
 

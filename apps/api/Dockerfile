@@ -4,7 +4,7 @@
 # pré-compilados pra glibc; alpine (musl) exigiria toolchain de compilação.
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 
 # OpenSSL também no build: o `prisma generate` escolhe o engine pela versão do
@@ -29,7 +29,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Runtime ────────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
