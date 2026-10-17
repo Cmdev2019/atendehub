@@ -3,8 +3,9 @@ import { createElement as h } from 'react';
 import { ConfirmProvider } from '../context/ConfirmContext';
 
 const mockLogout = jest.fn();
+let mockUser = null;
 jest.mock('../hooks/useAuth', () => ({
-  useAuth: () => ({ logout: mockLogout }),
+  useAuth: () => ({ logout: mockLogout, user: mockUser }),
 }));
 
 import { Sidebar } from './Sidebar';
@@ -104,5 +105,25 @@ describe('Sidebar — Contatos navegável (B-34)', () => {
     fireEvent.click(contactsButton);
 
     expect(onNavigate).toHaveBeenCalledWith('contacts');
+  });
+});
+
+// B-40: a API responde 403 para AGENT em /reports — o menu não oferece a tela
+describe('Sidebar — Relatórios por papel (B-40)', () => {
+  afterEach(() => {
+    mockUser = null;
+  });
+
+  it('esconde Relatórios para AGENT', () => {
+    mockUser = { role: 'AGENT' };
+    render(h(ConfirmProvider, null, h(Sidebar)));
+    expect(screen.queryByTitle('Relatórios')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Caixa de Entrada')).toBeInTheDocument();
+  });
+
+  it.each(['SUPERVISOR', 'ADMIN'])('mostra Relatórios para %s', (role) => {
+    mockUser = { role };
+    render(h(ConfirmProvider, null, h(Sidebar)));
+    expect(screen.getByTitle('Relatórios')).toBeInTheDocument();
   });
 });

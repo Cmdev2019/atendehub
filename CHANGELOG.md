@@ -40,6 +40,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-40 (2026-10-17):** escopo de conversas por departamento. Antes, qualquer atendente lia, assumia,
+  respondia, anotava e encerrava qualquer conversa da empresa, exportava relatórios e recebia em tempo
+  real todas as mensagens. Agora ADMIN e SUPERVISOR veem tudo; AGENT vê as conversas atribuídas a ele,
+  as dos seus departamentos e as sem departamento — na listagem, nas estatísticas, no Dashboard, em
+  toda rota da conversa (fora do escopo responde 404) e no WebSocket (salas por escopo). Relatórios
+  passam a exigir SUPERVISOR (o menu some para AGENT). Impacto: atendentes precisam estar nos
+  departamentos certos (Configurações → Usuários) para ver as conversas desses departamentos.
 - **B-59 (2026-10-17):** a mídia do chat passa a carregar no navegador em produção. As URLs assinadas
   eram geradas com o host interno do MinIO, que o navegador não resolve (e trocar o host depois de
   assinar invalida a assinatura). Agora a API assina com `MINIO_PUBLIC_ENDPOINT` (obrigatória, com

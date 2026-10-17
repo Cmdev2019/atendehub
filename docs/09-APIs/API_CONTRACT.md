@@ -123,6 +123,14 @@ Revoga TODOS os refresh tokens do usuário (logout de todos os dispositivos).
 
 ## Conversations — `/conversations`
 
+> **Escopo (B-40, 2026-10-17):** ADMIN, SUPERVISOR e SUPER_ADMIN veem todas as
+> conversas da empresa. AGENT vê as atribuídas a ele, as dos departamentos a
+> que pertence e as sem departamento. Vale para a listagem, `stats`, Dashboard
+> e para toda rota com a conversa na URL (`/conversations/:id/...`,
+> `/conversations/:conversationId/messages|notes/...`): fora do escopo
+> responde **404** (igual a conversa inexistente). Os departamentos do
+> usuário são lidos a cada requisição — mudar vale sem novo login.
+
 ### `GET /conversations`
 Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `departmentId?` · `search?` (nome/telefone do contato) · `page=1` · `limit=20`
 
@@ -230,6 +238,9 @@ obrigatória, B-36), não uma tentativa de atendimento que não deu certo.
 ---
 
 ## Reports — `/reports` (B-33)
+
+> **Só SUPERVISOR em diante (B-40):** os relatórios cobrem a empresa toda;
+> AGENT recebe **403**.
 
 Os 3 endpoints abaixo compartilham a mesma query: `from?`/`to?` (ISO 8601 —
 sem eles, últimos 30 dias) e `format?` (`json` padrão, `csv` ou `pdf` — os 2
@@ -605,14 +616,20 @@ errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por
 - **URL:** `http://localhost:3001/ws` (config `VITE_WS_URL`)
 - **Handshake:** `auth: { token: <accessToken JWT> }` — rejeitado com
   `connect_error` `"Token não informado"` / `"Token inválido ou expirado"`
-- **Salas automáticas:** `company:<companyId>` e `agent:<userId>` no connect
-- **Emissão:** eventos por conversa saem para a **união** de
-  `conversation:<id>` + `company:<companyId>` (sem duplicar)
+- **Salas automáticas:** `company:<companyId>` e `agent:<userId>` no connect, mais as
+  salas de escopo (B-40): `company:<companyId>:all` para ADMIN/SUPERVISOR; para AGENT,
+  `company:<companyId>:dept:<departmentId>` de cada departamento seu e
+  `company:<companyId>:dept:none` (conversas sem departamento). Departamentos mudados
+  durante a sessão valem na próxima conexão.
+- **Emissão:** eventos de conversa (`message.*`, `conversation.*`, `sla.breached`) saem
+  para a **união** de `conversation:<id>` + `company:<companyId>:all` + a sala do
+  departamento da conversa + `agent:<agentId>` atribuído — nunca mais para a empresa
+  inteira. `connection.status` (não é de conversa) segue em `company:<companyId>`.
 
 ### Cliente → servidor
 | Evento | Payload | Efeito |
 |---|---|---|
-| `join:conversation` | `{ conversationId }` | entra na sala (valida multi-tenant) |
+| `join:conversation` | `{ conversationId }` | entra na sala (valida empresa **e** escopo, B-40) |
 | `leave:conversation` | `{ conversationId }` | sai da sala |
 | `ping` | — | responde `pong` |
 

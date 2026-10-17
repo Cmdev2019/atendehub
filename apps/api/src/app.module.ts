@@ -7,6 +7,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { RateLimitModule } from './shared/rate-limit/rate-limit.module';
+import { ConversationScopeModule } from './shared/conversation-scope/conversation-scope.module';
 import { RedisThrottlerStorage } from './shared/rate-limit/redis-throttler.storage';
 import { buildThrottlerOptions } from './shared/rate-limit/throttler-options';
 import { MediaPresignInterceptor } from './shared/storage/media-presign.interceptor';
@@ -68,6 +69,7 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
     }),
     PrismaModule,
     StorageModule,
+    ConversationScopeModule,
     // ── Infra ────────────────────────────────────────────────────────────────
     HealthModule,
     // ── Auth & Core ──────────────────────────────────────────────────────────

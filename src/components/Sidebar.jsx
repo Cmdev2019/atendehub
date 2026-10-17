@@ -11,7 +11,8 @@ const menuItems = [
   { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: 'chart', badge: '' },
   { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: 'chat', badge: '' },
   { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: 'users', badge: '' },
-  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'clipboard', badge: '' },
+  // B-40: relatórios cobrem a empresa toda — a API responde 403 para AGENT
+  { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'clipboard', badge: '', hideForAgent: true },
   { id: 'settings', label: 'Configurações', shortLabel: 'Config', icon: 'settings', badge: '' },
 ];
 
@@ -19,7 +20,8 @@ const menuItems = [
 const NAVIGABLE = new Set(['dashboard', 'inbox', 'contacts', 'reports', 'settings']);
 
 export function Sidebar({ activeView = 'inbox', onNavigate }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const visibleItems = menuItems.filter((item) => !(item.hideForAgent && user?.role === 'AGENT'));
   const confirm = useConfirm();
 
   const handleLogout = async () => {
@@ -42,7 +44,7 @@ export function Sidebar({ activeView = 'inbox', onNavigate }) {
     h(
       'nav',
       { className: 'nav-menu' },
-      menuItems.map(({ id, label, shortLabel, icon, badge }) =>
+      visibleItems.map(({ id, label, shortLabel, icon, badge }) =>
         h(
           'button',
           {
