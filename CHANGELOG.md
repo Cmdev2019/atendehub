@@ -70,6 +70,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-53 (2026-10-17):** a sessão do frontend caía a cada ~30 minutos — o refresh token rotacionado
+  pelo backend não era guardado, e a renovação seguinte era recusada. A renovação passa a guardar o
+  token novo e a acontecer uma vez por vez para o app inteiro (requisições simultâneas e WebSocket
+  esperam a mesma); erro de rede na renovação não desloga mais. Também corrigido: senha errada no login
+  aparecia como "Sessão expirada". Arquivos: `src/services/sessionRefresh.js` (novo),
+  `src/services/api.js`.
 - **B-52 (2026-10-17):** em produção a API não gravava nenhuma linha de log — o nível configurado
   (`'log'`) não existe no Winston, que descartava todas as mensagens, inclusive erros e o motivo de um
   boot abortado. Passa a usar `info` em produção (`debug` segue desligado, por poder conter dado
