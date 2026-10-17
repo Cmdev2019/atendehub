@@ -307,7 +307,8 @@ gitGraph
 |---|---|---|---|---|
 | **API CI** | `api` | todo push em `master` e todo PR | lint · `tsc --noEmit` · 265 testes | ✅ |
 | **Web CI** | `web` | todo push em `master` e todo PR | 302 testes · `vite build` | ✅ |
-| Segurança | — | *planejado* | CodeQL · Trivy · gitleaks · audit | ✅ |
+| **Dependency Audit** | `api-audit` · `web-audit` | todo push em `master`, todo PR e toda segunda-feira | `npm audit` das dependências de produção (falha em nível alto ou crítico) | — informativo |
+| Segurança | — | *planejado* | CodeQL · Trivy · gitleaks | ✅ |
 | E2E | — | *planejado* | Playwright contra staging | ✅ |
 | Build & push | — | *planejado* | imagem + SBOM + assinatura | — |
 | Deploy staging | — | *planejado* | automático a cada merge | — |
