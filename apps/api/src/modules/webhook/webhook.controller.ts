@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
+import { webhookInstanceTracker } from '../../shared/rate-limit/rate-limit-trackers';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { Role } from '@prisma/client';
@@ -65,8 +66,12 @@ export class WebhookController {
   // a Evolution manda um webhook por evento (mensagem, status, contato), então
   // um pico legítimo de tráfego real pode passar do limite genérico da API;
   // ainda assim finito, para não deixar um IP malicioso abusar da rota pública.
+  // C-04: a cota passou a ser por instância de WhatsApp (antes, um contador só
+  // para todos os tenants) e subiu para 1.200/min — sincronização de histórico
+  // ao conectar um número gera rajadas legítimas, e 429 aqui é mensagem
+  // perdida. Abuso externo continua barrado pela apikey e pelo nginx (B-43).
   @Public()
-  @Throttle({ default: { limit: 200, ttl: 60_000 } })
+  @Throttle({ default: { limit: 1200, ttl: 60_000, getTracker: webhookInstanceTracker } })
   @Post('evolution')
   @HttpCode(HttpStatus.OK)
   async receiveEvolution(

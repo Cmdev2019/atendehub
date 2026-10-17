@@ -36,6 +36,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-56 (2026-10-17):** o limite de requisições deixa de tratar todos os usuários como um só atrás do
+  nginx. A API passa a confiar no `X-Forwarded-For` do proxy (`TRUST_PROXY`, padrão 1 em produção); a
+  cota geral passa a ser por usuário autenticado (por IP nas rotas sem token); o webhook da Evolution
+  ganha cota por instância de WhatsApp (1.200 eventos/min, antes 200/min somando todos os tenants); o
+  contador vai para o Redis, compartilhado entre réplicas, com fail-open se o Redis cair. Impacto:
+  nova variável opcional `TRUST_PROXY` (ver `apps/api/.env.example`); contrato atualizado em
+  `docs/09-APIs/API_CONTRACT.md`. Arquivos: `apps/api/src/shared/rate-limit/`,
+  `apps/api/src/app.module.ts`, `apps/api/src/main.ts`, `apps/api/src/modules/webhook/webhook.controller.ts`.
 - **B-43 (2026-10-17, parcial):** nginx de produção endurecido — HSTS, CSP, `X-Content-Type-Options`,
   `X-Frame-Options`, `Referrer-Policy` e `Permissions-Policy` no app; redirect 80→443 também na API;
   host desconhecido recusado; `X-Forwarded-For/Proto/Host` repassados à API (pré-requisito do limite de

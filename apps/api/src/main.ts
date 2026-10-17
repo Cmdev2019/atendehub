@@ -9,6 +9,7 @@ import { RedisIoAdapter } from './shared/websocket/redis-io.adapter';
 import { createWinstonLogger } from './shared/logging/winston.logger';
 import { RequestIdMiddleware } from './shared/logging/request-id.middleware';
 import { initSentry, SentryExceptionFilter } from './shared/monitoring/sentry';
+import { resolveTrustProxy } from './shared/rate-limit/trust-proxy';
 
 // B-18: precisa rodar antes de qualquer outra coisa (padrão do SDK do
 // Sentry) — sem SENTRY_DSN configurado é um no-op seguro.
@@ -34,6 +35,14 @@ async function bootstrap() {
     logger: createWinstonLogger(isProduction),
     bodyParser: false, // registrado manualmente abaixo com limites por rota
   });
+
+  // ── Proxy reverso (C-04) ────────────────────────────────────────────────────
+  // Atrás do nginx, req.ip só é o IP do cliente se o Express confiar no
+  // X-Forwarded-For — sem isso o limite de requisições via um único cliente.
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY, isProduction));
 
   // ── Request ID (B6-3) ───────────────────────────────────────────────────────
   // Primeiro middleware da cadeia — todo log emitido depois daqui (incluindo

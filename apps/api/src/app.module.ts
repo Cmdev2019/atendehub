@@ -6,6 +6,9 @@ import { BullModule } from '@nestjs/bull';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { StorageModule } from './shared/storage/storage.module';
+import { RateLimitModule } from './shared/rate-limit/rate-limit.module';
+import { RedisThrottlerStorage } from './shared/rate-limit/redis-throttler.storage';
+import { buildThrottlerOptions } from './shared/rate-limit/throttler-options';
 import { MediaPresignInterceptor } from './shared/storage/media-presign.interceptor';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -32,15 +35,12 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     ScheduleModule.forRoot(),
+    // C-04: limite por usuário autenticado (ou por IP sem token), contador no
+    // Redis — ver shared/rate-limit/.
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          ttl: Number(config.get('THROTTLE_TTL') ?? 60) * 1000,
-          limit: Number(config.get('THROTTLE_LIMIT') ?? 100),
-        },
-      ],
+      imports: [ConfigModule, RateLimitModule],
+      inject: [ConfigService, RedisThrottlerStorage],
+      useFactory: buildThrottlerOptions,
     }),
     // ── BullMQ (filas de processamento assíncrono) ───────────────────────────
     BullModule.forRootAsync({

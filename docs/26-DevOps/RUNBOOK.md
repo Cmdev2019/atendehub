@@ -79,6 +79,22 @@ app e API ao mesmo tempo — agendar a troca antes do vencimento.
 - Host desconhecido (inclusive acesso pelo IP do servidor) é recusado: 444 no
   HTTP e handshake TLS recusado no HTTPS.
 
+**Limite de requisições na API (B-56):**
+- Atrás do nginx, a API calcula o IP do cliente pelo `X-Forwarded-For`
+  (`TRUST_PROXY`, padrão 1 em produção). Se um balanceador entrar na frente do
+  nginx, usar `TRUST_PROXY=2` — com o valor errado, ou todos os clientes viram
+  um IP só (limite vale para a plataforma inteira), ou o cliente consegue
+  escolher o próprio IP.
+- Cota geral (`THROTTLE_LIMIT`/`THROTTLE_TTL`) por usuário autenticado; sem
+  token, por IP. Login 5/min por IP; webhook da Evolution 1.200/min por
+  instância de WhatsApp.
+- O contador fica no Redis (chaves `throttle:*`). Com o Redis fora, a API
+  libera as requisições sem limite (fail-open, log "Redis indisponível para o
+  limite de requisições" no máximo uma vez por minuto) em vez de responder 500;
+  o limite por IP do nginx continua valendo.
+- Para liberar um bloqueio na hora (ex.: escritório inteiro travado no login):
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T redis redis-cli -a $REDIS_PASSWORD --scan --pattern 'throttle:*:block' | xargs -r docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T redis redis-cli -a $REDIS_PASSWORD del`
+
 ## Deploy
 
 ```bash
