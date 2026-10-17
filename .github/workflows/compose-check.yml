@@ -43,7 +43,7 @@ jobs:
       VITE_WS_URL: https://api.example.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `env_file: .env` do serviço api exige que o arquivo exista
       - name: .env vazio

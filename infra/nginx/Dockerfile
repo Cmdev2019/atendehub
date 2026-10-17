@@ -4,7 +4,7 @@
 # front E deste Dockerfile/nginx.conf).
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 
 # Vite injeta VITE_* no bundle em tempo de BUILD (é estático depois) —
