@@ -196,7 +196,7 @@ export class WebhookService {
       );
 
     // Determina tipo e conteúdo da mensagem
-    const { type, content, mediaUrl, mimeType, fileName } = this.extractMessageContent(message);
+    const { type, content, mimeType, fileName } = this.extractMessageContent(message);
 
     // Determina se é mensagem do agente (fromMe) ou do cliente
     const senderType = key.fromMe ? SenderType.AGENT : SenderType.CLIENT;
@@ -239,7 +239,6 @@ export class WebhookService {
         sessionName,
         key.id,
         type,
-        mediaUrl,
         mimeType,
         fileName,
       ).catch((err) => {
@@ -443,10 +442,12 @@ export class WebhookService {
   }
 
   // ── Extrai tipo e conteúdo de um objeto de mensagem da Evolution ──────────
+  // B-50: a URL de mídia que vem no payload (`*.url`) não é extraída de
+  // propósito — a mídia só é obtida via Evolution (getBase64FromMediaMessage),
+  // nunca baixando um endereço que veio no conteúdo da mensagem.
   private extractMessageContent(message?: EvolutionMessageContent): {
     type: MessageType;
     content: string;
-    mediaUrl?: string;
     mimeType?: string;
     fileName?: string;
   } {
@@ -464,7 +465,6 @@ export class WebhookService {
       return {
         type: MessageType.IMAGE,
         content: message.imageMessage.caption ?? '',
-        mediaUrl: message.imageMessage.url,
         mimeType: message.imageMessage.mimetype,
       };
     }
@@ -473,7 +473,6 @@ export class WebhookService {
       return {
         type: MessageType.VIDEO,
         content: message.videoMessage.caption ?? '',
-        mediaUrl: message.videoMessage.url,
         mimeType: message.videoMessage.mimetype,
       };
     }
@@ -482,7 +481,6 @@ export class WebhookService {
       return {
         type: MessageType.AUDIO,
         content: '',
-        mediaUrl: message.audioMessage.url,
         mimeType: message.audioMessage.mimetype,
       };
     }
@@ -491,7 +489,6 @@ export class WebhookService {
       return {
         type: MessageType.DOCUMENT,
         content: message.documentMessage.title ?? '',
-        mediaUrl: message.documentMessage.url,
         mimeType: message.documentMessage.mimetype,
         fileName: message.documentMessage.title,
       };
@@ -501,7 +498,6 @@ export class WebhookService {
       return {
         type: MessageType.STICKER,
         content: '',
-        mediaUrl: message.stickerMessage.url,
         mimeType: 'image/webp',
       };
     }
@@ -558,33 +554,24 @@ export class WebhookService {
     sessionName: string,
     externalMessageId: string,
     type: MessageType,
-    mediaUrl?: string,
     mimeType?: string,
     fileName?: string,
   ): Promise<void> {
     const effectiveMimeType = mimeType ?? 'application/octet-stream';
 
-    // Estratégia 1: getBase64FromMediaMessage da Evolution API — retorna a
-    // mídia DECRIPTADA. A URL do payload (mmg.whatsapp.net/...enc) é
-    // criptografada: baixá-la direto armazena bytes ilegíveis.
-    let result = await this.mediaDownloadService.downloadFromEvolution(
+    // Única origem da mídia: getBase64FromMediaMessage da Evolution API, que
+    // devolve o arquivo DECRIPTADO (a URL do payload, mmg.whatsapp.net/...enc,
+    // é criptografada). B-50: não existe mais fallback que baixe a URL vinda
+    // no conteúdo da mensagem — ele enviava a EVOLUTION_API_KEY para um
+    // endereço externo. Se a Evolution não entregar a mídia, a mensagem fica
+    // sem anexo e o motivo é logado abaixo.
+    const result = await this.mediaDownloadService.downloadFromEvolution(
       sessionName,
       externalMessageId,
       effectiveMimeType,
       companyId,
       fileName,
     );
-
-    // Estratégia 2 (fallback): download direto — só serve para URLs não
-    // criptografadas (ex.: mídia hospedada fora do WhatsApp)
-    if (!result && mediaUrl && !mediaUrl.includes('.enc')) {
-      result = await this.mediaDownloadService.downloadAndStore(
-        mediaUrl,
-        effectiveMimeType,
-        companyId,
-        fileName,
-      );
-    }
 
     if (!result) {
       this.logger.warn(

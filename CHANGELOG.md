@@ -33,6 +33,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-50 (2026-10-16):** removido o caminho alternativo de download de mídia do webhook que buscava a
+  URL vinda no conteúdo da mensagem enviando a `EVOLUTION_API_KEY` no cabeçalho — a chave podia chegar
+  a um host externo. A mídia passa a vir exclusivamente do `getBase64FromMediaMessage` da Evolution; se
+  ela não entregar, a mensagem fica sem anexo (com log). Chave da Evolution trocada no ambiente local,
+  inclusive o token das instâncias existentes. Impacto: nenhuma mudança de contrato da API. Arquivos:
+  `apps/api/src/modules/webhook/webhook.service.ts`,
+  `apps/api/src/modules/webhook/media-download.service.ts`; procedimento de troca da chave em
+  `docs/26-DevOps/RUNBOOK.md`.
 - **B-38 (2026-07-29):** bucket de mídia do MinIO deixa de ser público em leitura — mitiga risco de
   violação da LGPD Art. 46 (dado pessoal de cliente — foto, áudio, documento — acessível por qualquer
   pessoa com a URL, sem autenticação). Mídia passa a ser servida exclusivamente por URL assinada
