@@ -55,7 +55,8 @@ npm run db:seed      # seed (senha do admin é ALEATÓRIA → .seed-credentials-
 npm run db:studio    # Prisma Studio :5555
 
 # Infra (na raiz)
-docker compose up -d         # postgres, redis, minio, evolution
+docker compose up -d         # postgres, redis, minio, evolution (portas só em 127.0.0.1,
+                             # via docker-compose.override.yml — B-55)
 ```
 
 ## Pitfalls conhecidos (custaram sessões de debug)

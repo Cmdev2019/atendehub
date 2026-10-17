@@ -117,8 +117,9 @@ atendehub/
 ├── scripts/                # dev-api.ps1 · dev-front.ps1
 ├── docs/                   # 41 áreas numeradas — ver docs/README.md
 ├── .github/                # workflows, templates, CODEOWNERS
-├── docker-compose.yml      # infra local
-└── docker-compose.prod.yml # override de produção
+├── docker-compose.yml          # serviços base (sem portas publicadas)
+├── docker-compose.override.yml # portas de dev em 127.0.0.1 (carregado sozinho no dev)
+└── docker-compose.prod.yml     # override de produção (só o nginx publica portas)
 ```
 
 > A estrutura está em reestruturação planejada. Árvore-alvo, justificativa técnica e plano de migração
@@ -152,6 +153,10 @@ docker compose up -d
 
 Sobe PostgreSQL (`:5432`), Redis (`:6379`), MinIO (`:9000` API / `:9001` console) e Evolution API
 (`:8080`). O bucket `atendehub-media` é criado pela própria API no boot.
+
+As portas são publicadas pelo `docker-compose.override.yml`, que o Compose carrega sozinho, e ficam
+presas a `127.0.0.1` — não aparecem na rede local. Em produção (`-f docker-compose.yml -f
+docker-compose.prod.yml`) esse arquivo não entra e só o nginx publica portas.
 
 ### 3. Backend
 
