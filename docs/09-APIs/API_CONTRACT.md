@@ -70,6 +70,11 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 
 ### `POST /auth/refresh` (público)
 `{ "refreshToken": "..." }` → mesmo shape do login (rotaciona o refresh token).
+A rotação revoga o refresh token enviado: o cliente **precisa substituir** o
+refresh token salvo pelo que vem na resposta — reenviar o antigo responde `401`.
+Cada refresh token vale uma única vez, então renovações simultâneas com o mesmo
+token devem ser evitadas (o frontend usa uma renovação por vez, ver
+`src/services/sessionRefresh.js`, B-53).
 
 ### `POST /auth/register-company` (público, B-9)
 Auto-cadastro de empresa nova — quem se cadastra vira `ADMIN` dessa empresa. Limite: **3 req/60s por IP** (mais apertado que login, pois cria linhas no banco).
@@ -378,7 +383,12 @@ Wrapper: `{ data, meta }`.
 ```
 
 ### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`), requer `ADMIN`
-### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (próprio usuário)
+### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (só o próprio usuário)
+`:id` precisa ser o do usuário do token: qualquer outro id responde `403` antes de
+consultar o banco (B-51). Senha atual errada responde `400`. Limite próprio de
+5 tentativas por minuto. Registra `user.password_changed` em auditoria. Para a
+senha de outro usuário, use `POST /users/:id/reset-password` (ADMIN).
+
 ### `DELETE /users/:id`
 
 ### `POST /users/:id/reset-password` (B-26) — requer `ADMIN`

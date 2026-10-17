@@ -13,8 +13,12 @@ export interface MediaDownloadResult {
 /**
  * Serviço responsável por baixar mídias da Evolution API e armazená-las no MinIO.
  *
- * A Evolution API v2 retorna URLs temporárias de mídia no payload do webhook.
- * Essas URLs expiram, então precisamos baixar e persistir no nosso storage.
+ * A mídia do WhatsApp chega criptografada no payload do webhook — a única
+ * origem aceita é o getBase64FromMediaMessage da própria Evolution, que devolve
+ * o arquivo decriptado. B-50: o antigo `downloadAndStore` (download direto da
+ * URL vinda na mensagem, enviando a EVOLUTION_API_KEY no cabeçalho) foi
+ * removido — a credencial só pode ir para o host configurado em
+ * EVOLUTION_API_URL.
  */
 @Injectable()
 export class MediaDownloadService {
@@ -32,77 +36,8 @@ export class MediaDownloadService {
   }
 
   /**
-   * Baixa mídia a partir de uma URL (pode ser URL da Evolution ou URL direta)
-   * e faz upload para o MinIO.
-   *
-   * @param mediaUrl - URL de download da mídia
-   * @param mimeType - MIME type do arquivo
-   * @param companyId - ID da empresa (isolamento por tenant)
-   * @param fileName - Nome original do arquivo (opcional)
-   */
-  async downloadAndStore(
-    mediaUrl: string,
-    mimeType: string,
-    companyId: string,
-    fileName?: string,
-  ): Promise<MediaDownloadResult | null> {
-    try {
-      this.logger.debug(`Baixando mídia: ${mediaUrl}`);
-
-      const response = await axios.get(mediaUrl, {
-        responseType: 'arraybuffer',
-        timeout: this.downloadTimeoutMs,
-        headers: {
-          apikey: this.evolutionApiKey,
-        },
-        // Não seguir redirects infinitos
-        maxRedirects: 3,
-        // Limite de 50MB para evitar abuso
-        maxContentLength: 50 * 1024 * 1024,
-      });
-
-      const buffer = Buffer.from(response.data);
-
-      if (buffer.length === 0) {
-        this.logger.warn('Download retornou conteúdo vazio');
-        return null;
-      }
-
-      // Usa o Content-Type da resposta se o mimeType fornecido for genérico
-      const contentType = response.headers['content-type'];
-      const actualMimeType =
-        (typeof contentType === 'string' ? contentType.split(';')[0]?.trim() : null) || mimeType;
-
-      const result: UploadResult = await this.storageService.upload(
-        buffer,
-        actualMimeType,
-        companyId,
-        fileName,
-        buffer.length,
-      );
-
-      this.logger.debug(
-        `Mídia armazenada: ${result.key} (${buffer.length} bytes)`,
-      );
-
-      return {
-        url: result.url,
-        mimeType: actualMimeType,
-        size: buffer.length,
-        fileName,
-      };
-    } catch (err: any) {
-      this.logger.error(
-        `Falha ao baixar/armazenar mídia: ${err.message}`,
-        err.stack,
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Baixa mídia usando o endpoint getBase64FromMediaMessage da Evolution API.
-   * Útil quando o payload não contém uma URL direta de download.
+   * Baixa mídia usando o endpoint getBase64FromMediaMessage da Evolution API
+   * (devolve o arquivo já decriptado) e faz upload para o MinIO.
    *
    * @param sessionName - Nome da sessão na Evolution API
    * @param messageId - ID da mensagem no WhatsApp

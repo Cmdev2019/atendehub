@@ -287,16 +287,62 @@ describe('UserService — isolamento multi-tenant', () => {
   });
 
   describe('changePassword', () => {
-    it('nunca chama user.update para um usuário de outra empresa', async () => {
+    const dto = { currentPassword: 'SenhaAtual1', newPassword: 'SenhaNova2' };
+
+    // B-51: antes, qualquer usuário autenticado podia tentar a senha atual de
+    // OUTRO usuário da empresa (inclusive do ADMIN) por esta rota.
+    it('B-51: recusa (403) trocar a senha de outro usuário, sem consultar banco nem bcrypt', async () => {
+      await expect(
+        service.changePassword(companyA, 'outro-usuario', dto, requesterId),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('nunca chama user.update quando o próprio id não pertence à empresa do token', async () => {
       mockPrisma.user.findFirst.mockResolvedValueOnce(null);
 
       await expect(
-        service.changePassword(companyA, userOfCompanyB, {
-          currentPassword: 'x',
-          newPassword: 'y',
-        }),
+        service.changePassword(companyA, userOfCompanyB, dto, userOfCompanyB),
       ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: userOfCompanyB, companyId: companyA } }),
+      );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('troca a própria senha, grava o novo hash e registra auditoria', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ passwordHash: 'hash-antigo' });
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValueOnce('hash-novo');
+
+      await service.changePassword(companyA, requesterId, dto, requesterId);
+
+      expect(bcrypt.compare).toHaveBeenCalledWith('SenhaAtual1', 'hash-antigo');
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: requesterId },
+        data: { passwordHash: 'hash-novo' },
+      });
+      expect(mockAuditLog.record).toHaveBeenCalledWith({
+        companyId: companyA,
+        userId: requesterId,
+        action: 'user.password_changed',
+        entity: 'User',
+        entityId: requesterId,
+      });
+    });
+
+    it('senha atual incorreta responde 400 sem atualizar nem auditar', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ passwordHash: 'hash-antigo' });
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+      await expect(
+        service.changePassword(companyA, requesterId, dto, requesterId),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
 
