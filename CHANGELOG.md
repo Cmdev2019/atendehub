@@ -36,6 +36,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-54 (2026-10-17):** dependências de produção atualizadas para versões sem vulnerabilidades altas
+  ou críticas conhecidas — na API, `proxy-addr` (crítica), `multer`, `axios`, `compression`,
+  `engine.io`, `socket.io-parser` e `@nestjs/platform-express` (altas); no front, `socket.io-parser`
+  (alta). Só atualizações compatíveis (`npm audit fix`, sem mudança no `package.json`). Novo workflow
+  `dependency-audit.yml` audita as dependências de produção em todo push no `master`, todo PR e toda
+  segunda-feira. Restam moderadas sem correção compatível (`bull`/`uuid` e `minio`).
 - **B-51 (2026-10-17):** a troca de senha (`PATCH /users/:id/password`) passa a aceitar só o próprio
   usuário — qualquer outro `:id` responde 403 antes de consultar o banco —, ganha limite próprio de 5
   tentativas por minuto e registra `user.password_changed` em auditoria. Antes, um usuário autenticado

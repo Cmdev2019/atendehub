@@ -1,0 +1,54 @@
+name: Dependency Audit
+
+# B-54: auditoria das dependências de PRODUÇÃO — o que vai para o servidor
+# (apps/api) e para o navegador (front). Workflow separado e fora dos checks
+# obrigatórios do master: um aviso novo publicado sobre uma dependência não
+# trava o merge de PRs sem relação com ela, mas fica vermelho no PR e no
+# master para ser tratado. Para tornar bloqueante, incluir `api-audit` e
+# `web-audit` na proteção do master. O agendamento semanal pega avisos novos
+# mesmo quando ninguém faz push.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '0 11 * * 1' # segunda-feira, 08:00 em Brasília
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-audit:
+    name: api-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Lê só o package-lock.json — não precisa de npm ci
+      - name: npm audit (produção, nível alto ou crítico)
+        run: npm audit --omit=dev --audit-level=high
+
+  web-audit:
+    name: web-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm audit (produção, nível alto ou crítico)
+        run: npm audit --omit=dev --audit-level=high
