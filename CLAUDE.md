@@ -25,6 +25,9 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
   `createElement as h`. Socket.IO client. Dev na porta **3000**.
   - `src/services/api.js` — ApiClient (REST, fallback mock só em dev, classe
     `ApiError`); `src/services/websocket.js` — wsClient (namespace `/ws`)
+  - `src/services/sessionRefresh.js` — renovação de sessão (B-53): guarda o
+    refresh token rotacionado e faz uma renovação por vez para o app inteiro;
+    401 de login/cadastro/refresh não dispara renovação
   - `src/hooks/useConversations.js` — estado das conversas + normalizadores
     `toUiConversation`/`toUiMessage` (contrato API → shape da UI)
   - `src/components/icons.jsx` — TODO ícone vem do **svgrepo.com** (coleção
