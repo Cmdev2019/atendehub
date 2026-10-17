@@ -237,4 +237,54 @@ describe('StorageService', () => {
       expect(result.key).toMatch(/\.pdf$/);
     });
   });
+
+  // ── C-07/B-59: URL assinada com o endereço PÚBLICO da mídia ─────────────────
+  describe('endpoint público da mídia (C-07)', () => {
+    const MinioClient = jest.requireMock('minio').Client as jest.Mock;
+
+    const build = (values: Record<string, string>) =>
+      new StorageService({
+        get: (key: string, fallback?: any) => values[key] ?? fallback,
+      } as unknown as ConfigService);
+
+    beforeEach(() => MinioClient.mockClear());
+
+    it('assina com um cliente apontado para MINIO_PUBLIC_ENDPOINT (https, região fixa)', async () => {
+      const svc = build({
+        MINIO_ENDPOINT: 'http://minio:9000',
+        MINIO_PUBLIC_ENDPOINT: 'https://media.atendehub.com',
+        MINIO_REGION: 'us-east-1',
+      });
+
+      expect(MinioClient).toHaveBeenCalledTimes(2);
+      expect(MinioClient.mock.calls[0][0]).toMatchObject({ endPoint: 'minio', port: 9000, useSSL: false, region: 'us-east-1' });
+      expect(MinioClient.mock.calls[1][0]).toMatchObject({
+        endPoint: 'media.atendehub.com',
+        port: 443,
+        useSSL: true,
+        region: 'us-east-1',
+      });
+
+      await svc.getPresignedUrl('images/a.jpg');
+      const internal = MinioClient.mock.results[0].value;
+      const signer = MinioClient.mock.results[1].value;
+      expect(signer.presignedGetObject).toHaveBeenCalledWith('atendehub-media', 'images/a.jpg', 600);
+      expect(internal.presignedGetObject).not.toHaveBeenCalled();
+    });
+
+    it('sem MINIO_PUBLIC_ENDPOINT fora de produção (dev), assina com o próprio cliente interno', async () => {
+      const svc = build({ MINIO_ENDPOINT: 'http://localhost:9000' });
+
+      expect(MinioClient).toHaveBeenCalledTimes(1);
+      await svc.getPresignedUrl('images/a.jpg');
+      expect(MinioClient.mock.results[0].value.presignedGetObject).toHaveBeenCalled();
+    });
+
+    it('em produção, recusa subir sem MINIO_PUBLIC_ENDPOINT em https', () => {
+      const prod = { NODE_ENV: 'production', MINIO_ROOT_USER: 'u', MINIO_ROOT_PASSWORD: 'p', MINIO_ENDPOINT: 'http://minio:9000' };
+      expect(() => build(prod)).toThrow(/MINIO_PUBLIC_ENDPOINT/);
+      expect(() => build({ ...prod, MINIO_PUBLIC_ENDPOINT: 'http://media.atendehub.com' })).toThrow(/https/);
+      expect(() => build({ ...prod, MINIO_PUBLIC_ENDPOINT: 'https://media.atendehub.com' })).not.toThrow();
+    });
+  });
 });

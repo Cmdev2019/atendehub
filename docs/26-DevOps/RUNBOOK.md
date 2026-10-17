@@ -52,6 +52,7 @@ cair silenciosamente num valor de desenvolvimento:
 | `VITE_API_URL`, `VITE_WS_URL` | `docker-compose.prod.yml` (build args do `nginx`) | ausente — reflete no **build**, não dá pra trocar depois sem rebuildar a imagem |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | `apps/api/src/main.ts` (`validateSecrets`) | ausente, < 32 chars, ou contém placeholder inseguro conhecido |
 | `CORS_ORIGINS` | `apps/api/src/main.ts` (`validateCorsOrigins`) | ausente ou `*` |
+| `MINIO_PUBLIC_ENDPOINT` | `apps/api/src/shared/storage/storage.service.ts` (boot) | ausente ou sem `https://` — deve ser o host de mídia, ex. `https://media.atendehub.com` (B-59) |
 
 Gerar secrets fortes: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`.
 
@@ -61,7 +62,9 @@ preencher, o Sentry não é inicializado (no-op seguro, não bloqueia o
 deploy). Ver seção própria abaixo.
 
 Certificados SSL: colocar `fullchain.pem`/`privkey.pem` em `infra/nginx/certs/`
-(montado como volume no serviço `nginx`) antes do primeiro `up`. A renovação
+(montado como volume no serviço `nginx`) antes do primeiro `up`. O certificado
+precisa cobrir os **três** hosts: `app.`, `api.` e `media.` (B-59), e o DNS dos
+três precisa apontar para o servidor. A renovação
 ainda é manual (automação ACME pendente no B-43): certificado vencido derruba
 app e API ao mesmo tempo — agendar a troca antes do vencimento.
 
@@ -78,6 +81,17 @@ app e API ao mesmo tempo — agendar a troca antes do vencimento.
   plataforma inteira.
 - Host desconhecido (inclusive acesso pelo IP do servidor) é recusado: 444 no
   HTTP e handshake TLS recusado no HTTPS.
+
+**Mídia (B-59):** fotos, áudios e documentos do chat são baixados pelo
+navegador em `https://media.<domínio>/<bucket>/...`, com URL assinada pela API
+(válida por `MEDIA_SIGNED_URL_EXPIRATION`, padrão 600 s). O nginx repassa ao
+MinIO só GET/HEAD no caminho do bucket (`/atendehub-media/`); o resto responde
+404. Trocar o domínio de mídia exige ajustar `server_name` do bloco `media.` no
+`nginx.conf`, `img-src`/`media-src` no `security-headers.conf` e
+`MINIO_PUBLIC_ENDPOINT`; trocar o `MINIO_BUCKET` exige ajustar o `location` do
+bloco `media.`. Sintoma de configuração errada: imagem quebrada no chat com
+403 (`SignatureDoesNotMatch` — host diferente do assinado) ou erro de CSP no
+console do navegador.
 
 **Limite de requisições na API (B-56):**
 - Atrás do nginx, a API calcula o IP do cliente pelo `X-Forwarded-For`

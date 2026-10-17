@@ -95,8 +95,11 @@ services:
       - "443:443"
     volumes:
       - ./infra/nginx/certs:/etc/nginx/certs:ro
+    # C-07/B-59: o nginx também serve a mídia (media.<domínio> → MinIO).
     depends_on:
       api:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - atendehub_net

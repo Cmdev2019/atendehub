@@ -40,6 +40,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-59 (2026-10-17):** a mídia do chat passa a carregar no navegador em produção. As URLs assinadas
+  eram geradas com o host interno do MinIO, que o navegador não resolve (e trocar o host depois de
+  assinar invalida a assinatura). Agora a API assina com `MINIO_PUBLIC_ENDPOINT` (obrigatória, com
+  https, em produção) e o nginx serve `media.<domínio>` → MinIO, só leitura, com CSP `sandbox`; a CSP
+  do app passa a liberar só esse host (mais a CDN do WhatsApp, das fotos de perfil). Impacto no
+  deploy: DNS e certificado para o host de mídia e a variável nova (ver RUNBOOK).
 - **B-58 (2026-10-17):** mensagens deixam de sumir quando duas conexões de WhatsApp cadastradas no
   AtendeHub conversam entre si (dois números da mesma empresa ou de empresas clientes). O `externalId`
   da mensagem passa a ser único **por conexão** (`messages.whatsappConnectionId`, preenchido a partir da
