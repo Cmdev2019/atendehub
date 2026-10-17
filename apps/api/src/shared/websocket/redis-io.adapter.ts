@@ -14,6 +14,11 @@ import { Redis } from 'ioredis';
  * criado antes de qualquer namespace, então funciona com qualquer namespace
  * registrado depois — resolvendo `events.gateway.ts:80` (B2-6).
  */
+// B-44: sem prazo, um Redis que não responde no boot travava a API para
+// sempre — a promessa de 'ready' nunca resolvia, o catch abaixo nunca era
+// alcançado e a porta nunca abria (sem nenhuma linha de log).
+export const REDIS_ADAPTER_CONNECT_TIMEOUT_MS = 5000;
+
 export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
   private adapterConstructor?: ReturnType<typeof createAdapter>;
@@ -31,18 +36,33 @@ export class RedisIoAdapter extends IoAdapter {
     const pubClient = new Redis({ host, port, password, maxRetriesPerRequest: null });
     const subClient = pubClient.duplicate();
 
+    let timer: NodeJS.Timeout | undefined;
     try {
-      await Promise.all([
-        new Promise<void>((resolve) => pubClient.once('ready', resolve)),
-        new Promise<void>((resolve) => subClient.once('ready', resolve)),
+      await Promise.race([
+        Promise.all([
+          new Promise<void>((resolve) => pubClient.once('ready', resolve)),
+          new Promise<void>((resolve) => subClient.once('ready', resolve)),
+        ]),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Redis não respondeu em ${REDIS_ADAPTER_CONNECT_TIMEOUT_MS} ms`)),
+            REDIS_ADAPTER_CONNECT_TIMEOUT_MS,
+          );
+        }),
       ]);
 
       this.adapterConstructor = createAdapter(pubClient, subClient);
       this.logger.log(`Socket.IO Redis Adapter configurado (${host}:${port})`);
     } catch (err: any) {
+      // Sem adapter, os clientes não servem para nada — desliga para não
+      // ficarem tentando reconectar em segundo plano.
+      pubClient.disconnect();
+      subClient.disconnect();
       this.logger.error(
         `Falha ao conectar Redis Adapter: ${err.message}. Socket.IO funcionará apenas em single-instance.`,
       );
+    } finally {
+      clearTimeout(timer);
     }
   }
 

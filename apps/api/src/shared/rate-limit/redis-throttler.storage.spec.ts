@@ -66,6 +66,14 @@ describe('RedisThrottlerStorage (C-04)', () => {
     await expect(s.onModuleInit()).resolves.toBeUndefined();
   });
 
+  it('chamado duas vezes no boot, espera a conexão uma vez só', async () => {
+    mockStatus.readySoon = true;
+    const s = new RedisThrottlerStorage(config);
+    const first = s.onModuleInit();
+    expect(s.onModuleInit()).toBe(first);
+    await first;
+  });
+
   it('o boot não trava se o Redis não responder (desiste após 3 s)', async () => {
     jest.useFakeTimers();
     mockStatus.readySoon = false;

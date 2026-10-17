@@ -36,6 +36,12 @@ async function bootstrap() {
     bodyParser: false, // registrado manualmente abaixo com limites por rota
   });
 
+  // ── Desligamento gracioso (B-44) ────────────────────────────────────────────
+  // No SIGTERM do `docker stop`/deploy, roda os onModuleDestroy (fecha filas do
+  // Bull esperando o job em andamento, desconecta Prisma e Redis) antes de
+  // sair. Sem isso o processo era morto no meio do trabalho.
+  app.enableShutdownHooks();
+
   // ── Proxy reverso (C-04) ────────────────────────────────────────────────────
   // Atrás do nginx, req.ip só é o IP do cliente se o Express confiar no
   // X-Forwarded-For — sem isso o limite de requisições via um único cliente.

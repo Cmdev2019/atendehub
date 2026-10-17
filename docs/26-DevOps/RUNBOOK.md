@@ -115,6 +115,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 curl -f https://api.SEUDOMINIO.com/api/v1/health/ready
 ```
 
+**Container da API (B-44):** roda como `node` (não root), com `tini` como PID
+1 e `HEALTHCHECK` próprio em `/api/v1/health` — `docker ps` mostra
+`(healthy)`, e o `nginx` só sobe depois disso. No `docker compose ... stop`/
+deploy, a API recebe SIGTERM, fecha filas, Prisma e Redis e sai; tem 30 s
+(`stop_grace_period`) antes do SIGKILL. Se o Redis não responder no boot, a
+API sobe mesmo assim em até ~15 s (Socket.IO em instância única, limite de
+requisições liberado) e o `/health/ready` responde 503 com `redis: down` —
+antes ela travava sem abrir a porta e sem log.
+
 `GET /health` é liveness (processo de pé, não checa dependência).
 `GET /health/ready` checa PostgreSQL e Redis de verdade — usar este para
 health-check de orquestrador/load balancer, não o `/health`.
