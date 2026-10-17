@@ -62,6 +62,13 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private client: Minio.Client;
+  // C-07/B-59: cliente usado SÓ para assinar URLs de download, apontado para
+  // o endereço público da mídia (MINIO_PUBLIC_ENDPOINT, ex.
+  // https://media.atendehub.com). A assinatura V4 inclui o host: assinar com
+  // o endpoint interno (http://minio:9000) gerava URLs que o navegador não
+  // resolve, e trocar o host depois de assinar invalida a assinatura. Sem a
+  // variável (dev), é o próprio `client`.
+  private signer: Minio.Client;
   private bucket: string;
   // Endpoint interno usado só para compor/decompor a identidade do objeto
   // (`${internalEndpoint}/${bucket}/${key}`, formato mantido por
@@ -93,13 +100,42 @@ export class StorageService implements OnModuleInit {
       );
     }
 
+    // Região explícita: sem ela o SDK consulta a região do bucket pela rede
+    // antes de assinar — o que, no cliente público, seria uma chamada da API
+    // ao próprio domínio de mídia.
+    const region = this.config.get<string>('MINIO_REGION', 'us-east-1');
+    const credentials = {
+      accessKey: accessKey || 'minioadmin', // Padrão apenas para dev local
+      secretKey: secretKey || 'minioadmin', // Padrão apenas para dev local
+    };
+
     this.client = new Minio.Client({
       endPoint: parsed.hostname,
       port: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 9000),
       useSSL: parsed.protocol === 'https:',
-      accessKey: accessKey || 'minioadmin', // Padrão apenas para dev local
-      secretKey: secretKey || 'minioadmin', // Padrão apenas para dev local
+      region,
+      ...credentials,
     });
+
+    const publicEndpoint = this.config.get<string>('MINIO_PUBLIC_ENDPOINT')?.trim();
+    if (nodeEnv === 'production' && !publicEndpoint?.startsWith('https://')) {
+      throw new Error(
+        'MINIO_PUBLIC_ENDPOINT deve estar configurado com https:// em produção ' +
+          '(ex.: https://media.atendehub.com) — sem ele, nenhuma mídia carrega no navegador (C-07).',
+      );
+    }
+    if (publicEndpoint) {
+      const pub = new URL(publicEndpoint);
+      this.signer = new Minio.Client({
+        endPoint: pub.hostname,
+        port: Number(pub.port) || (pub.protocol === 'https:' ? 443 : 80),
+        useSSL: pub.protocol === 'https:',
+        region,
+        ...credentials,
+      });
+    } else {
+      this.signer = this.client;
+    }
 
     this.bucket = this.config.get<string>('MINIO_BUCKET', 'atendehub-media');
     this.internalEndpoint = endpoint.replace(/\/+$/, '');
@@ -215,7 +251,7 @@ export class StorageService implements OnModuleInit {
    * o B-38 — o bucket é privado).
    */
   async getPresignedUrl(key: string, expirySeconds?: number): Promise<string> {
-    return this.client.presignedGetObject(
+    return this.signer.presignedGetObject(
       this.bucket,
       key,
       expirySeconds ?? this.defaultExpirySeconds,

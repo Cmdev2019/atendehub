@@ -37,12 +37,12 @@ jobs:
             -t atendehub-nginx:ci .
 
       # Certificado descartável só para o nginx -t carregar o ssl_certificate;
-      # o host `api` (upstream) aponta para o loopback porque o nginx resolve
-      # os upstreams já na validação.
+      # os hosts dos upstreams (`api`, `minio`) apontam para o loopback porque
+      # o nginx resolve os upstreams já na validação.
       - name: nginx -t
         run: |
           certs=$(mktemp -d)
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=ci" \
             -keyout "$certs/privkey.pem" -out "$certs/fullchain.pem"
-          docker run --rm --add-host api:127.0.0.1 \
+          docker run --rm --add-host api:127.0.0.1 --add-host minio:127.0.0.1 \
             -v "$certs:/etc/nginx/certs:ro" atendehub-nginx:ci nginx -t

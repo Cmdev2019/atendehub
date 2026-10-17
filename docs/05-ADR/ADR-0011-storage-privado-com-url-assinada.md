@@ -2,10 +2,10 @@
 
 - **Status:** Validada
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-17
 - **Autor:** Engenharia (formalização retroativa — decisão já tomada e implementada em B-38)
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/src/shared/storage/storage.service.ts`, `MediaPresignInterceptor`
 
@@ -152,6 +152,7 @@ reconferência de `companyId` (sugestão D da AGR §16) — nesse momento, atual
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-08-05 | Criação — formaliza retroativamente a decisão já implementada em B-38 | 1.0 |
+| 2026-10-17 | Correção do caminho de produção (C-07 da auditoria de 2026-10-16, B-59). A validação original só cobria o desenvolvimento: as URLs eram assinadas com o host interno do MinIO (`http://minio:9000` em produção), que o navegador não resolve — e trocar o host depois de assinar invalida a assinatura V4. Decisão (responsável do projeto, 2026-10-17): manter URL assinada, servida por um subdomínio próprio (`media.<domínio>`) no nginx, repassando ao MinIO com o `Host` preservado — preferida à alternativa de rota autenticada na API (sem domínio extra, mas com a mídia passando pelo Node e exigindo token na URL, já que `<img>`/`<audio>` não enviam o cabeçalho `Authorization`). Implementação: variável `MINIO_PUBLIC_ENDPOINT` (obrigatória em https em produção) usada só por um cliente de assinatura com região fixa; host de mídia só com GET/HEAD no caminho do bucket e CSP `sandbox` nas respostas; CSP do app restrita a esse host. Validado ponta a ponta com MinIO real, a imagem do nginx e o `StorageService` compilado (ver B-59 no roadmap). | 1.1 |
 
 ## Referências
 
