@@ -10,7 +10,7 @@ on:
   pull_request:
 
 # Push novo na mesma ref cancela o run anterior — evita fila de runs obsoletos
-# e economiza minutos (repositório privado tem cota mensal).
+# e libera o runner mais cedo.
 concurrency:
   group: web-ci-${{ github.ref }}
   cancel-in-progress: true

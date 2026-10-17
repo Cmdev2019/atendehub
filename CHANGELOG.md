@@ -28,6 +28,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - `docs/RUNBOOK.md` movido para `docs/26-DevOps/`
 - `docs/LOGO_GUIDELINES.md` movido para `docs/07-Frontend/`
 - `docs/archive/` renomeado para `docs/99-Arquivo/`
+- Repositório mantido público (decisão de 2026-10-16): `master` protegido (pull request obrigatório e
+  checks `api`/`web` verdes, também para administradores), `LICENSE` sem a palavra "confidencial"
+  (continua proprietária), `SECURITY.md` sem detalhes de falhas não corrigidas e README atualizado
 
 ### Removido
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
