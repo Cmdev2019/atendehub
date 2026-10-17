@@ -242,8 +242,20 @@ export class UserService {
     });
   }
 
-  // ── Trocar senha ──────────────────────────────────────────────────────────
-  async changePassword(companyId: string, id: string, dto: ChangePasswordDto) {
+  // ── Trocar a própria senha ────────────────────────────────────────────────
+  // B-51: só o dono da conta troca a própria senha. A checagem vem antes de
+  // qualquer consulta — não revela se o id existe nem gasta bcrypt à toa.
+  // Para outro usuário, o caminho é o reset administrativo (resetPassword).
+  async changePassword(
+    companyId: string,
+    id: string,
+    dto: ChangePasswordDto,
+    requesterId: string,
+  ) {
+    if (id !== requesterId) {
+      throw new ForbiddenException('Você só pode trocar a sua própria senha');
+    }
+
     const user = await this.prisma.user.findFirst({
       where: { id, companyId },
       select: { passwordHash: true },
@@ -259,6 +271,14 @@ export class UserService {
     await this.prisma.user.update({
       where: { id },
       data: { passwordHash },
+    });
+
+    await this.auditLog.record({
+      companyId,
+      userId: requesterId,
+      action: 'user.password_changed',
+      entity: 'User',
+      entityId: id,
     });
 
     return { message: 'Senha atualizada com sucesso' };

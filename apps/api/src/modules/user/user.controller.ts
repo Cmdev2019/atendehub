@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -99,13 +100,18 @@ export class UserController {
   }
 
   // PATCH /api/v1/users/:id/password
+  // B-51: só o próprio usuário troca a própria senha — o `:id` precisa ser o
+  // do token (conferido no service); trocar a de outra pessoa é o reset
+  // administrativo (POST /:id/reset-password). Limite próprio, igual ao do
+  // login: a rota confere a senha atual com bcrypt.
   @Patch(':id/password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   changePassword(
     @CurrentUser() user: AuthUserDto,
     @Param('id') id: string,
     @Body() dto: ChangePasswordDto,
   ) {
-    return this.userService.changePassword(user.companyId, id, dto);
+    return this.userService.changePassword(user.companyId, id, dto, user.id);
   }
 
   // POST /api/v1/users/:id/reset-password

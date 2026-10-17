@@ -36,6 +36,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-51 (2026-10-17):** a troca de senha (`PATCH /users/:id/password`) passa a aceitar só o próprio
+  usuário — qualquer outro `:id` responde 403 antes de consultar o banco —, ganha limite próprio de 5
+  tentativas por minuto e registra `user.password_changed` em auditoria. Antes, um usuário autenticado
+  podia tentar a senha atual de outro usuário da mesma empresa com o limite genérico da API. Impacto:
+  nenhuma mudança para o frontend, que já enviava o próprio id. Arquivos:
+  `apps/api/src/modules/user/user.service.ts`, `apps/api/src/modules/user/user.controller.ts`;
+  contrato em `docs/09-APIs/API_CONTRACT.md`.
 - **B-50 (2026-10-16):** removido o caminho alternativo de download de mídia do webhook que buscava a
   URL vinda no conteúdo da mensagem enviando a `EVOLUTION_API_KEY` no cabeçalho — a chave podia chegar
   a um host externo. A mídia passa a vir exclusivamente do `getBase64FromMediaMessage` da Evolution; se
