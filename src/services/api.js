@@ -1,5 +1,6 @@
 // API Service - Cliente HTTP para backend com fallback para mock (somente em dev)
 import { mockApiClient } from './apiMock';
+import { createTokenRefresher, shouldRefreshOn401 } from './sessionRefresh';
 
 // Converte um File em data URL — usado só no fallback mock do upload de
 // avatar (sem backend/MinIO real, a "URL" vira o próprio base64 da imagem)
@@ -49,6 +50,12 @@ class ApiClient {
     this.sessionExpiredListeners = new Set();
     this.retryTimer = null;
     this.retryDelay = RETRY_DELAY_MIN_MS;
+    // B-53: renovação de sessão compartilhada pelo app inteiro (uma por vez),
+    // que também guarda o refresh token rotacionado — ver sessionRefresh.js
+    this.refreshAccessToken = createTokenRefresher({
+      storage: localStorage,
+      refreshRequest: (refreshToken) => this.requestRefresh(refreshToken),
+    });
     this.ready = FORCE_MOCK ? Promise.resolve() : this.testConnection();
   }
 
@@ -162,7 +169,10 @@ class ApiClient {
     );
   }
 
-  async request(endpoint, options = {}) {
+  // `retried`: true quando esta chamada já é a repetição feita depois de uma
+  // renovação de sessão — um novo 401 aí encerra a sessão em vez de renovar
+  // de novo (evita laço).
+  async request(endpoint, options = {}, retried = false) {
     if (FORCE_MOCK) {
       return this.requestMock(endpoint, options);
     }
@@ -197,15 +207,18 @@ class ApiClient {
     try {
       const response = await fetch(url, config);
 
-      if (response.status === 401) {
-        const refreshed = await this.refreshToken();
+      // B-53: 401 de rota de credencial (login, cadastro, refresh) segue
+      // adiante como erro comum, com a mensagem do servidor ("Usuário ou senha
+      // incorreta.") — antes virava "Sessão expirada". Nas demais rotas,
+      // renova uma vez e repete a requisição.
+      if (response.status === 401 && shouldRefreshOn401(endpoint)) {
+        const refreshed = !retried && (await this.refreshToken());
         if (refreshed) {
-          return this.request(endpoint, options);
-        } else {
-          this.clearToken();
-          this.notifySessionExpired();
-          throw new ApiError(401, 'Sessão expirada. Faça login novamente.');
+          return this.request(endpoint, options, true);
         }
+        this.clearToken();
+        this.notifySessionExpired();
+        throw new ApiError(401, 'Sessão expirada. Faça login novamente.');
       }
 
       // 204 No Content (logout, revoke) não tem corpo — response.json()
@@ -474,24 +487,33 @@ class ApiClient {
     }
   }
 
+  // Renova o access token (B-53). Uma renovação por vez para o app inteiro:
+  // requisições que recebem 401 juntas e o WebSocket esperam a mesma
+  // promessa. Resolve false quando a sessão acabou; erro de rede é propagado
+  // (servidor fora do ar não é motivo para deslogar).
   async refreshToken() {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) return false;
+    const accessToken = await this.refreshAccessToken();
+    if (!accessToken) return false;
+    this.token = accessToken;
+    return true;
+  }
 
-    try {
-      const response = await this.request('/auth/refresh', {
-        method: 'POST',
-        body: JSON.stringify({ refreshToken }),
-      });
+  // Chamada direta ao /auth/refresh — fora de request() de propósito: um 401
+  // aqui significa sessão encerrada e não pode disparar outra renovação.
+  // Resolve com { accessToken, refreshToken } ou null se o servidor recusar.
+  async requestRefresh(refreshToken) {
+    const options = { method: 'POST', body: JSON.stringify({ refreshToken }) };
 
-      if (response.accessToken) {
-        this.setToken(response.accessToken);
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
+    if (FORCE_MOCK || this.backendAvailable === false) {
+      return this.requestMock('/auth/refresh', options);
     }
+
+    const response = await fetch(`${this.baseURL}/auth/refresh`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) return null;
+    return response.json();
   }
 
   async getCurrentUser() {

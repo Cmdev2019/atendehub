@@ -33,6 +33,27 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-54 (2026-10-17):** dependências de produção atualizadas para versões sem vulnerabilidades altas
+  ou críticas conhecidas — na API, `proxy-addr` (crítica), `multer`, `axios`, `compression`,
+  `engine.io`, `socket.io-parser` e `@nestjs/platform-express` (altas); no front, `socket.io-parser`
+  (alta). Só atualizações compatíveis (`npm audit fix`, sem mudança no `package.json`). Novo workflow
+  `dependency-audit.yml` audita as dependências de produção em todo push no `master`, todo PR e toda
+  segunda-feira. Restam moderadas sem correção compatível (`bull`/`uuid` e `minio`).
+- **B-51 (2026-10-17):** a troca de senha (`PATCH /users/:id/password`) passa a aceitar só o próprio
+  usuário — qualquer outro `:id` responde 403 antes de consultar o banco —, ganha limite próprio de 5
+  tentativas por minuto e registra `user.password_changed` em auditoria. Antes, um usuário autenticado
+  podia tentar a senha atual de outro usuário da mesma empresa com o limite genérico da API. Impacto:
+  nenhuma mudança para o frontend, que já enviava o próprio id. Arquivos:
+  `apps/api/src/modules/user/user.service.ts`, `apps/api/src/modules/user/user.controller.ts`;
+  contrato em `docs/09-APIs/API_CONTRACT.md`.
+- **B-50 (2026-10-16):** removido o caminho alternativo de download de mídia do webhook que buscava a
+  URL vinda no conteúdo da mensagem enviando a `EVOLUTION_API_KEY` no cabeçalho — a chave podia chegar
+  a um host externo. A mídia passa a vir exclusivamente do `getBase64FromMediaMessage` da Evolution; se
+  ela não entregar, a mensagem fica sem anexo (com log). Chave da Evolution trocada no ambiente local,
+  inclusive o token das instâncias existentes. Impacto: nenhuma mudança de contrato da API. Arquivos:
+  `apps/api/src/modules/webhook/webhook.service.ts`,
+  `apps/api/src/modules/webhook/media-download.service.ts`; procedimento de troca da chave em
+  `docs/26-DevOps/RUNBOOK.md`.
 - **B-38 (2026-07-29):** bucket de mídia do MinIO deixa de ser público em leitura — mitiga risco de
   violação da LGPD Art. 46 (dado pessoal de cliente — foto, áudio, documento — acessível por qualquer
   pessoa com a URL, sem autenticação). Mídia passa a ser servida exclusivamente por URL assinada
@@ -55,6 +76,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-53 (2026-10-17):** a sessão do frontend caía a cada ~30 minutos — o refresh token rotacionado
+  pelo backend não era guardado, e a renovação seguinte era recusada. A renovação passa a guardar o
+  token novo e a acontecer uma vez por vez para o app inteiro (requisições simultâneas e WebSocket
+  esperam a mesma); erro de rede na renovação não desloga mais. Também corrigido: senha errada no login
+  aparecia como "Sessão expirada". Arquivos: `src/services/sessionRefresh.js` (novo),
+  `src/services/api.js`.
+- **B-52 (2026-10-17):** em produção a API não gravava nenhuma linha de log — o nível configurado
+  (`'log'`) não existe no Winston, que descartava todas as mensagens, inclusive erros e o motivo de um
+  boot abortado. Passa a usar `info` em produção (`debug` segue desligado, por poder conter dado
+  pessoal), com testes que verificam a saída real. Arquivo:
+  `apps/api/src/shared/logging/winston.logger.ts`; RUNBOOK atualizado.
 - **B-39 (2026-07-29):** retry da fila de webhook (Bull) estava inoperante — exceção de
   `WebhookService#handleEvent` era engolida antes de chegar ao processor, então `attempts`/`backoff`
   nunca tinham efeito e uma falha transitória (Postgres/Redis fora do ar, timeout da Evolution) perdia
