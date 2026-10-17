@@ -1,12 +1,11 @@
 # ADR-0015 — Imagem Docker multi-stage sobre `node:20-bookworm-slim`; hardening de runtime pendente (B-44)
 
-- **Status:** Implementada (build multi-stage) · Proposta (hardening de runtime — usuário
-  não-root, healthcheck, `tini`, shutdown gracioso)
+- **Status:** Implementada (build multi-stage e hardening de runtime — B-44, 2026-10-17)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-17
 - **Autor:** Engenharia
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/Dockerfile`, `docker-compose.prod.yml`
 
@@ -140,6 +139,8 @@ priorização de roadmap (B-44 na fila), não uma objeção técnica.
 - **Commits:** NÃO FOI POSSÍVEL VALIDAR
 - **Testes:** NÃO ENCONTRADO teste automatizado de container
 - **Pipelines:** NÃO ENCONTRADO — nenhum step de build/scan de imagem em `api-ci.yml`
+  (atualização 2026-10-17: workflow `api-image-check.yml` constrói a imagem e confere usuário,
+  PID 1, `HEALTHCHECK`, engine do Prisma e CLI de migração)
 
 ## Critérios de Validação
 
@@ -159,6 +160,7 @@ armazenamento de registry).
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-08-05 | Criação — formaliza a base já implementada e propõe a direção do hardening pendente | 1.0 |
+| 2026-10-17 | Pergunta 2 implementada no B-44: `USER node`, `tini` como PID 1, `HEALTHCHECK` em `/api/v1/health`, `enableShutdownHooks()`, `stop_grace_period: 30s` e healthcheck como dependência do nginx no compose de produção. O runtime deixa de fazer o 2º `npm ci` e o 2º `prisma generate` (copia `node_modules` já podado do build — imagem de 785 MB para 640 MB); para isso o estágio de build também precisa de OpenSSL, senão o client é gerado para openssl-1.1 e a API não sobe. Migração segue como passo explícito do deploy (RUNBOOK), não automática no boot — com réplicas, migração no boot disputaria o mesmo banco. Validação: ver B-44 no roadmap; trava de regressão no workflow `api-image-check.yml`. | 1.1 |
 
 ## Referências
 

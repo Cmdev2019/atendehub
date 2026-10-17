@@ -68,7 +68,17 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleInit, On
     this.redis.on('error', (err) => this.logFailure(err));
   }
 
-  async onModuleInit(): Promise<void> {
+  private initPromise?: Promise<void>;
+
+  // A mesma instância é provider do RateLimitModule e storage do
+  // ThrottlerModule, então o Nest chama este hook duas vezes — a espera (e o
+  // aviso) acontece uma vez só.
+  onModuleInit(): Promise<void> {
+    this.initPromise ??= this.waitForConnection();
+    return this.initPromise;
+  }
+
+  private async waitForConnection(): Promise<void> {
     if (this.redis.status === 'ready') return;
     const ready = await new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => resolve(false), 3000);

@@ -55,11 +55,20 @@ services:
       dockerfile: Dockerfile
     container_name: atendehub_api
     restart: always
+    # B-44: o healthcheck vem da própria imagem (HEALTHCHECK em
+    # apps/api/Dockerfile, batendo em /api/v1/health) — é ele que o nginx
+    # espera abaixo. O MinIO entra nas dependências porque a API cria o
+    # bucket no boot.
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+    # B-44: tempo para o desligamento gracioso (enableShutdownHooks) terminar
+    # o job em andamento antes do SIGKILL. O padrão do Docker é 10 s.
+    stop_grace_period: 30s
     env_file: .env
     networks:
       - atendehub_net
@@ -87,6 +96,7 @@ services:
     volumes:
       - ./infra/nginx/certs:/etc/nginx/certs:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - atendehub_net

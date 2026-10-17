@@ -1,0 +1,69 @@
+name: API Image Check
+
+# B-44: constrói a imagem de produção da API (apps/api/Dockerfile) e confere
+# o que só aparece na imagem pronta — nada disso é coberto pelos testes do
+# código:
+#   - roda como `node`, não root, com tini como PID 1 e HEALTHCHECK declarado;
+#   - o engine do Prisma carrega (se o build gerar o client para a versão
+#     errada do OpenSSL, a API não sobe em produção — aconteceu durante o
+#     próprio B-44);
+#   - o CLI `prisma` existe no runtime (o deploy roda `npm run db:migrate:prod`
+#     dentro do container).
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/api/Dockerfile'
+      - 'apps/api/.dockerignore'
+      - 'apps/api/package.json'
+      - 'apps/api/package-lock.json'
+      - 'apps/api/prisma/**'
+      - '.github/workflows/api-image-check.yml'
+  pull_request:
+    paths:
+      - 'apps/api/Dockerfile'
+      - 'apps/api/.dockerignore'
+      - 'apps/api/package.json'
+      - 'apps/api/package-lock.json'
+      - 'apps/api/prisma/**'
+      - '.github/workflows/api-image-check.yml'
+
+concurrency:
+  group: api-image-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-image:
+    name: api-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build da imagem
+        run: docker build -t atendehub-api:ci apps/api
+
+      - name: Usuário, PID 1 e HEALTHCHECK
+        run: |
+          user=$(docker inspect -f '{{.Config.User}}' atendehub-api:ci)
+          entry=$(docker inspect -f '{{json .Config.Entrypoint}}' atendehub-api:ci)
+          health=$(docker inspect -f '{{if .Config.Healthcheck}}ok{{end}}' atendehub-api:ci)
+          echo "user=$user entrypoint=$entry healthcheck=$health"
+          [ "$user" = "node" ] || { echo "::error::A imagem deve rodar como node, não $user"; exit 1; }
+          [ "$entry" = '["/usr/bin/tini","--"]' ] || { echo "::error::tini deve ser o entrypoint"; exit 1; }
+          [ "$health" = "ok" ] || { echo "::error::HEALTHCHECK ausente"; exit 1; }
+
+      # Sem banco: o esperado é "Can't reach database server". Erro de Query
+      # Engine significa client gerado para a plataforma errada.
+      - name: Engine do Prisma carrega
+        run: |
+          docker run --rm --entrypoint node atendehub-api:ci -e "
+            new (require('@prisma/client').PrismaClient)({ datasourceUrl: 'postgresql://x:x@127.0.0.1:1/x' })
+              .\$connect()
+              .then(() => process.exit(1))
+              .catch((e) => { console.log(e.message.split('\n')[0]); process.exit(/Query Engine/.test(e.message) ? 1 : 0); });
+          "
+
+      - name: CLI do Prisma no runtime
+        run: docker run --rm --entrypoint npx atendehub-api:ci --no-install prisma --version

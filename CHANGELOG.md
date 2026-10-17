@@ -36,6 +36,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-44 (2026-10-17):** container da API endurecido — roda como `node` em vez de root, `tini` como
+  PID 1 (o `docker stop` deixa de terminar em SIGKILL), `HEALTHCHECK` na imagem, desligamento
+  gracioso (`enableShutdownHooks`, 30 s de prazo no compose) e nginx esperando a API ficar saudável. A
+  API deixa de travar no boot quando o Redis não responde (prazo de 5 s no adaptador do Socket.IO). A
+  imagem fica menor (785 MB → 640 MB): o runtime reaproveita as dependências do build. Novo workflow
+  `api-image-check.yml`. Impacto: nenhum no deploy além de reconstruir a imagem.
 - **B-56 (2026-10-17):** o limite de requisições deixa de tratar todos os usuários como um só atrás do
   nginx. A API passa a confiar no `X-Forwarded-For` do proxy (`TRUST_PROXY`, padrão 1 em produção); a
   cota geral passa a ser por usuário autenticado (por IP nas rotas sem token); o webhook da Evolution
