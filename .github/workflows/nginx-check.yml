@@ -1,0 +1,48 @@
+name: Nginx Check
+
+# B-43: valida a configuração do nginx de produção antes do deploy. Constrói
+# a imagem real (infra/nginx/Dockerfile — o mesmo build do
+# docker-compose.prod.yml) e roda `nginx -t` dentro dela. Um erro de sintaxe
+# ou um include faltando no Dockerfile derrubaria app e API de uma vez só no
+# servidor; aqui ele aparece no PR.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'infra/nginx/**'
+      - '.github/workflows/nginx-check.yml'
+  pull_request:
+    paths:
+      - 'infra/nginx/**'
+      - '.github/workflows/nginx-check.yml'
+
+concurrency:
+  group: nginx-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nginx-config:
+    name: nginx-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build da imagem do nginx
+        run: |
+          docker build -f infra/nginx/Dockerfile \
+            --build-arg VITE_API_URL=https://api.atendehub.com/api/v1 \
+            --build-arg VITE_WS_URL=https://api.atendehub.com \
+            -t atendehub-nginx:ci .
+
+      # Certificado descartável só para o nginx -t carregar o ssl_certificate;
+      # o host `api` (upstream) aponta para o loopback porque o nginx resolve
+      # os upstreams já na validação.
+      - name: nginx -t
+        run: |
+          certs=$(mktemp -d)
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=ci" \
+            -keyout "$certs/privkey.pem" -out "$certs/fullchain.pem"
+          docker run --rm --add-host api:127.0.0.1 \
+            -v "$certs:/etc/nginx/certs:ro" atendehub-nginx:ci nginx -t
