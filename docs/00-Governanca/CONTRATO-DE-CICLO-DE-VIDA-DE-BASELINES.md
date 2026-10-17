@@ -52,13 +52,13 @@ não presumido aqui.
 | **Baseline Atual** | A baseline vigente até o Reconhecimento formal de uma sucessora. |
 | **Ciclo** | Conjunto fechado de itens com escopo autorizado, evoluindo a partir da Baseline Atual. |
 | **Baseline Sucessora** | Novo estado reconhecido após Aceite e Reconhecimento formal e distintos (Parte 8). |
-| **Escopo Autorizado** | Os itens explicitamente aprovados no ato de Autorização (Parte 8, Estado 3). |
+| **Escopo Autorizado** | Os itens explicitamente aprovados no ato de Autorização (Parte 8). |
 | **Escopo Não Autorizado** | Qualquer mudança fora dessa lista — tratamento na Parte 8, Estado 4. |
 | **Divergência** | Qualquer diferença observável, verificada por evidência primária (comando executado, leitura de arquivo, resultado de teste), entre o que um documento do ciclo declara e o que o código, os testes, o Git ou a documentação realmente mostram. Definição objetiva completa e matriz de severidade na Parte 6. |
 | **Evidência** | Comando executado + resultado, ou artefato equivalente (PDF técnico, log, diff) — nunca "conforme combinado" ou memória de conversa (Parte 7). |
-| **Autorização** | Ato formal e distinto que permite iniciar um Ciclo (Parte 8, Estado 3). |
-| **Aceite** | Ato formal e distinto que declara que o Ciclo cumpriu seus critérios (Parte 8, Estado 7). |
-| **Reconhecimento** | Ato formal e distinto que declara a nova Baseline Sucessora (Parte 8, Estado 8) — **nunca** implícito no Aceite. |
+| **Autorização** | Ato formal e distinto que permite iniciar um Ciclo (Parte 8). |
+| **Aceite** | Ato formal e distinto que declara que o Ciclo cumpriu seus critérios (Parte 8). |
+| **Reconhecimento** | Ato formal e distinto que declara a nova Baseline Sucessora (Parte 8) — **nunca** implícito no Aceite. |
 | **Reconciliação** | Estado em que código, testes, documentação, roadmap, evidência e Git concordam entre si, verificado item a item, não por impressão geral. |
 
 ---
@@ -92,7 +92,7 @@ PLANEJADO ──► AUTORIZADO ──► EM EXECUÇÃO ──┬──► CONCLU
 | `SUSPENSO` | Decisão de abortar | — | Registro de Abortamento (Parte 10) | Responsável do projeto | `ABORTADO` |
 | `CONCLUÍDO` | Validação em 5 camadas sem Divergência CRÍTICA/ALTA aberta | Reconciliação completa (código=testes=doc=roadmap=evidência=Git) | Checklist de Validação (Parte 11) | Quem executa, revisão consciente | `ACEITO` (via Registro de Aceite) |
 | `CONCLUÍDO` | Divergência CRÍTICA ou ALTA encontrada | — | Registro da divergência (Parte 6) | Quem valida | `EM EXECUÇÃO` (retorno, não avança) |
-| `ACEITO` | Decisão de reconhecer nova baseline | 8 condições da Parte 8, Estado 8 | **Registro de Reconhecimento** (Parte 9), distinto do Registro de Aceite | Responsável do projeto | `PROMOVIDO` |
+| `ACEITO` | Decisão de reconhecer nova baseline | 8 condições da Parte 12 (Promoção) | **Registro de Reconhecimento** (Parte 9), distinto do Registro de Aceite | Responsável do projeto | `PROMOVIDO` |
 | `ACEITO` | Decisão de **não** reconhecer (rejeição pós-aceite) | Motivo registrado | Registro de Rejeição de Promoção | Responsável do projeto | `EM EXECUÇÃO` (reabertura, Parte 10) |
 | `ABORTADO` | — | — | — | — | Estado terminal — nunca gera `PROMOVIDO` (Parte 10, regra absoluta) |
 
@@ -296,7 +296,7 @@ Um `B-XX` individual atinge as 11 dimensões abaixo:
 
 ### DONE DO CICLO
 
-Todos os itens do escopo autorizado (Parte 8, Estado 3) atingem DONE DO ITEM, **e** a Camada 5 de
+Todos os itens do escopo autorizado (Parte 8) atingem DONE DO ITEM, **e** a Camada 5 de
 Validação (Reconciliação, Parte 11) fecha sem Divergência CRÍTICA ou ALTA aberta. Produz o estado
 `CONCLUÍDO` — ainda **não** é `ACEITO`.
 
