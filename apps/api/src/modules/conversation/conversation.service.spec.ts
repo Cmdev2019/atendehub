@@ -64,6 +64,26 @@ describe('ConversationService — isolamento multi-tenant', () => {
     service = module.get<ConversationService>(ConversationService);
   });
 
+  // B-60: só mensagem do cliente incrementa as não lidas
+  describe('updateLastMessage', () => {
+    it('com countAsUnread, atualiza prévia/horário e incrementa as não lidas', async () => {
+      await service.updateLastMessage('conv-1', 'Áudio', { countAsUnread: true });
+
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({ lastMessagePreview: 'Áudio', unreadCount: { increment: 1 } }),
+      });
+    });
+
+    it('sem countAsUnread (agente, robô), não mexe nas não lidas', async () => {
+      await service.updateLastMessage('conv-1', 'Saudação', { countAsUnread: false });
+
+      const { data } = mockPrisma.conversation.update.mock.calls.at(-1)[0];
+      expect(data.lastMessagePreview).toBe('Saudação');
+      expect(data).not.toHaveProperty('unreadCount');
+    });
+  });
+
   describe('findAll', () => {
     it('sempre filtra por companyId', async () => {
       mockPrisma.conversation.findMany.mockResolvedValueOnce([]);

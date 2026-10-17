@@ -14,6 +14,7 @@ jest.mock('../services/api', () => ({
     removeConversationTag: jest.fn(),
     assignConversation: jest.fn(),
     updateConversationStatus: jest.fn(),
+    markConversationRead: jest.fn().mockResolvedValue({ unreadCount: 0 }),
   },
 }));
 
@@ -1097,6 +1098,89 @@ describe('useConversations Integration Tests', () => {
         await result.current.loadClosedConversations();
       });
       expect(mockApiClient.getConversations).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // B-60: sinalização de mensagens novas — não lidas por conversa e marcar
+  // como lida (antes o front nunca chamava PATCH /conversations/:id/read).
+  describe('não lidas (B-60)', () => {
+    const twoConversations = () =>
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [
+          { id: '1', contact: 'Aberta', messages: [], unreadCount: 0 },
+          { id: '2', contact: 'Outra', messages: [], unreadCount: 0 },
+        ],
+        pagination: { page: 1, limit: 20, total: 2 },
+      });
+    const messageNew = () => mockWsClient.on.mock.calls.find((call) => call[0] === 'message.new')[1];
+
+    it('áudio do cliente numa conversa que não está aberta soma 1 não lida e vira "Áudio" na prévia', async () => {
+      twoConversations();
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(2));
+
+      act(() => {
+        messageNew()({
+          conversationId: '2',
+          message: { id: 'm-audio', senderType: 'CLIENT', content: '', type: 'AUDIO', sentAt: '2026-10-17T10:00:00Z' },
+        });
+      });
+
+      await waitFor(() => {
+        const outra = result.current.conversations.find((c) => c.id === '2');
+        expect(outra.unreadCount).toBe(1);
+        expect(outra.summary).toBe('Áudio');
+      });
+      expect(mockApiClient.markConversationRead).not.toHaveBeenCalled();
+    });
+
+    it('mensagem do cliente na conversa aberta não acumula e já marca como lida no backend', async () => {
+      twoConversations();
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.activeId).toBe('1'));
+
+      act(() => {
+        messageNew()({
+          conversationId: '1',
+          message: { id: 'm-1', senderType: 'CLIENT', content: 'Oi', type: 'TEXT', sentAt: '2026-10-17T10:00:00Z' },
+        });
+      });
+
+      await waitFor(() => expect(mockApiClient.markConversationRead).toHaveBeenCalledWith('1'));
+      expect(result.current.conversations.find((c) => c.id === '1').unreadCount).toBe(0);
+    });
+
+    it('mensagem do atendente atualiza a prévia, mas não soma não lida', async () => {
+      twoConversations();
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(2));
+
+      act(() => {
+        messageNew()({
+          conversationId: '2',
+          message: { id: 'm-ag', senderType: 'AGENT', content: 'Já verifico', type: 'TEXT', sentAt: '2026-10-17T10:00:00Z' },
+        });
+      });
+
+      await waitFor(() => expect(result.current.conversations.find((c) => c.id === '2').summary).toBe('Já verifico'));
+      expect(result.current.conversations.find((c) => c.id === '2').unreadCount).toBe(0);
+    });
+
+    it('abrir uma conversa com não lidas marca como lida (backend e lista local)', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [
+          { id: '1', contact: 'Primeira', messages: [], unreadCount: 0 },
+          { id: '2', contact: 'Com não lidas', messages: [], unreadCount: 4 },
+        ],
+        pagination: { page: 1, limit: 20, total: 2 },
+      });
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(2));
+
+      act(() => result.current.setActiveId('2'));
+
+      await waitFor(() => expect(mockApiClient.markConversationRead).toHaveBeenCalledWith('2'));
+      expect(result.current.conversations.find((c) => c.id === '2').unreadCount).toBe(0);
     });
   });
 });

@@ -102,6 +102,10 @@ describe('AutoAttendanceEngineService', () => {
       });
 
       expect(mockEvolution.sendTextMessage).toHaveBeenCalledWith(sessionName, contactPhone, 'Saudação da fila');
+      // B-60: resposta do robô atualiza a prévia, mas não vira "não lida"
+      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith(conversationId, 'Saudação da fila', {
+        countAsUnread: false,
+      });
     });
 
     it('fora do horário de atendimento, envia só a mensagem de fora do expediente (sem saudação/menu)', async () => {

@@ -3,6 +3,7 @@ import { MessageType, MessageStatus, SenderType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ContactService } from '../contact/contact.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { buildMessagePreview } from '../conversation/message-preview';
 import { MessageService } from '../message/message.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
@@ -247,10 +248,18 @@ export class WebhookService {
       });
     }
 
-    // Atualiza preview da conversa apenas para mensagens do cliente
-    if (!key.fromMe && content) {
-      await this.conversationService.updateLastMessage(conversation.id, content);
-    }
+    // Prévia, horário e não lidas (B-42/B-60). Antes só rodava para texto do
+    // cliente: áudio ou imagem sem legenda (content vazio) não subia a
+    // conversa na lista nem marcava como não lida, e mensagem enviada pelo
+    // próprio celular (fromMe) não mudava a prévia. Agora toda mensagem nova
+    // atualiza; só a do cliente conta como não lida. O eco de mensagem
+    // enviada pelo painel nem chega aqui (isNew=false acima) — quem atualiza
+    // a prévia nesse caso é o SendMessageService.
+    await this.conversationService.updateLastMessage(
+      conversation.id,
+      buildMessagePreview(type, content),
+      { countAsUnread: !key.fromMe },
+    );
 
     // ── Auto-atendimento (B-35) ─────────────────────────────────────────────
     // Nunca reage a mensagens fromMe (o próprio negócio respondendo pelo

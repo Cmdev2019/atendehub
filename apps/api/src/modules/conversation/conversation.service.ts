@@ -649,13 +649,20 @@ export class ConversationService {
   }
 
   // ── Atualizar preview e timestamp da última mensagem ──────────────────────
-  async updateLastMessage(conversationId: string, preview: string) {
+  // B-60: `countAsUnread` explícito — só mensagem do cliente conta como não
+  // lida. Antes toda chamada incrementava, inclusive a resposta automática do
+  // auto-atendimento (o robô deixava a conversa "não lida").
+  async updateLastMessage(
+    conversationId: string,
+    preview: string,
+    { countAsUnread }: { countAsUnread: boolean },
+  ) {
     return this.prisma.conversation.update({
       where: { id: conversationId },
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: preview.slice(0, 100),
-        unreadCount: { increment: 1 },
+        ...(countAsUnread && { unreadCount: { increment: 1 } }),
       },
     });
   }

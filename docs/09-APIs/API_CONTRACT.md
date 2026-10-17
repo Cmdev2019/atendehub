@@ -185,7 +185,16 @@ justificativa do atendente pra cancelar em vez de atender; não existe pra
 `RESOLVED`/`UNRESOLVED`. Emite `conversation.updated`.
 
 ### `PATCH /conversations/:id/read`
-Zera `unreadCount`.
+Zera `unreadCount`. O front chama ao abrir a conversa e quando chega mensagem
+do cliente na conversa aberta (B-60).
+
+**`unreadCount` e `lastMessagePreview` (B-60):** toda mensagem nova (cliente,
+atendente, resposta pelo celular, robô) atualiza `lastMessageAt` e
+`lastMessagePreview`; só mensagem do **cliente** incrementa `unreadCount`. A
+prévia é o texto/legenda ou, sem texto, o rótulo do tipo: `Imagem`, `Vídeo`,
+`Áudio`, `Documento`, `Figurinha`, `Localização`, `Contato`, `Reação`
+(antes, mídia sem legenda não atualizava a conversa — B-42 — e mídia enviada
+pelo painel virava `[image]`, `[audio]`...).
 
 ### `POST /conversations/:id/tags/:tagId` · `DELETE /conversations/:id/tags/:tagId`
 Atribui/remove uma tag existente da conversa (B1-1). 404 se a tag ou a conversa não pertencerem à empresa do usuário.

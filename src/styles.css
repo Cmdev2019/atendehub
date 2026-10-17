@@ -763,6 +763,24 @@ button {
   vertical-align: middle;
 }
 
+/* B-60: contador de não lidas por conversa */
+.queue-item-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .queue-item-avatar {
   width: 40px;
   height: 40px;

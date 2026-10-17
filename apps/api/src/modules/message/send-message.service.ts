@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { MessageType, MessageStatus, SenderType, Role, ConversationStatus } from '@prisma/client';
+import { buildMessagePreview } from '../conversation/message-preview';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
@@ -198,10 +199,11 @@ export class SendMessageService {
     }
 
     // ── 6. Atualiza preview da conversa ────────────────────────────────────
-    const preview =
-      dto.type === MessageType.TEXT
-        ? (dto.content ?? '')
-        : `[${dto.type.toLowerCase()}]${dto.caption ? ` ${dto.caption}` : ''}`;
+    // B-60: mesmo rótulo usado para mensagem recebida ("Áudio", "Imagem"...)
+    const preview = buildMessagePreview(
+      dto.type,
+      dto.type === MessageType.TEXT ? dto.content : dto.caption,
+    );
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -338,7 +340,7 @@ export class SendMessageService {
     });
 
     // ── 4. Preview da conversa ──────────────────────────────────────────────
-    const preview = `[${type.toLowerCase()}]${caption ? ` ${caption}` : ''}`;
+    const preview = buildMessagePreview(type, caption);
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {

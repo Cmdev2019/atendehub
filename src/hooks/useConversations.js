@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { initialConversations } from '../data/mockConversations';
 import { apiClient } from '../services/api';
 import { wsClient } from '../services/websocket';
+import { messagePreview } from '../utils/messagePreview';
 
 let _msgCounter = 0;
 function newMsgId() {
@@ -107,6 +108,9 @@ export function useConversations(currentUserId) {
   // Lista atual acessível pelos handlers de socket (registrados uma única vez)
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
+  // Idem para a conversa aberta: mensagem nova nela não conta como não lida
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const fetchingConversationsRef = useRef(new Set());
 
   // Fetch conversas reais do backend
@@ -344,6 +348,12 @@ export function useConversations(currentUserId) {
         fetchMissingConversation(conversationId);
         return;
       }
+      // B-60: a conversa aberta não acumula não lidas — o atendente está
+      // vendo a mensagem chegar; o backend incrementou, então zera lá também.
+      const isOpenNow = conversationId === activeIdRef.current;
+      if (isOpenNow && message.type === 'customer') {
+        apiClient.markConversationRead(conversationId).catch(() => {});
+      }
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv.id !== conversationId) return conv;
@@ -353,8 +363,14 @@ export function useConversations(currentUserId) {
             ...conv,
             messages: [...(conv.messages || []), message],
             lastMessageAt: new Date(),
-            // Preview da fila acompanha o backend (só mensagens do cliente)
-            summary: message.type === 'customer' && message.text ? message.text : conv.summary,
+            // B-60: prévia acompanha o backend — toda mensagem nova, do
+            // cliente ou do atendente; mídia sem legenda vira o rótulo
+            // ("Áudio", "Imagem"...). Antes só texto do cliente mudava a prévia.
+            summary: messagePreview(message),
+            // Só mensagem do cliente numa conversa que não está aberta conta
+            unreadCount: isOpenNow
+              ? 0
+              : (conv.unreadCount || 0) + (message.type === 'customer' ? 1 : 0),
           };
         }),
       );
@@ -586,6 +602,23 @@ export function useConversations(currentUserId) {
   useEffect(() => {
     setSendError(null);
   }, [activeId]);
+
+  // B-60: abrir a conversa marca como lida — no backend (antes o front nunca
+  // chamava PATCH /conversations/:id/read) e na lista local. Só para conversas
+  // reais com algo a zerar.
+  useEffect(() => {
+    if (!activeId || !loadedFromApi) return;
+    const conv = conversationsRef.current.find((c) => c.id === activeId);
+    if (!conv?.unreadCount) return;
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
+    );
+    apiClient
+      .markConversationRead(activeId)
+      .then(() => fetchStats())
+      .catch((error) => console.warn('⚠️ Erro ao marcar conversa como lida:', error.message));
+  }, [activeId, loadedFromApi]);
 
   // Também busca em closedConversations — clicar numa conversa na aba
   // "Encerrados" (B-31) precisa abrir o histórico dela no ChatPanel também.
