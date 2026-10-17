@@ -15,6 +15,11 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import {
+  ConversationScopeService,
+  seesWholeCompany,
+} from '../../shared/conversation-scope/conversation-scope.service';
+import { scopeRoomsForUser } from './scope-rooms';
 
 // Estende o Socket para carregar os dados do usuário autenticado
 export interface AuthenticatedSocket extends Socket {
@@ -51,6 +56,7 @@ export class EventsGateway
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly scope: ConversationScopeService,
   ) {}
 
   afterInit(server: Server) {
@@ -93,9 +99,20 @@ export class EventsGateway
   async handleConnection(socket: AuthenticatedSocket) {
     const { id: userId, companyId } = socket.user;
 
-    // Entra automaticamente na sala da empresa e na sala pessoal do agente
+    // Sala da empresa (eventos que não são de conversa, ex. status da
+    // conexão do WhatsApp) e sala pessoal do agente. C-10/B-40: eventos de
+    // conversa vão só para as salas de escopo — ADMIN/SUPERVISOR na sala
+    // da empresa inteira; AGENT na dos seus departamentos e na de conversas
+    // sem departamento. Antes, todo socket recebia em tempo real todas as
+    // mensagens da empresa. Departamentos mudados durante a sessão valem na
+    // próxima conexão.
     await socket.join(`company:${companyId}`);
     await socket.join(`agent:${userId}`);
+    const departmentIds = seesWholeCompany(socket.user)
+      ? []
+      : await this.scope.departmentIdsOf(userId);
+    const scopeRooms = scopeRoomsForUser(socket.user, departmentIds);
+    await socket.join(scopeRooms);
 
     this.connectedClients.set(socket.id, {
       userId,
@@ -112,7 +129,7 @@ export class EventsGateway
       socketId: socket.id,
       userId,
       companyId,
-      rooms: [`company:${companyId}`, `agent:${userId}`],
+      rooms: [`company:${companyId}`, `agent:${userId}`, ...scopeRooms],
     });
   }
 
@@ -135,16 +152,10 @@ export class EventsGateway
   ) {
     if (!data?.conversationId) return;
 
-    // Valida se a conversa pertence ao tenant do usuário
-    const conversation = await this.prisma.conversation.findFirst({
-      where: {
-        id: data.conversationId,
-        companyId: socket.user.companyId,
-      },
-      select: { id: true },
-    });
+    // Valida se a conversa pertence ao tenant E ao escopo do usuário (C-10/B-40)
+    const allowed = await this.scope.canAccess(socket.user, data.conversationId);
 
-    if (!conversation) {
+    if (!allowed) {
       this.logger.warn(
         `Usuário ${socket.user.id} tentou acessar de forma não autorizada a conversa ${data.conversationId}`
       );

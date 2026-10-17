@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../shared/prisma/prisma.service';
+import { roomsForConversation } from './scope-rooms';
 import { EventsGateway } from './events.gateway';
 import { StorageService } from '../../shared/storage/storage.service';
 
@@ -79,7 +81,34 @@ export class EventsService {
   constructor(
     private readonly gateway: EventsGateway,
     private readonly storage: StorageService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  // C-10/B-40: salas de quem pode ver a conversa — empresa inteira (ADMIN/
+  // SUPERVISOR), departamento da conversa (ou "sem departamento") e o agente
+  // atribuído. Lido do banco no momento do evento, para valer o departamento
+  // e o agente atuais (transferências incluídas).
+  private async conversationRooms(companyId: string, conversationId: string): Promise<string[]> {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+      select: { departmentId: true, agentId: true },
+    });
+    return [`conversation:${conversationId}`, ...roomsForConversation(companyId, conversation)];
+  }
+
+  private emitToConversation(
+    companyId: string,
+    conversationId: string,
+    event: string,
+    payload: unknown,
+    extraRooms: string[] = [],
+  ): Promise<void> {
+    return this.conversationRooms(companyId, conversationId)
+      .then((rooms) => {
+        this.gateway.server.to([...rooms, ...extraRooms]).emit(event, payload);
+      })
+      .catch((err) => this.logger.error(`Falha ao emitir ${event}: ${err.message}`));
+  }
 
   // ── Nova mensagem recebida ────────────────────────────────────────────────
   emitNewMessage(payload: MessageNewPayload): void {
@@ -87,10 +116,7 @@ export class EventsService {
 
     // Salas encadeadas numa única emissão: o Socket.IO entrega à UNIÃO das
     // salas, sem duplicar para sockets presentes em ambas.
-    this.gateway.server
-      .to(`conversation:${conversationId}`)
-      .to(`company:${companyId}`)
-      .emit('message.new', payload);
+    void this.emitToConversation(companyId, conversationId, 'message.new', payload);
 
     this.logger.debug(`message.new → conversation:${conversationId}`);
   }
@@ -108,10 +134,7 @@ export class EventsService {
     const { companyId, conversationId } = payload;
     const signedPayload = await this.storage.presignDeep(payload);
 
-    this.gateway.server
-      .to(`conversation:${conversationId}`)
-      .to(`company:${companyId}`)
-      .emit('message.updated', signedPayload);
+    await this.emitToConversation(companyId, conversationId, 'message.updated', signedPayload);
 
     this.logger.debug(`message.updated → msg ${payload.messageId} (anexo pronto)`);
   }
@@ -120,10 +143,7 @@ export class EventsService {
   emitMessageStatus(payload: MessageStatusPayload): void {
     const { companyId, conversationId } = payload;
 
-    this.gateway.server
-      .to(`conversation:${conversationId}`)
-      .to(`company:${companyId}`)
-      .emit('message.status', payload);
+    void this.emitToConversation(companyId, conversationId, 'message.status', payload);
 
     this.logger.debug(`message.status → ${payload.externalId} : ${payload.status}`);
   }
@@ -133,10 +153,13 @@ export class EventsService {
     const { companyId } = payload;
     const signedPayload = await this.storage.presignDeep(payload);
 
-    // Notifica todos da empresa sobre nova conversa na fila
-    this.gateway.server
-      .to(`company:${companyId}`)
-      .emit('conversation.created', signedPayload);
+    // Notifica quem pode ver a conversa nova (C-10/B-40 — antes, a empresa toda)
+    await this.emitToConversation(
+      companyId,
+      payload.conversation.id,
+      'conversation.created',
+      signedPayload,
+    );
 
     this.logger.debug(
       `conversation.created → company:${companyId} | id: ${payload.conversation.id}`,
@@ -147,10 +170,7 @@ export class EventsService {
   emitConversationUpdated(payload: ConversationUpdatedPayload): void {
     const { companyId, conversationId } = payload;
 
-    this.gateway.server
-      .to(`conversation:${conversationId}`)
-      .to(`company:${companyId}`)
-      .emit('conversation.updated', payload);
+    void this.emitToConversation(companyId, conversationId, 'conversation.updated', payload);
 
     this.logger.debug(`conversation.updated → ${conversationId}`);
   }
@@ -160,17 +180,9 @@ export class EventsService {
     const { companyId, conversationId, agentId } = payload;
     const signedPayload = await this.storage.presignDeep(payload);
 
-    // União das salas: conversa + empresa + agente atribuído (sem duplicar
-    // para sockets presentes em mais de uma sala)
-    let broadcast = this.gateway.server
-      .to(`conversation:${conversationId}`)
-      .to(`company:${companyId}`);
-
-    if (agentId) {
-      broadcast = broadcast.to(`agent:${agentId}`);
-    }
-
-    broadcast.emit('conversation.assigned', signedPayload);
+    // Salas de escopo (o agente atribuído já entra por elas) — sem duplicar
+    // para sockets presentes em mais de uma sala
+    await this.emitToConversation(companyId, conversationId, 'conversation.assigned', signedPayload);
 
     this.logger.debug(
       `conversation.assigned → ${conversationId} | agente: ${agentId ?? 'nenhum'}`,
@@ -194,11 +206,8 @@ export class EventsService {
   emitSlaBreached(payload: SlaBreachedPayload): void {
     const { companyId, conversationId } = payload;
 
-    // União das salas: empresa (supervisores/disponíveis) + conversa em questão
-    this.gateway.server
-      .to(`company:${companyId}`)
-      .to(`conversation:${conversationId}`)
-      .emit('sla.breached', payload);
+    // Quem pode ver a conversa (supervisores e o departamento dela)
+    void this.emitToConversation(companyId, conversationId, 'sla.breached', payload);
 
     this.logger.warn(
       `sla.breached → ${conversationId} | aguardando ${payload.waitTimeSeconds}s (limite: ${payload.maxWaitSecs}s)`,

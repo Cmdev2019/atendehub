@@ -6,9 +6,14 @@ import { sendCsv, sendPdf } from './report-export.util';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
+// C-10/B-40: relatórios cobrem a empresa inteira (todos os departamentos e
+// atendentes) — só SUPERVISOR em diante. O RolesGuard global aplica.
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
+@Roles(Role.SUPERVISOR)
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
 

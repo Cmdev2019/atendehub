@@ -19,27 +19,32 @@ import { UpdateConversationStatusDto } from './dto/update-conversation-status.dt
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
+import { ConversationScopeGuard } from '../../shared/conversation-scope/conversation-scope.guard';
+import { ConversationScopeService } from '../../shared/conversation-scope/conversation-scope.service';
 
+// C-10/B-40: ConversationScopeGuard barra (404) toda rota com :id fora do
+// escopo do usuário; listagem e stats filtram pelo mesmo escopo.
 @Controller('conversations')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConversationScopeGuard)
 export class ConversationController {
   constructor(
     private readonly conversationService: ConversationService,
     private readonly tagService: TagService,
+    private readonly scope: ConversationScopeService,
   ) {}
 
   // GET /api/v1/conversations?status=&channel=&agentId=&departmentId=&search=&page=&limit=
   @Get()
-  findAll(@CurrentUser() user: AuthUserDto, @Query() query: ListConversationsDto) {
-    return this.conversationService.findAll(user.companyId, query);
+  async findAll(@CurrentUser() user: AuthUserDto, @Query() query: ListConversationsDto) {
+    return this.conversationService.findAll(user.companyId, query, await this.scope.conversationWhere(user));
   }
 
   // GET /api/v1/conversations/stats
   // Precisa vir ANTES de GET /:id na declaração — senão "stats" seria
   // interpretado como o :id (rotas Express casam na ordem declarada).
   @Get('stats')
-  getStats(@CurrentUser() user: AuthUserDto) {
-    return this.conversationService.getStats(user.companyId, user.id);
+  async getStats(@CurrentUser() user: AuthUserDto) {
+    return this.conversationService.getStats(user.companyId, user.id, await this.scope.conversationWhere(user));
   }
 
   // GET /api/v1/conversations/:id

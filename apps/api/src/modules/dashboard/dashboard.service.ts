@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConversationStatus, ConversationResolution } from '@prisma/client';
+import { ConversationStatus, ConversationResolution, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
 const DEFAULT_PERIOD_DAYS = 30;
@@ -17,15 +17,21 @@ export class DashboardService {
   // encerrada, quando o atendente informa o motivo). São janelas de tempo
   // diferentes por natureza: um chamado pode ter entrado no período mas só
   // ser encerrado depois dele (ou vice-versa).
-  async getSummary(companyId: string, fromInput?: string, toInput?: string) {
+  async getSummary(
+    companyId: string,
+    fromInput?: string,
+    toInput?: string,
+    scope: Prisma.ConversationWhereInput = {},
+  ) {
     const to = toInput ? new Date(toInput) : new Date();
     const from = fromInput
       ? new Date(fromInput)
       : new Date(to.getTime() - DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
-    const createdInPeriod = { companyId, createdAt: { gte: from, lte: to } };
+    const createdInPeriod = { companyId, createdAt: { gte: from, lte: to }, AND: [scope] };
     const closedInPeriod = {
       companyId,
+      AND: [scope],
       status: ConversationStatus.CLOSED,
       closedAt: { gte: from, lte: to },
     };

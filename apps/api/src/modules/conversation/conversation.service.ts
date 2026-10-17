@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus, Channel, SenderType } from '@prisma/client';
+import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { formatStructuredLog } from '../../shared/logging/structured-log.util';
@@ -91,7 +91,9 @@ export class ConversationService {
   }
 
   // ── Listar conversas com filtros e paginação ──────────────────────────────
-  async findAll(companyId: string, query: ListConversationsDto) {
+  // C-10/B-40: `scope` (ConversationScopeService) restringe a listagem ao que
+  // o usuário pode ver — `{}` para quem vê a empresa toda.
+  async findAll(companyId: string, query: ListConversationsDto, scope: Prisma.ConversationWhereInput = {}) {
     const { status, channel, agentId, departmentId, search, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
@@ -104,6 +106,7 @@ export class ConversationService {
       ...(channel && { channel }),
       ...(agentId && { agentId }),
       ...(departmentId && { departmentId }),
+      AND: [scope],
       ...(search && {
         contact: {
           OR: [
@@ -139,11 +142,12 @@ export class ConversationService {
   // reflete a página carregada no front). `userId` é sempre o requisitante
   // (do JWT) — "minhas"/"minhas sem resposta" são sempre sobre quem chamou,
   // nunca um parâmetro livre (evitaria vazar contagem de outro agente).
-  async getStats(companyId: string, userId: string) {
+  async getStats(companyId: string, userId: string, scope: Prisma.ConversationWhereInput = {}) {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    const activeWhere = { companyId, status: { not: ConversationStatus.CLOSED } };
+    // C-10/B-40: os números do atendente são só do que ele pode ver
+    const activeWhere = { companyId, status: { not: ConversationStatus.CLOSED }, AND: [scope] };
 
     const [
       totalActive,
@@ -164,7 +168,7 @@ export class ConversationService {
         where: { ...activeWhere, status: ConversationStatus.OPEN },
       }),
       this.prisma.conversation.count({
-        where: { companyId, resolvedAt: { gte: startOfToday } },
+        where: { companyId, resolvedAt: { gte: startOfToday }, AND: [scope] },
       }),
       this.prisma.conversation.aggregate({
         where: activeWhere,

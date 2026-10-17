@@ -1,11 +1,11 @@
 # ADR-0012 — Modelo de autorização: RBAC hierárquico por Role, sem Permission granular; escopo por departamento/agente ainda não decidido (B-40)
 
-- **Status:** Implementada (para o modelo de Role) · Proposta (para o escopo por departamento/agente, B-40)
+- **Status:** Implementada (modelo de Role e escopo por departamento/agente — B-40, 2026-10-17)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-17
 - **Autor:** Engenharia (formalização retroativa parcial + proposta parcial)
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/src/modules/auth/guards/roles.guard.ts`,
   `apps/api/src/modules/auth/decorators/roles.decorator.ts`, os 19 controllers
@@ -178,6 +178,7 @@ trabalhado — não antes.
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-08-05 | Criação — formaliza o modelo de Role (implementado) e propõe a direção para o escopo (B-40, pendente) | 1.0 |
+| 2026-10-17 | Escopo decidido e implementado (B-40, C-10 da auditoria de 2026-10-16). Decisão do responsável do projeto: ADMIN/SUPERVISOR veem a empresa toda; AGENT vê as conversas atribuídas a ele, as dos seus departamentos e as sem departamento; tempo real segue a mesma regra. Descartada por ora a configuração por empresa ("todas / só do departamento / só as próprias") da proposta original — uma regra só, sem configuração. Implementação: `ConversationScopeService` (filtro Prisma por papel + departamentos lidos a cada requisição) e `ConversationScopeGuard` (404 fora do escopo) em `src/shared/conversation-scope/`, aplicados a conversas, mensagens, notas, `stats` e Dashboard; relatórios com `@Roles(SUPERVISOR)`; salas de Socket.IO por escopo (`events/scope-rooms.ts`). Conversa fora do escopo responde 404 (não 403) para não confirmar a existência de conversas de outros departamentos. | 1.1 |
 
 ## Referências
 
