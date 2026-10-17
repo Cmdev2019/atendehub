@@ -1,4 +1,5 @@
 import { WebhookService } from './webhook.service';
+import { MediaDownloadService } from './media-download.service';
 
 // B4-4: extractPhoneFromJid já causou 2 incidentes em produção (F0-11 sufixo
 // de dispositivo duplicando contatos, F0-13 @lid não normalizado criando
@@ -57,6 +58,7 @@ describe('WebhookService — processamento de eventos', () => {
     whatsAppConnection: { findUnique: jest.fn() },
     message: { findFirst: jest.fn(), updateMany: jest.fn() },
     contact: { update: jest.fn() },
+    attachment: { create: jest.fn() },
   };
   const mockContactService = { upsertFromWebhook: jest.fn() };
   const mockConversationService = {
@@ -73,7 +75,7 @@ describe('WebhookService — processamento de eventos', () => {
     emitConnectionStatus: jest.fn(),
     emitMessageUpdated: jest.fn(),
   };
-  const mockMediaDownloadService = { downloadFromEvolution: jest.fn(), downloadAndStore: jest.fn() };
+  const mockMediaDownloadService = { downloadFromEvolution: jest.fn() };
   const mockAutoAttendanceEngine = {
     handleNewConversation: jest.fn().mockResolvedValue(undefined),
     handleReply: jest.fn().mockResolvedValue(false),
@@ -409,6 +411,93 @@ describe('WebhookService — processamento de eventos', () => {
       expect(mockEventsService.emitConversationCreated).not.toHaveBeenCalled();
       expect(mockMediaDownloadService.downloadFromEvolution).not.toHaveBeenCalled();
     });
+
+    // Mídia é baixada fora do fluxo principal (fire-and-forget) — os testes
+    // abaixo esperam uma volta do event loop antes de conferir o resultado.
+    const flushBackgroundWork = () => new Promise((resolve) => setImmediate(resolve));
+
+    const mockNewMediaMessage = (messageId: string) => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+        avatarUrl: 'https://avatar.exemplo/foto.jpg', // já tem foto: não dispara a busca de avatar
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({
+        id: messageId,
+        status: 'DELIVERED',
+        sentAt: new Date(),
+        isNew: true,
+      });
+    };
+
+    it('mídia entregue pela Evolution vira Attachment e emite message.updated', async () => {
+      mockNewMediaMessage('msg-media-1');
+      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce({
+        url: 'http://localhost:9000/atendehub-media/company-1/images/a.jpg',
+        mimeType: 'image/jpeg',
+        size: 1234,
+      });
+      mockPrisma.attachment.create.mockResolvedValueOnce({
+        id: 'att-1',
+        url: 'http://localhost:9000/atendehub-media/company-1/images/a.jpg',
+        mimeType: 'image/jpeg',
+        fileName: null,
+      });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-media-1' },
+          message: { imageMessage: { mimetype: 'image/jpeg', url: 'https://mmg.whatsapp.net/a.enc' } },
+        },
+      });
+      await flushBackgroundWork();
+
+      expect(mockMediaDownloadService.downloadFromEvolution).toHaveBeenCalledWith(
+        'session-1',
+        'wa-media-1',
+        'image/jpeg',
+        companyId,
+        undefined,
+      );
+      expect(mockPrisma.attachment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ messageId: 'msg-media-1', mimeType: 'image/jpeg' }),
+      });
+      expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledTimes(1);
+    });
+
+    // B-50: o fallback antigo baixava a URL vinda no conteúdo da mensagem
+    // enviando a EVOLUTION_API_KEY no cabeçalho. Sem a Evolution entregando a
+    // mídia, nada mais pode ser buscado — a mensagem só fica sem anexo.
+    it('B-50: mídia que a Evolution não entrega não é buscada de nenhuma outra origem', async () => {
+      mockNewMediaMessage('msg-media-2');
+      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce(null);
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-media-2' },
+          // URL sem ".enc" — exatamente o caso que o fallback removido baixava
+          message: { imageMessage: { mimetype: 'image/jpeg', url: 'https://externo.exemplo/foto.jpg' } },
+        },
+      });
+      await flushBackgroundWork();
+
+      expect(mockMediaDownloadService.downloadFromEvolution).toHaveBeenCalledTimes(1);
+      // Trava contra a volta do caminho removido na classe real
+      expect((MediaDownloadService.prototype as any).downloadAndStore).toBeUndefined();
+      expect(mockPrisma.attachment.create).not.toHaveBeenCalled();
+      expect(mockEventsService.emitMessageUpdated).not.toHaveBeenCalled();
+    });
   });
 
   // B-39: antes deste fix, handleEvent engolia QUALQUER exceção lançada por
@@ -458,13 +547,13 @@ describe('WebhookService — processamento de eventos', () => {
       });
     });
 
-    it('imagem com legenda', () => {
+    // B-50: a URL do payload nunca é extraída — a mídia só vem da Evolution.
+    it('imagem com legenda (sem expor a URL do payload)', () => {
       expect(
         extract({ imageMessage: { caption: 'Legenda', mimetype: 'image/jpeg', url: 'https://x/img.enc' } }),
       ).toEqual({
         type: 'IMAGE',
         content: 'Legenda',
-        mediaUrl: 'https://x/img.enc',
         mimeType: 'image/jpeg',
       });
     });
@@ -473,7 +562,6 @@ describe('WebhookService — processamento de eventos', () => {
       expect(extract({ stickerMessage: { url: 'https://x/s.webp.enc' } })).toEqual({
         type: 'STICKER',
         content: '',
-        mediaUrl: 'https://x/s.webp.enc',
         mimeType: 'image/webp',
       });
     });
@@ -484,7 +572,6 @@ describe('WebhookService — processamento de eventos', () => {
       ).toEqual({
         type: 'DOCUMENT',
         content: 'contrato.pdf',
-        mediaUrl: 'https://x/d.enc',
         mimeType: 'application/pdf',
         fileName: 'contrato.pdf',
       });

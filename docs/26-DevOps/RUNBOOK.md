@@ -318,12 +318,37 @@ cliente. Só stack trace e metadata técnica saem da sua infra.
   precisa ser **idêntica** à de `apps/api/.env` — o compose sobe a Evolution
   com uma chave e a API valida webhooks com outra se elas divergirem.
 
+### Trocar a `EVOLUTION_API_KEY` (rotação)
+A mesma chave aparece em três lugares e os três precisam mudar juntos:
+1. `.env` da raiz (vira `AUTHENTICATION_API_KEY` do container da Evolution);
+2. `apps/api/.env` (a API usa para chamar a Evolution e para validar webhooks);
+3. o `token` de cada instância já criada no banco `evolution` (tabela
+   `"Instance"`) — o `EvolutionService#createInstance` usa a chave global
+   como token da instância, e a Evolution manda esse token no campo
+   `apikey` de cada webhook. Se só os `.env` mudarem, os webhooks das
+   instâncias antigas passam a ser recusados com 403.
+
+Passos (sem expor a chave em log ou terminal compartilhado):
+1. Backup dos dois `.env` **fora do repositório**.
+2. Gerar a chave nova (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   e gravá-la nos dois `.env`.
+3. `UPDATE "Instance" SET token = '<nova>' WHERE token = '<antiga>';` no banco
+   `evolution` (`docker exec -i atendehub_postgres psql -U atendehub -d evolution`).
+4. `docker compose up -d evolution` (recria o container com a chave nova).
+5. Reiniciar a API (`scripts/dev-api.ps1` em dev) para carregar o `.env` novo.
+6. Conferir: `GET /instance/fetchInstances` responde 200 com a chave nova e
+   401 com a antiga.
+
+Última troca: 2026-10-16 (B-50), ambiente local.
+
 ### Mídia do WhatsApp corrompida/ilegível
 - A URL de mídia que a Evolution recebe do WhatsApp é **criptografada**
-  (sufixo `.enc`) — baixar direto salva lixo. O código já usa
-  `getBase64FromMediaMessage` da Evolution (mídia decriptada); se voltar a
-  acontecer, o bug está em algum caminho que passou a baixar a URL direta de
-  novo.
+  (sufixo `.enc`) — baixar direto salva lixo. O código usa exclusivamente
+  `getBase64FromMediaMessage` da Evolution (mídia decriptada). Desde o B-50
+  não existe caminho alternativo: se a Evolution não devolver a mídia, a
+  mensagem fica sem anexo e o log registra
+  `Não foi possível baixar mídia para msg <id>`. Nunca reintroduzir download
+  da URL que vem no conteúdo da mensagem.
 
 ### Evolution não entrega mídia enviada pelo painel
 - O container da Evolution não resolve `localhost:9000` (MinIO) — mídia
