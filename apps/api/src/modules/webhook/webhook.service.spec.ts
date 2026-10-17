@@ -178,6 +178,7 @@ describe('WebhookService — processamento de eventos', () => {
       expect(mockMessageService.createFromWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationId: 'conv-1',
+          whatsappConnectionId: connection.id, // C-09/B-58: parte da chave única
           content: 'Oi, tudo bem?',
           senderType: 'CLIENT',
           externalId: 'wa-1',
@@ -664,10 +665,26 @@ describe('WebhookService — processamento de eventos', () => {
         data: { key: { id: 'wa-1' }, update: { status: 'DELIVERY_ACK' } },
       });
 
-      expect(mockMessageService.updateStatus).toHaveBeenCalledWith('wa-1', 'DELIVERED');
+      // C-09/B-58: status restrito à conexão da sessão que mandou o evento
+      expect(mockMessageService.updateStatus).toHaveBeenCalledWith('conn-1', 'wa-1', 'DELIVERED');
+      expect(mockPrisma.message.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { whatsappConnectionId: 'conn-1', externalId: 'wa-1' } }),
+      );
       expect(mockEventsService.emitMessageStatus).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'conv-1', companyId, status: 'DELIVERED' }),
       );
+    });
+
+    it('sessão desconhecida não altera nenhuma mensagem (C-09/B-58)', async () => {
+      mockPrisma.whatsAppConnection.findUnique.mockResolvedValueOnce(null);
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPDATE',
+        instance: 'sessao-que-nao-existe',
+        data: { key: { id: 'wa-1' }, update: { status: 'READ' } },
+      });
+
+      expect(mockMessageService.updateStatus).not.toHaveBeenCalled();
     });
 
     it('ignora status sem mapeamento conhecido', async () => {
@@ -689,10 +706,24 @@ describe('WebhookService — processamento de eventos', () => {
         data: { keys: [{ id: 'wa-1' }] },
       });
 
+      // C-09/B-58: exclusão restrita à conexão — o mesmo externalId pode ser a
+      // mensagem da outra ponta, em outra empresa
       expect(mockPrisma.message.updateMany).toHaveBeenCalledWith({
-        where: { externalId: 'wa-1' },
+        where: { whatsappConnectionId: 'conn-1', externalId: 'wa-1' },
         data: { isDeleted: true, content: null, type: 'DELETED' },
       });
+    });
+
+    it('sessão desconhecida não apaga nada (C-09/B-58)', async () => {
+      mockPrisma.whatsAppConnection.findUnique.mockResolvedValueOnce(null);
+
+      await service.handleEvent({
+        event: 'MESSAGES_DELETE',
+        instance: 'sessao-que-nao-existe',
+        data: { keys: [{ id: 'wa-1' }] },
+      });
+
+      expect(mockPrisma.message.updateMany).not.toHaveBeenCalled();
     });
   });
 

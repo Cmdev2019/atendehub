@@ -322,6 +322,7 @@ model WhatsAppConnection {
   company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   department    Department?  @relation(fields: [departmentId], references: [id])
   conversations Conversation[]
+  messages      Message[]
 
   @@index([companyId])
   @@index([sessionName])
@@ -423,6 +424,9 @@ model Message {
   content        String?       @db.Text
   type           MessageType   @default(TEXT)
   externalId     String?       // ID da mensagem no WhatsApp/Evolution
+  // C-09/B-58: conexão de WhatsApp pela qual a mensagem passou (copiada da
+  // conversa). Faz parte da unicidade do externalId — ver @@unique abaixo.
+  whatsappConnectionId String?
   status         MessageStatus @default(SENT)
   isDeleted      Boolean       @default(false)
   isEdited       Boolean       @default(false)
@@ -434,6 +438,7 @@ model Message {
 
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User?        @relation(fields: [senderId], references: [id])
+  whatsapp       WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: SetNull)
   attachments    Attachment[]
 
   @@index([conversationId])
@@ -443,7 +448,13 @@ model Message {
   // realmente garante consistência sob concorrência real: o Postgres. NULL
   // não colide (mensagem de agente sem externalId ainda não é afetada) —
   // ver MessageService#createUnique.
-  @@unique([externalId])
+  // C-09/B-58: a unicidade passou a ser POR CONEXÃO. O WhatsApp usa o mesmo
+  // id de mensagem nos dois lados de uma conversa: quando duas conexões
+  // cadastradas no AtendeHub conversavam entre si (dois números da mesma
+  // empresa, ou de duas empresas clientes), a 2ª gravação colidia com a 1ª
+  // e a mensagem sumia — e status/exclusão por externalId alcançavam a linha
+  // da outra empresa.
+  @@unique([whatsappConnectionId, externalId])
   @@map("messages")
 }
 

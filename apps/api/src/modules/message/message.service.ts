@@ -182,9 +182,13 @@ export class MessageService {
   // SendMessageService#send/#sendMediaFile) o findFirst dos dois lados
   // acontecia ANTES de qualquer create existir, e nada impedia as duas
   // gravações. Sem essa janela: tenta criar direto, e só cai pro caminho de
-  // "já existe" se o INSERT esbarrar mesmo no `@@unique([externalId])" do
-  // schema — a checagem de unicidade passa a ser feita pelo Postgres dentro
-  // da própria escrita, não por uma leitura solta antes dela.
+  // "já existe" se o INSERT esbarrar mesmo no `@@unique` do schema — a
+  // checagem de unicidade passa a ser feita pelo Postgres dentro da própria
+  // escrita, não por uma leitura solta antes dela.
+  // C-09/B-58: a unicidade é (whatsappConnectionId, externalId) — o mesmo
+  // externalId pode existir em outra conexão (os dois lados de uma conversa
+  // entre dois números cadastrados), e a busca do "já existe" precisa ficar
+  // na mesma conexão, senão devolveria a mensagem da outra conversa.
   async createUnique<S extends Prisma.MessageSelect>(
     data: Prisma.MessageUncheckedCreateInput,
     select: S,
@@ -193,7 +197,11 @@ export class MessageService {
       const message = await this.prisma.message.create({ data, select });
       return { message, isNew: true };
     } catch (err) {
-      if (isUniqueConstraintViolation(err) && typeof data.externalId === 'string') {
+      if (
+        isUniqueConstraintViolation(err) &&
+        typeof data.externalId === 'string' &&
+        typeof data.whatsappConnectionId === 'string'
+      ) {
         // Perdeu a corrida: outro processo já inseriu esse externalId entre
         // a hora que este create foi tentado e o commit dele. A linha
         // vencedora já existe e é a fonte da verdade — devolve ela.
@@ -211,10 +219,16 @@ export class MessageService {
           formatStructuredLog('IdempotencyCollisionResolved', {
             resource: 'Message',
             externalId: data.externalId,
+            whatsappConnectionId: data.whatsappConnectionId,
           }),
         );
         const message = await this.prisma.message.findUniqueOrThrow({
-          where: { externalId: data.externalId },
+          where: {
+            whatsappConnectionId_externalId: {
+              whatsappConnectionId: data.whatsappConnectionId,
+              externalId: data.externalId,
+            },
+          },
           select,
         });
         return { message, isNew: false };
@@ -232,6 +246,7 @@ export class MessageService {
   // efeitos colaterais em volta dela).
   async createFromWebhook(data: {
     conversationId: string;
+    whatsappConnectionId: string;
     content: string;
     type: MessageType;
     senderType: SenderType;
@@ -242,6 +257,7 @@ export class MessageService {
     const { message, isNew } = await this.createUnique(
       {
         conversationId: data.conversationId,
+        whatsappConnectionId: data.whatsappConnectionId,
         senderId: data.senderId,
         senderType: data.senderType,
         content: data.content,
@@ -257,9 +273,12 @@ export class MessageService {
   }
 
   // ── Atualizar status da mensagem (ex: lida) ───────────────────────────────
-  async updateStatus(externalId: string, status: MessageStatus) {
+  // C-09/B-58: restrito à conexão de onde veio o evento — só por externalId,
+  // o status de uma conversa entre dois números cadastrados alcançava também
+  // a mensagem da outra empresa.
+  async updateStatus(whatsappConnectionId: string, externalId: string, status: MessageStatus) {
     return this.prisma.message.updateMany({
-      where: { externalId },
+      where: { whatsappConnectionId, externalId },
       data: {
         status,
         ...(status === MessageStatus.DELIVERED && { deliveredAt: new Date() }),

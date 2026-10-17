@@ -81,11 +81,11 @@ export class WebhookService {
           break;
 
         case 'MESSAGES_UPDATE':
-          await this.handleMessagesUpdate(data);
+          await this.handleMessagesUpdate(instance, data);
           break;
 
         case 'MESSAGES_DELETE':
-          await this.handleMessagesDelete(data);
+          await this.handleMessagesDelete(instance, data);
           break;
 
         case 'CONNECTION_UPDATE':
@@ -204,6 +204,7 @@ export class WebhookService {
     // Persiste a mensagem com dedup por externalId
     const savedMessage = await this.messageService.createFromWebhook({
       conversationId: conversation.id,
+      whatsappConnectionId,
       content,
       type,
       senderType,
@@ -314,8 +315,13 @@ export class WebhookService {
   }
 
   // ── MESSAGES_UPDATE — atualização de status (entregue, lido, etc.) ────────
-  private async handleMessagesUpdate(data: any): Promise<void> {
+  // C-09/B-58: tudo restrito à conexão (sessionName) de onde veio o evento —
+  // o mesmo externalId existe nas duas pontas quando dois números cadastrados
+  // conversam entre si, possivelmente de empresas diferentes.
+  private async handleMessagesUpdate(sessionName: string, data: any): Promise<void> {
     const updates = Array.isArray(data) ? data : [data];
+    const connectionId = await this.findConnectionId(sessionName);
+    if (!connectionId) return;
 
     for (const update of updates) {
       const externalId = update.key?.id;
@@ -331,11 +337,11 @@ export class WebhookService {
 
       const mappedStatus = statusMap[status];
       if (mappedStatus) {
-        await this.messageService.updateStatus(externalId, mappedStatus);
+        await this.messageService.updateStatus(connectionId, externalId, mappedStatus);
 
         // Busca a mensagem para obter conversationId e companyId
         const msg = await this.prisma.message.findFirst({
-          where: { externalId },
+          where: { whatsappConnectionId: connectionId, externalId },
           select: {
             conversation: { select: { id: true, companyId: true } },
           },
@@ -356,17 +362,32 @@ export class WebhookService {
   }
 
   // ── MESSAGES_DELETE — mensagem deletada no WhatsApp ───────────────────────
-  private async handleMessagesDelete(data: any): Promise<void> {
+  // C-09/B-58: restrito à conexão do evento — ver handleMessagesUpdate.
+  private async handleMessagesDelete(sessionName: string, data: any): Promise<void> {
     const keys = Array.isArray(data?.keys) ? data.keys : [data?.key].filter(Boolean);
+    const connectionId = await this.findConnectionId(sessionName);
+    if (!connectionId) return;
 
     for (const key of keys) {
       if (!key?.id) continue;
       await this.prisma.message.updateMany({
-        where: { externalId: key.id },
+        where: { whatsappConnectionId: connectionId, externalId: key.id },
         data: { isDeleted: true, content: null, type: MessageType.DELETED },
       });
       this.logger.debug(`Mensagem deletada: ${key.id}`);
     }
+  }
+
+  private async findConnectionId(sessionName: string): Promise<string | null> {
+    const connection = await this.prisma.whatsAppConnection.findUnique({
+      where: { sessionName },
+      select: { id: true },
+    });
+    if (!connection) {
+      this.logger.warn(`Conexão não encontrada para sessão: ${sessionName}`);
+      return null;
+    }
+    return connection.id;
   }
 
   // ── CONNECTION_UPDATE — mudança de estado da conexão ─────────────────────
