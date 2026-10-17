@@ -36,6 +36,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-43 (2026-10-17, parcial):** nginx de produção endurecido — HSTS, CSP, `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy` e `Permissions-Policy` no app; redirect 80→443 também na API;
+  host desconhecido recusado; `X-Forwarded-For/Proto/Host` repassados à API (pré-requisito do limite de
+  requisições por cliente); `Connection: upgrade` só no WebSocket, com timeout de 1 h; limite de
+  requisições por IP (geral e rotas de autenticação); TLS no perfil intermediate da Mozilla, com
+  HTTP/2. Impacto no deploy: os domínios `app.`/`api.atendehub.com` aparecem também na CSP
+  (`infra/nginx/security-headers.conf`) — trocar o domínio exige ajustar os dois arquivos. Pendente:
+  automação de certificado (ACME).
 - **B-55 (2026-10-17):** em produção, só o nginx publica portas (80 e 443). Antes, Postgres, Redis,
   MinIO (API e console), Evolution e a API ficavam publicados em todas as interfaces do servidor, porque
   o Compose soma as listas de `ports` ao combinar arquivos e o `ports: []` do override de produção não

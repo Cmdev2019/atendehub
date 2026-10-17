@@ -61,7 +61,23 @@ preencher, o Sentry não é inicializado (no-op seguro, não bloqueia o
 deploy). Ver seção própria abaixo.
 
 Certificados SSL: colocar `fullchain.pem`/`privkey.pem` em `infra/nginx/certs/`
-(montado como volume no serviço `nginx`) antes do primeiro `up`.
+(montado como volume no serviço `nginx`) antes do primeiro `up`. A renovação
+ainda é manual (automação ACME pendente no B-43): certificado vencido derruba
+app e API ao mesmo tempo — agendar a troca antes do vencimento.
+
+**nginx (B-43):**
+- Os domínios `app.atendehub.com` e `api.atendehub.com` estão no `server_name`
+  do `infra/nginx/nginx.conf` **e** na CSP do
+  `infra/nginx/security-headers.conf` (`connect-src`). Trocar o domínio exige
+  ajustar os dois e rebuildar a imagem do `nginx` — esquecer a CSP deixa o
+  front sem conseguir falar com a API (erro de CSP no console do navegador).
+- Limite por IP no nginx: 20 req/s (pico de 100) no geral e 30/min (pico de
+  30) em `/api/v1/auth/`; acima disso responde 429. Se um balanceador ou CDN
+  entrar na frente do nginx, configurar `set_real_ip_from` com a faixa dele —
+  senão todos os clientes viram um único IP e o limite passa a valer para a
+  plataforma inteira.
+- Host desconhecido (inclusive acesso pelo IP do servidor) é recusado: 444 no
+  HTTP e handshake TLS recusado no HTTPS.
 
 ## Deploy
 
