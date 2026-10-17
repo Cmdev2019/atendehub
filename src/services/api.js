@@ -296,6 +296,9 @@ class ApiClient {
       if (sub === 'assign' && method === 'PATCH') {
         return mockApiClient.assignConversation(id, body.agentId);
       }
+      if (sub === 'read' && method === 'PATCH') {
+        return { id, unreadCount: 0 };
+      }
       if (sub === 'status' && method === 'PATCH') {
         return mockApiClient.updateConversationStatus(id, body.status, body.resolution, body.resolutionNote);
       }
@@ -535,6 +538,13 @@ class ApiClient {
 
   async getConversation(id) {
     return this.request(`/conversations/${id}`, { method: 'GET' });
+  }
+
+  // B-60: zera as não lidas da conversa (ao abrir, ou ao chegar mensagem
+  // nela enquanto está aberta). Antes o front nunca chamava esta rota, e o
+  // unreadCount do backend só crescia.
+  async markConversationRead(id) {
+    return this.request(`/conversations/${id}/read`, { method: 'PATCH' });
   }
 
   // Métricas agregadas (B-2) — contagens reais da empresa, independentes

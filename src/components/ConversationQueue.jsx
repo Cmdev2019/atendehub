@@ -1,5 +1,6 @@
 import { createElement as h, useState } from 'react';
 import { Icon } from './icons';
+import { messagePreview } from '../utils/messagePreview';
 
 // Distância (px) do fim da lista que já dispara a busca da próxima página —
 // carrega antes do usuário bater no fim de verdade, pra parecer contínuo.
@@ -57,9 +58,12 @@ export function ConversationQueue({
     return true; // closed: já vem filtrado do servidor
   });
 
-  const filteredConversations = tabList.filter((conv) =>
-    conv.contact.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  // B-60: mais recente primeiro, como o servidor já entrega — sem isto, uma
+  // conversa que recebia mensagem em tempo real ficava parada onde estava.
+  const activityOf = (conv) => new Date(conv.lastMessageAt || conv.createdAt || 0).getTime();
+  const filteredConversations = tabList
+    .filter((conv) => conv.contact.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => activityOf(b) - activityOf(a));
 
   // Contagens rápidas no seletor (menos a de encerrados, que só reflete o
   // que já foi carregado, já que a aba busca sob demanda).
@@ -184,6 +188,16 @@ export function ConversationQueue({
                 'div',
                 { className: 'queue-item-name' },
                 conv.contact,
+                // B-60: contador de não lidas por conversa
+                conv.unreadCount > 0 &&
+                  h(
+                    'span',
+                    {
+                      className: 'queue-item-unread',
+                      'aria-label': `${conv.unreadCount} ${conv.unreadCount === 1 ? 'mensagem não lida' : 'mensagens não lidas'}`,
+                    },
+                    conv.unreadCount > 99 ? '99+' : String(conv.unreadCount),
+                  ),
                 conv.slaBreached &&
                   h(
                     'span',
@@ -193,9 +207,9 @@ export function ConversationQueue({
                   ),
               ),
               h('div', { className: 'queue-item-preview' },
-                (conv.messages && conv.messages[conv.messages.length - 1]?.text) ||
-                conv.summary ||
-                'Sem mensagens'
+                conv.messages?.length
+                  ? messagePreview(conv.messages[conv.messages.length - 1])
+                  : conv.summary || 'Sem mensagens'
               ),
               activeTab !== 'queue' && conv.agent &&
                 h('div', { className: 'queue-item-agent' }, h(Icon, { name: 'user', size: 11 }), ` ${conv.agent}`),

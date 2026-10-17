@@ -124,6 +124,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-60 (2026-10-17):** a caixa de entrada passa a sinalizar mensagens novas. Áudio, imagem, vídeo,
+  documento e figurinha sem legenda agora sobem a conversa na lista, contam como não lidos e aparecem
+  com rótulo na prévia ("Áudio", "Imagem"...) — antes só texto do cliente atualizava a conversa (B-42).
+  A resposta do auto-atendimento deixa de contar como não lida; mensagens do atendente e as enviadas
+  pelo celular atualizam a prévia. No front: contador de não lidas por conversa, fila ordenada pela
+  última atividade e conversa marcada como lida ao abrir (a rota `PATCH /conversations/:id/read`
+  existia, mas nunca era chamada).
 - **B-53 (2026-10-17):** a sessão do frontend caía a cada ~30 minutos — o refresh token rotacionado
   pelo backend não era guardado, e a renovação seguinte era recusada. A renovação passa a guardar o
   token novo e a acontecer uma vez por vez para o app inteiro (requisições simultâneas e WebSocket

@@ -124,3 +124,54 @@ describe('ConversationQueue — etapas de atendimento (B-31)', () => {
     expect(onLoadMoreMine).toHaveBeenCalled();
   });
 });
+
+// B-60: a fila sinaliza mensagens novas — contador de não lidas, ordem por
+// atividade e prévia de mídia sem legenda.
+describe('ConversationQueue — mensagens novas (B-60)', () => {
+  it('mostra o contador de não lidas só nas conversas que têm', () => {
+    const convs = [
+      { id: '1', contact: 'Com não lidas', messages: [], status: 'WAITING', unreadCount: 3 },
+      { id: '2', contact: 'Sem não lidas', messages: [], status: 'WAITING', unreadCount: 0 },
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+
+    expect(screen.getByLabelText('3 mensagens não lidas')).toHaveTextContent('3');
+    expect(screen.getAllByLabelText(/não lida/)).toHaveLength(1);
+  });
+
+  it('limita o contador em 99+', () => {
+    const convs = [{ id: '1', contact: 'Muitas', messages: [], status: 'WAITING', unreadCount: 150 }];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+
+    expect(screen.getByLabelText('150 mensagens não lidas')).toHaveTextContent('99+');
+  });
+
+  it('ordena pela última atividade, mais recente primeiro', () => {
+    const convs = [
+      { id: 'a', contact: 'Antiga', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T10:00:00Z' },
+      { id: 'b', contact: 'Recente', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T12:00:00Z' },
+      { id: 'c', contact: 'Meio', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T11:00:00Z' },
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+
+    const titles = ['Antiga', 'Recente', 'Meio'].map((t) => screen.getByTitle(t));
+    const order = [...titles].sort((x, y) =>
+      x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
+    expect(order.map((el) => el.getAttribute('title'))).toEqual(['Recente', 'Meio', 'Antiga']);
+  });
+
+  it('última mensagem de áudio sem texto aparece como "Áudio" na prévia', () => {
+    const convs = [
+      {
+        id: '1',
+        contact: 'Cliente',
+        status: 'WAITING',
+        messages: [{ id: 'm1', type: 'customer', text: '', mediaType: 'AUDIO', attachments: [] }],
+      },
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+
+    expect(screen.getByText('Áudio')).toBeInTheDocument();
+  });
+});

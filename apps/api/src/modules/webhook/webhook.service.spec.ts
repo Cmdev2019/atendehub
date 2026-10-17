@@ -184,7 +184,10 @@ describe('WebhookService — processamento de eventos', () => {
           externalId: 'wa-1',
         }),
       );
-      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith('conv-1', 'Oi, tudo bem?');
+      // B-60: mensagem do cliente conta como não lida
+      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith('conv-1', 'Oi, tudo bem?', {
+        countAsUnread: true,
+      });
       expect(mockEventsService.emitNewMessage).toHaveBeenCalledWith(
         expect.objectContaining({ companyId, conversationId: 'conv-1' }),
       );
@@ -220,8 +223,11 @@ describe('WebhookService — processamento de eventos', () => {
         '5512999999999',
         undefined,
       );
-      // fromMe → não atualiza preview/unread da conversa via mensagem do CLIENTE
-      expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
+      // B-60: fromMe (resposta pelo celular) atualiza a prévia e o horário,
+      // mas não conta como não lida — antes não atualizava nada
+      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith('conv-1', 'Já te retorno', {
+        countAsUnread: false,
+      });
     });
 
     it('emite conversation.created quando a conversa acabou de ser criada agora', async () => {
@@ -473,6 +479,33 @@ describe('WebhookService — processamento de eventos', () => {
         data: expect.objectContaining({ messageId: 'msg-media-1', mimeType: 'image/jpeg' }),
       });
       expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledTimes(1);
+    });
+
+    // B-42/B-60: mídia sem legenda (content vazio) não atualizava a conversa
+    // — áudio, o caso mais comum, não subia na lista nem virava não lida.
+    it.each([
+      ['áudio', { audioMessage: { mimetype: 'audio/ogg', url: 'https://x/a.enc' } }, 'Áudio'],
+      ['imagem', { imageMessage: { mimetype: 'image/jpeg', url: 'https://x/i.enc' } }, 'Imagem'],
+      ['vídeo', { videoMessage: { mimetype: 'video/mp4', url: 'https://x/v.enc' } }, 'Vídeo'],
+      ['documento', { documentMessage: { mimetype: 'application/pdf', url: 'https://x/d.enc' } }, 'Documento'],
+      ['figurinha', { stickerMessage: { url: 'https://x/s.webp.enc' } }, 'Figurinha'],
+    ])('%s sem legenda do cliente atualiza a conversa com o rótulo e conta como não lida', async (_nome, message, rotulo) => {
+      mockNewMediaMessage('msg-sem-legenda');
+      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce(null);
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-sem-legenda' },
+          message,
+        },
+      });
+      await flushBackgroundWork();
+
+      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith('conv-1', rotulo, {
+        countAsUnread: true,
+      });
     });
 
     // B-50: o fallback antigo baixava a URL vinda no conteúdo da mensagem

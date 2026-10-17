@@ -268,7 +268,8 @@ export class AutoAttendanceEngineService {
       },
     });
 
-    await this.conversationService.updateLastMessage(conversationId, text);
+    // B-60: resposta do robô não é mensagem não lida para o atendente
+    await this.conversationService.updateLastMessage(conversationId, text, { countAsUnread: false });
 
     this.eventsService.emitNewMessage({
       companyId,
