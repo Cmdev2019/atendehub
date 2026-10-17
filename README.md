@@ -318,9 +318,12 @@ toca `docs/` não dispara nenhum workflow, o status check exigido nunca é repor
 travado em *"Waiting for status to be reported"*. Ambos usam `concurrency` com
 `cancel-in-progress`, então push novo na mesma branch cancela o run anterior.
 
-> ⚠️ **Proteção de branch indisponível.** O repositório é privado no plano Free, que não suporta
-> branches protegidos nem rulesets. Os status checks `api` e `web` rodam e reportam, mas **não
-> bloqueiam merge**, e `master` aceita force-push. Para ativar: GitHub Pro ou repositório público.
+> 🔒 **`master` protegido** (desde 2026-10-17). Mudança só entra por pull request, com os status
+> checks `api` e `web` verdes; push direto, force-push e exclusão da branch estão bloqueados, inclusive
+> para administradores. O repositório é **público** (decisão registrada em
+> [`ROADMAP_ESTABILIZACAO.md`](ROADMAP_ESTABILIZACAO.md)), o que libera proteção de branch no plano
+> Free. O código continua proprietário (ver [`LICENSE`](LICENSE)), e detalhes de falhas não corrigidas
+> ficam fora do repositório (ver [`SECURITY.md`](SECURITY.md)).
 
 Detalhamento em [`docs/27-CI-CD/`](docs/27-CI-CD/).
 

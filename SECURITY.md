@@ -53,21 +53,21 @@ antes que exista correção, colocando em risco os dados dos clientes que usam a
 - Problemas que exijam acesso físico ao servidor
 - Ausência de proteções em ambiente de desenvolvimento local
 
-## Vulnerabilidades conhecidas em aberto
+## Vulnerabilidades em aberto
 
-Registradas publicamente porque este repositório ainda não está em produção com dados reais de
-terceiros. Detalhamento em `ROADMAP_ESTABILIZACAO.md`.
+Este repositório é público. Por isso, **detalhes técnicos de falhas ainda não corrigidas não são
+publicados aqui** — nem neste arquivo, nem em issues ou pull requests. Os relatórios de auditoria
+ficam fora do repositório, e os itens de segurança em aberto são registrados no roadmap sem passos
+de exploração.
 
-| ID | Descrição | Severidade | Estado |
+**Nenhum ambiente de produção com dados reais de clientes está no ar.** Os itens de endurecimento
+pendentes são pré-requisito de go-live.
+
+### Correções já publicadas
+
+| ID | Área | Severidade | Corrigido em |
 |---|---|---|---|
-| B-38 | Bucket de mídia com leitura pública | 🔴 Crítica | Aberto |
-| B-40 | Ausência de escopo de permissão no domínio de conversas | 🟠 Alta | Aberto |
-| B-41 | Row-Level Security não aplicada; mutações sem filtro de tenant | 🟠 Alta | Aberto |
-| B-43 | Ausência de headers de segurança no NGINX | 🟠 Alta | Aberto |
-| B-44 | Contêiner da API executando como root | 🟠 Alta | Aberto |
-
-**Nenhum ambiente de produção com dados reais de clientes está no ar.** Estes itens são pré-requisito
-de go-live, não vulnerabilidades ativas em produção.
+| B-38 | Armazenamento de mídia (bucket com leitura pública) | 🔴 Crítica | 2026-07-29, reforçado em 2026-08-01 |
 
 ## Práticas de segurança do projeto
 
@@ -77,7 +77,7 @@ de go-live, não vulnerabilidades ativas em produção.
 - Access token revogável via blacklist em Redis
 - Webhook validado com comparação em tempo constante
 - Nível de log travado em código para nunca expor dado pessoal em produção
-- Toda query filtra por `companyId` (multi-tenant)
+- Isolamento multi-tenant aplicado na camada de serviço (filtro por `companyId`)
 
 ## Divulgação responsável
 
