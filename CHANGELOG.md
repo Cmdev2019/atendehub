@@ -36,6 +36,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-55 (2026-10-17):** em produção, só o nginx publica portas (80 e 443). Antes, Postgres, Redis,
+  MinIO (API e console), Evolution e a API ficavam publicados em todas as interfaces do servidor, porque
+  o Compose soma as listas de `ports` ao combinar arquivos e o `ports: []` do override de produção não
+  tinha efeito. As portas de desenvolvimento passam para o novo `docker-compose.override.yml`, presas a
+  `127.0.0.1` — o comando de dev (`docker compose up -d`) não muda. Novo workflow `compose-check.yml`
+  recusa PR que volte a publicar portas. Impacto no deploy: `EVOLUTION_WEBHOOK_URL` de produção precisa
+  apontar para a rede interna (`http://api:3001/api/v1/webhooks/evolution`).
 - **B-54 (2026-10-17):** dependências de produção atualizadas para versões sem vulnerabilidades altas
   ou críticas conhecidas — na API, `proxy-addr` (crítica), `multer`, `axios`, `compression`,
   `engine.io`, `socket.io-parser` e `@nestjs/platform-express` (altas); no front, `socket.io-parser`

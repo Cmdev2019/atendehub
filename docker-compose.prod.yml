@@ -1,13 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # AtendeHub — Override de produção
 # Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Portas (B-55): só o nginx publica portas (80/443). Postgres, Redis, MinIO,
+# Evolution e API ficam acessíveis apenas pela rede interna atendehub_net.
+# Não acrescente `ports` aos outros serviços: o Compose soma as listas ao
+# combinar arquivos, e o check `compose-ports` da CI recusa o PR.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
   postgres:
     restart: always
-    ports: []   # não expõe porta externamente em produção
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatório em produção}
     deploy:
@@ -17,7 +21,6 @@ services:
 
   redis:
     restart: always
-    ports: []
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD obrigatório em produção} --appendonly yes
     deploy:
       resources:
@@ -26,8 +29,6 @@ services:
 
   minio:
     restart: always
-    ports:
-      - "9000:9000"  # manter apenas a API, não o console
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER obrigatório em produção}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD obrigatório em produção}
@@ -59,8 +60,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "3001:3001"
     env_file: .env
     networks:
       - atendehub_net

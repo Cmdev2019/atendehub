@@ -25,6 +25,19 @@
 Sem container `web` separado — o front (Vite+React) é build estático,
 servido direto pelo `nginx` (decisão B6-2).
 
+**Portas (B-55):** em produção só o `nginx` publica portas (80/443). Postgres,
+Redis, MinIO, Evolution e API ficam só na rede interna `atendehub_net` —
+nenhum deles é alcançável de fora do servidor. Não acrescente `ports` a esses
+serviços no `docker-compose.prod.yml`: o Compose soma as listas ao combinar
+arquivos, e o job `compose-ports` da CI recusa o PR. Para acessar um serviço
+interno numa manutenção, use `docker compose exec` ou um túnel SSH, nunca uma
+porta publicada.
+
+**Sempre passe os dois `-f`** em produção (`-f docker-compose.yml -f
+docker-compose.prod.yml`). Sem eles, o Compose carrega o
+`docker-compose.override.yml` de desenvolvimento no lugar do override de
+produção — um `up` recriaria o serviço sem as configurações de produção.
+
 ## Pré-requisitos de deploy
 
 Todo o `.env` de produção (raiz, ao lado do `docker-compose.yml`) precisa
@@ -35,7 +48,7 @@ cair silenciosamente num valor de desenvolvimento:
 | Variável | Onde é validada | Falha se... |
 |---|---|---|
 | `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `docker-compose.prod.yml` (`${VAR:?...}`) | ausente |
-| `EVOLUTION_API_KEY`, `EVOLUTION_SERVER_URL`, `EVOLUTION_WEBHOOK_URL` | `docker-compose.prod.yml` | ausente |
+| `EVOLUTION_API_KEY`, `EVOLUTION_SERVER_URL`, `EVOLUTION_WEBHOOK_URL` | `docker-compose.prod.yml` | ausente — `EVOLUTION_WEBHOOK_URL` deve usar a rede interna (`http://api:3001/api/v1/webhooks/evolution`), já que a porta 3001 não é publicada |
 | `VITE_API_URL`, `VITE_WS_URL` | `docker-compose.prod.yml` (build args do `nginx`) | ausente — reflete no **build**, não dá pra trocar depois sem rebuildar a imagem |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | `apps/api/src/main.ts` (`validateSecrets`) | ausente, < 32 chars, ou contém placeholder inseguro conhecido |
 | `CORS_ORIGINS` | `apps/api/src/main.ts` (`validateCorsOrigins`) | ausente ou `*` |
@@ -167,7 +180,7 @@ complexidade de pausar o container só por causa disso.
 docker volume create atendehub_minio_data   # se o volume não existir mais
 docker run --rm -v atendehub_minio_data:/data -v "$(pwd)/backups":/backup alpine \
   tar xzf /backup/minio_data_XXXXXXXX.tar.gz -C /data
-docker compose up -d minio
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d minio
 ```
 
 ## Retenção de dados e LGPD (B-17)

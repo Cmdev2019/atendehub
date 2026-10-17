@@ -1,0 +1,31 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AtendeHub — Portas de desenvolvimento
+# Carregado automaticamente pelo `docker compose up -d` (sem `-f`).
+# NÃO é usado em produção: o deploy passa `-f docker-compose.yml
+# -f docker-compose.prod.yml`, e com `-f` explícito o Compose ignora este
+# arquivo.
+#
+# Todas as portas ficam presas a 127.0.0.1 (B-55): a API e o front rodam no
+# host e alcançam os serviços por localhost, mas nada fica exposto na rede
+# local ou na internet — inclusive se este arquivo for carregado por engano
+# num servidor (ex.: `docker compose up -d minio` sem os `-f`).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  minio:
+    ports:
+      - "127.0.0.1:9000:9000"   # API S3
+      - "127.0.0.1:9001:9001"   # console web
+
+  evolution:
+    ports:
+      - "127.0.0.1:8080:8080"

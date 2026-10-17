@@ -1,0 +1,70 @@
+name: Compose Check
+
+# B-55: trava de regressão das portas publicadas pelo Docker Compose.
+# O Compose SOMA as listas de `ports` ao combinar arquivos, então um
+# `ports: []` no override de produção não remove as portas do compose base —
+# foi assim que Postgres, Redis, MinIO, Evolution e a API ficaram expostos em
+# todas as interfaces (C-03 da auditoria de 2026-10-16). Este job resolve a
+# configuração efetiva, do mesmo jeito que o deploy faz, e confere:
+#   - produção (base + prod): só o nginx publica portas;
+#   - desenvolvimento (base + override): toda porta presa a 127.0.0.1.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docker-compose*.yml'
+      - '.github/workflows/compose-check.yml'
+  pull_request:
+    paths:
+      - 'docker-compose*.yml'
+      - '.github/workflows/compose-check.yml'
+
+concurrency:
+  group: compose-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-ports:
+    name: compose-ports
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Valores fictícios só para o `docker compose config` resolver os
+    # `${VAR:?...}` obrigatórios de produção — nada sobe nem é construído.
+    env:
+      POSTGRES_PASSWORD: ci
+      REDIS_PASSWORD: ci
+      MINIO_ROOT_USER: ci
+      MINIO_ROOT_PASSWORD: ci
+      EVOLUTION_API_KEY: ci
+      EVOLUTION_SERVER_URL: https://evolution.example.com
+      EVOLUTION_WEBHOOK_URL: http://api:3001/api/v1/webhooks/evolution
+      VITE_API_URL: https://api.example.com/api/v1
+      VITE_WS_URL: https://api.example.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `env_file: .env` do serviço api exige que o arquivo exista
+      - name: .env vazio
+        run: touch .env
+
+      - name: Produção — só o nginx publica portas
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json > prod.json
+          jq -r '.services | to_entries[] | .key as $s | (.value.ports // [])[] | "\($s) \(.host_ip // "0.0.0.0"):\(.published)->\(.target)"' prod.json
+          bad=$(jq -r '.services | to_entries[] | select(.key != "nginx" and ((.value.ports // []) | length) > 0) | .key' prod.json)
+          if [ -n "$bad" ]; then
+            echo "::error::Serviços publicando portas em produção (só o nginx pode): $bad"
+            exit 1
+          fi
+
+      - name: Desenvolvimento — portas só em 127.0.0.1
+        run: |
+          docker compose config --format json > dev.json
+          jq -r '.services | to_entries[] | .key as $s | (.value.ports // [])[] | "\($s) \(.host_ip // "0.0.0.0"):\(.published)->\(.target)"' dev.json
+          bad=$(jq -r '.services | to_entries[] | .key as $s | (.value.ports // [])[] | select(.host_ip != "127.0.0.1") | "\($s):\(.published)"' dev.json)
+          if [ -n "$bad" ]; then
+            echo "::error::Portas de desenvolvimento fora de 127.0.0.1: $bad"
+            exit 1
+          fi
