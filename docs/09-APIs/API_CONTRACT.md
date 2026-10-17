@@ -12,7 +12,7 @@
 - **Base URL:** `http://localhost:3001/api/v1` (config: `VITE_API_URL` no front, `API_PREFIX`/porta no back)
 - **Autenticação:** `Authorization: Bearer <accessToken>` em todas as rotas, exceto `/health`, `/health/ready`, `/auth/login`, `/auth/refresh`, `/auth/register-company` e `/webhooks/evolution`
 - **Validação:** `ValidationPipe` global com `whitelist` + `forbidNonWhitelisted` — **campos extras no body retornam 400**
-- **Rate limit global:** `THROTTLE_LIMIT` req / `THROTTLE_TTL` s (default 100/60s) por IP
+- **Rate limit global:** `THROTTLE_LIMIT` req / `THROTTLE_TTL` s (default 100/60s) **por usuário** quando o `Authorization` traz um token válido, **por IP** nas rotas sem token (login, cadastro, refresh). Atrás do nginx, o IP é o do cliente (`X-Forwarded-For`, B-56). Acima do limite: `429` com `Retry-After` (segundos). Contador no Redis, compartilhado entre réplicas.
 - **Erros:** formato padrão do NestJS — `{ "statusCode": number, "message": string | string[], "error": string }`
 
 ---
@@ -585,7 +585,7 @@ não serve pra isso (não checa nada além do processo estar de pé).
 ## Webhooks — `/webhooks/evolution` (público com apikey)
 `POST` consumido pela Evolution API. Autenticação: header `apikey` comparado
 (timing-safe) com `EVOLUTION_API_KEY` — sem a env, **500 fail-closed**; chave
-errada, 403. Body até **25mb** (mídia base64). Eventos: `QRCODE_UPDATED`,
+errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por instância** (campo `instance` do body; sem ele, por IP) — B-56. Eventos: `QRCODE_UPDATED`,
 `CONNECTION_UPDATE`, `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `MESSAGES_DELETE`,
 `SEND_MESSAGE`, `CONTACTS_UPSERT`.
 
