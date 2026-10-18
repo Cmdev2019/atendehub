@@ -43,7 +43,7 @@ ASNF → ATM. Cada uma referencia a matriz de rastreabilidade
 |---|---|---|---|---|---|
 | [0009](ADR-0009-modular-monolith-e-criterios-de-extracao.md) | Modular Monolith; critérios objetivos de extração | Implementada | Todos os 19 módulos | ABR §1/§11, AGR §5 | A cada marco de roadmap com crescimento de time |
 | [0010](ADR-0010-row-level-security-como-rede-de-isolamento-multi-tenant.md) | RLS como rede de isolamento multi-tenant | **Proposta** | Prisma, Banco (14 tabelas) | ABR §4.2/§4.3, AGR §4 | Obrigatória ao implementar **B-41** |
-| [0011](ADR-0011-storage-privado-com-url-assinada.md) | Storage privado com URL assinada | Validada | Storage, WebSocket | ABR §9, AGR §4.3/§6 | Se volume de mídia justificar proxy autenticado |
+| [0011](ADR-0011-storage-privado-com-url-assinada.md) | Storage privado com URL assinada (produção no Cloudflare R2 desde o B-64) | Validada | Storage, WebSocket, Nginx | ABR §9, AGR §4.3/§6 | Se volume de mídia justificar proxy autenticado; ao decidir o local da mídia (LGPD, pendência 7) |
 | [0012](ADR-0012-modelo-de-autorizacao-rbac-hierarquico.md) | Modelo de autorização: RBAC hierárquico + escopo pendente | Implementada (Role e escopo — B-40, 2026-10-17) | Controllers, Services, WebSocket | ABR §2, AGR §3 | Revisar se surgir pedido de escopo configurável por empresa |
 | [0013](ADR-0013-tokens-de-autenticacao-em-localstorage.md) | Tokens em `localStorage` | Implementada — premissa sob reavaliação | Controllers (Auth), WebSocket | ABR §9, AGR §6 | Obrigatória ao implementar **B-43** |
 | [0014](ADR-0014-clientes-redis-especializados-sem-provider-compartilhado.md) | 5 clientes Redis sem provider compartilhado | Implementada — consolidação sob avaliação | Redis, Bull | ABR §6 | Obrigatória ao implementar **B-46** |

@@ -7,7 +7,9 @@ name: Compose Check
 # todas as interfaces (C-03 da auditoria de 2026-10-16). Este job resolve a
 # configuração efetiva, do mesmo jeito que o deploy faz, e confere:
 #   - produção (base + prod): só o nginx publica portas;
-#   - desenvolvimento (base + override): toda porta presa a 127.0.0.1.
+#   - desenvolvimento (base + override): toda porta presa a 127.0.0.1;
+#   - produção sem MinIO, com API e nginx no storage externo (B-64);
+#   - toda imagem fixada nos composes existe no registry (B-64).
 on:
   push:
     branches: [master]
@@ -18,6 +20,12 @@ on:
     paths:
       - 'docker-compose*.yml'
       - '.github/workflows/compose-check.yml'
+  # B-64: a imagem do MinIO saiu do Docker Hub sem ninguém notar — só
+  # apareceu quando uma máquina nova tentou subir a stack. Toda segunda o job
+  # roda de novo e confere que as imagens fixadas continuam lá.
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: compose-check-${{ github.ref }}
@@ -34,8 +42,7 @@ jobs:
     env:
       POSTGRES_PASSWORD: ci
       REDIS_PASSWORD: ci
-      MINIO_ROOT_USER: ci
-      MINIO_ROOT_PASSWORD: ci
+      MEDIA_STORAGE_HOST: conta.r2.cloudflarestorage.com
       EVOLUTION_API_KEY: ci
       EVOLUTION_SERVER_URL: https://evolution.example.com
       EVOLUTION_WEBHOOK_URL: http://api:3001/api/v1/webhooks/evolution
@@ -68,3 +75,28 @@ jobs:
             echo "::error::Portas de desenvolvimento fora de 127.0.0.1: $bad"
             exit 1
           fi
+
+      - name: Produção — sem MinIO, mídia no storage externo (B-64)
+        run: |
+          jq -e '.services.minio == null' prod.json > /dev/null \
+            || { echo "::error::MinIO na stack de produção — a mídia de produção fica no R2 (B-64)"; exit 1; }
+          jq -e '.services.api.environment.MINIO_ENDPOINT == "https://conta.r2.cloudflarestorage.com"
+                 and .services.api.environment.MINIO_MANAGE_BUCKET == "false"' prod.json > /dev/null \
+            || { echo "::error::API de produção não aponta para o storage externo (MINIO_ENDPOINT/MINIO_MANAGE_BUCKET)"; exit 1; }
+          jq -e '.services.nginx.environment.MEDIA_STORAGE_HOST == "conta.r2.cloudflarestorage.com"' prod.json > /dev/null \
+            || { echo "::error::nginx de produção sem MEDIA_STORAGE_HOST"; exit 1; }
+          echo "produção: sem MinIO; API e nginx no mesmo host de storage"
+
+      - name: Imagens fixadas existem no registry
+        run: |
+          imgs=$(jq -rs '[.[].services[] | select(.build == null and .image != null) | .image] | unique[]' prod.json dev.json)
+          fail=0
+          for img in $imgs; do
+            if docker buildx imagetools inspect "$img" > /dev/null 2>&1; then
+              echo "ok    $img"
+            else
+              echo "::error::Imagem não encontrada no registry: $img"
+              fail=1
+            fi
+          done
+          exit $fail

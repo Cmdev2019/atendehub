@@ -36,13 +36,30 @@ jobs:
             --build-arg VITE_WS_URL=https://api.atendehub.com \
             -t atendehub-nginx:ci .
 
-      # Certificado descartável só para o nginx -t carregar o ssl_certificate;
-      # os hosts dos upstreams (`api`, `minio`) apontam para o loopback porque
-      # o nginx resolve os upstreams já na validação.
+      # Certificado descartável só para o nginx -t carregar o ssl_certificate.
+      # O host `api` aponta para o loopback porque o nginx resolve esse
+      # upstream já na validação; o do storage de mídia (B-64) usa `resolve`
+      # e só é consultado com o nginx rodando.
       - name: nginx -t
         run: |
           certs=$(mktemp -d)
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=ci" \
             -keyout "$certs/privkey.pem" -out "$certs/fullchain.pem"
-          docker run --rm --add-host api:127.0.0.1 --add-host minio:127.0.0.1 \
-            -v "$certs:/etc/nginx/certs:ro" atendehub-nginx:ci nginx -t
+          docker run --rm --add-host api:127.0.0.1 \
+            -e MEDIA_STORAGE_HOST=conta.r2.cloudflarestorage.com \
+            -v "$certs:/etc/nginx/certs:ro" atendehub-nginx:ci nginx -T > nginx-T.txt
+          # B-64: o upstream da mídia sai do template com o host do .env
+          grep -q 'server conta.r2.cloudflarestorage.com:443 resolve;' nginx-T.txt
+          grep -q 'default "conta.r2.cloudflarestorage.com";' nginx-T.txt
+          echo "upstream do storage gerado a partir de MEDIA_STORAGE_HOST"
+
+          # Sem a variável (ou com esquema no valor) o container não pode
+          # subir: o nginx aceitaria o texto literal e a mídia daria 502.
+          for host in "" "https://conta.r2.cloudflarestorage.com"; do
+            if docker run --rm --add-host api:127.0.0.1 -e MEDIA_STORAGE_HOST="$host" \
+                 -v "$certs:/etc/nginx/certs:ro" atendehub-nginx:ci nginx -t; then
+              echo "::error::nginx subiu com MEDIA_STORAGE_HOST='$host'"
+              exit 1
+            fi
+          done
+          echo "MEDIA_STORAGE_HOST ausente ou inválido é recusado no boot"

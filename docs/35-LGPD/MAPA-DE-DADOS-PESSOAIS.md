@@ -15,15 +15,15 @@ AtendeHub — não é o contratante.
 | Nome, telefone (ou identificador `@lid`), e-mail, foto do contato | Postgres `atendehub.contacts` | Foto é URL da CDN do WhatsApp (`pps.whatsapp.net`) |
 | Conteúdo das mensagens | Postgres `atendehub.messages.content` | Texto livre — pode conter qualquer dado |
 | Telefone de origem da mensagem | `messages.metadata.remoteJid` | Removido na anonimização (B-62) |
-| Mídia (foto, áudio, vídeo, documento) | MinIO, bucket `atendehub-media`, pasta da empresa | Apagada na anonimização (B-29) |
+| Mídia (foto, áudio, vídeo, documento) | Bucket `atendehub-media`, pasta da empresa — em produção no **Cloudflare R2** (B-64), em desenvolvimento num MinIO local | Apagada na anonimização (B-29). Fora do Brasil em produção — pendência 7 |
 | Nome do contato em notificações | Postgres `notifications.body` | Substituído na anonimização (B-62) |
 | Notas internas dos atendentes | Postgres `internal_notes` | Texto livre escrito pela equipe |
 | Auditoria | Postgres `audit_logs` | A anonimização não grava mais os dados apagados (B-62) |
-| **Cópia integral na Evolution** | Banco `evolution` (tabelas `Message`, `Contact`, `Chat`, `MessageUpdate`, `IsOnWhatsapp`, `Media`) e mídia no mesmo bucket | Gravada pela Evolution (`DATABASE_SAVE_*`). **Não é alcançada pela anonimização automática** — ver seção 4 |
+| **Cópia integral na Evolution** | Banco `evolution` (tabelas `Message`, `Contact`, `Chat`, `MessageUpdate`, `IsOnWhatsapp`). O JSON das mensagens de mídia traz a **miniatura da imagem** (`jpegThumbnail`) e a **chave da mídia** (`mediaKey`), com que o arquivo pode ser baixado do WhatsApp enquanto ele o mantiver | Gravada pela Evolution (`DATABASE_SAVE_*`). Ela **não** grava arquivos de mídia no bucket: o S3 dela nunca esteve ligado (tabela `Media` vazia; no dev, 2.232 mensagens com miniatura — conferido no B-64). **Não é alcançada pela anonimização automática** — ver seção 4 |
 | Usuários da empresa (atendentes) | Postgres `users` (nome, e-mail, hash de senha) | Dado do contratante, não do cliente final |
 | Logs da aplicação | stdout do container (JSON) | Nível `debug` (que inclui telefone) é bloqueado em produção |
 | Erros enviados ao Sentry | Sentry (se `SENTRY_DSN` configurado) | `beforeSend` remove corpo de requisição; ver `shared/monitoring/sentry.ts` |
-| Backups | Arquivos `pg_dump` e `tar` do MinIO (RUNBOOK) | Mantêm os dados até serem descartados |
+| Backups | Arquivos `pg_dump` (RUNBOOK); da mídia de produção, a cópia do bucket do R2 (RUNBOOK, B-64) | Mantêm os dados até serem descartados |
 
 Mensagens de **grupos** do WhatsApp não entram no AtendeHub (são ignoradas no webhook), mas
 **ficam na cópia da Evolution**.
@@ -51,7 +51,7 @@ mensagens, eles permanecem — ponto a confirmar com o jurídico (pendência 3).
 
 ## 3. O que não é apagado automaticamente
 
-- **Cópia na Evolution** (banco e mídia): procedimento manual na seção 4.
+- **Cópia na Evolution** (banco, com miniaturas e chaves de mídia): procedimento manual na seção 4.
 - **Backups**: seguem a política de descarte dos backups (pendência 2).
 - **Logs** e **Sentry**: seguem a retenção de cada ferramenta.
 - **Contato bloqueado**: as mensagens dele são descartadas no webhook, sem gravar nada no
@@ -76,7 +76,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres
 
 - `numero`: só dígitos. `instancias`: **todas** as conexões da empresa, inclusive as antigas —
   listar com `SELECT name FROM "Instance";` no banco `evolution`.
-- Se a saída listar arquivos de mídia, apagar esses objetos do bucket antes do `COMMIT`.
+- A Evolution não grava arquivos de mídia no bucket (tabela `Media` vazia, B-64). Se a saída
+  listar algum, apagar esses objetos antes do `COMMIT`.
 - Para apagar de fato: trocar `ROLLBACK;` por `COMMIT;` numa cópia do script e rodar de novo.
 
 Validado no ambiente de desenvolvimento em 2026-10-17 (com `ROLLBACK`): para um número de
@@ -92,6 +93,15 @@ contatos e 2 registros de `IsOnWhatsapp`. Uma versão que olhava só `remoteJid`
 3. **Conteúdo das mensagens** na eliminação: preservar como histórico (como hoje) ou apagar.
 4. **Cópia da Evolution**: manter `DATABASE_SAVE_*` ligado (necessário hoje para baixar mídia
    pela Evolution) ou reduzir o que ela guarda; automatizar a purga da seção 4.
-5. **Subprocessadores** (Meta/WhatsApp, provedor de hospedagem, Sentry) e contrato de
-   processamento com as empresas clientes.
+5. **Subprocessadores** (Meta/WhatsApp, provedor de hospedagem, Sentry e, desde o B-64, a
+   Cloudflare, que guarda a mídia de produção no R2) e contrato de processamento com as
+   empresas clientes.
 6. **Plano de resposta a incidente** com dado pessoal.
+7. **Mídia fora do Brasil** (B-64): o R2 não tem região no Brasil. Para clientes da saúde, a
+   mídia inclui pedidos médicos, receitas e resultados de exames — dado sensível (art. 11) —, e
+   guardá-la fora do país é transferência internacional (art. 33), que exige o mecanismo
+   adequado no contrato com a Cloudflare (ex.: cláusulas-padrão da ANPD). Alternativa sem
+   transferência: AWS S3 em São Paulo (`sa-east-1`) — mesmo código e mesmo nginx (o cliente S3
+   usa path-style também na AWS, conferido no B-64); mudam `MEDIA_STORAGE_HOST`, credenciais e
+   região, e o teste de cadeia do B-64 precisa ser repetido contra o bucket real. Decidir
+   **antes** de a primeira empresa da saúde subir mídia real.

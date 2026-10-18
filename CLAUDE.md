@@ -32,8 +32,9 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
     `toUiConversation`/`toUiMessage` (contrato API → shape da UI)
   - `src/components/icons.jsx` — TODO ícone vem do **svgrepo.com** (coleção
     Tabler Icons); **nunca** emoji na UI
-- **Back** (`apps/api`): NestJS + Prisma + PostgreSQL, Redis/Bull, MinIO,
-  Socket.IO gateway. Porta **3001**, prefixo `/api/v1`.
+- **Back** (`apps/api`): NestJS + Prisma + PostgreSQL, Redis/Bull, storage S3
+  (MinIO em dev, Cloudflare R2 em produção — B-64), Socket.IO gateway.
+  Porta **3001**, prefixo `/api/v1`.
   - Multi-tenant: **toda** query filtra por `companyId`
   - `ValidationPipe` com `forbidNonWhitelisted` — campo extra no body = 400
 - **Evolution API** (Docker, porta 8080) faz a ponte com o WhatsApp; fala com
@@ -55,7 +56,7 @@ npm run db:seed      # seed (senha do admin é ALEATÓRIA → .seed-credentials-
 npm run db:studio    # Prisma Studio :5555
 
 # Infra (na raiz)
-docker compose up -d         # postgres, redis, minio, evolution (portas só em 127.0.0.1,
+docker compose up -d         # postgres, redis, evolution + minio (só dev; portas em 127.0.0.1,
                              # via docker-compose.override.yml — B-55)
 ```
 

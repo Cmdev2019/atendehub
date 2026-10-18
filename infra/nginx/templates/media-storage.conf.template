@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Storage da mídia (B-64) — vira /etc/nginx/conf.d/media-storage.conf no boot
+# do container (envsubst do entrypoint oficial do nginx; só variáveis
+# MEDIA_STORAGE_* são substituídas, ver NGINX_ENVSUBST_FILTER no Dockerfile).
+#
+# MEDIA_STORAGE_HOST: host S3 da conta no Cloudflare R2, sem esquema nem
+# porta (ex.: <conta>.r2.cloudflarestorage.com). É o mesmo host com que a API
+# assina as URLs — o docker-compose.prod.yml monta o MINIO_ENDPOINT dela a
+# partir desta mesma variável.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# `resolve`: reconsulta o IP do R2 conforme o TTL do DNS, em vez de fixar o
+# do boot (o R2 fica atrás da rede da Cloudflare, que troca de IP).
+upstream media_storage {
+    zone media_storage 64k;
+    server ${MEDIA_STORAGE_HOST}:443 resolve;
+    keepalive 16;
+}
+
+# Host que vai no cabeçalho e no SNI da conexão com o R2 (nginx.conf, bloco
+# `media.`).
+map $host $media_storage_host {
+    default "${MEDIA_STORAGE_HOST}";
+}

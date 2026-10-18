@@ -62,7 +62,7 @@ flowchart LR
     NG --> API[NestJS · :3001]
     API --> PG[(PostgreSQL 16)]
     API --> RD[(Redis 7)]
-    API --> S3[(MinIO)]
+    API --> S3[(Storage S3 · MinIO dev / R2 prod)]
     RD --> BULL[Bull · webhook, SLA, inatividade]
     BULL --> API
     API -->|Socket.IO /ws| WEB[React 19 · :3000]
@@ -89,7 +89,7 @@ Detalhamento completo, diagramas C4 e UML em [`docs/04-Arquitetura/`](docs/04-Ar
 | | Prisma ORM · Passport JWT · class-validator | 5.22 |
 | | Bull (filas) · Socket.IO · Winston · Helmet | — |
 | **Dados** | PostgreSQL · Redis | 16 · 7 |
-| **Storage** | MinIO (compatível com S3) | — |
+| **Storage** | S3: MinIO em dev/CI · Cloudflare R2 em produção (B-64) | — |
 | **WhatsApp** | Evolution API v2 (Baileys) | 2.3.4 |
 | **Infra** | Docker · Docker Compose · NGINX | — |
 | **CI** | GitHub Actions | — |
@@ -152,7 +152,8 @@ docker compose up -d
 ```
 
 Sobe PostgreSQL (`:5432`), Redis (`:6379`), MinIO (`:9000` API / `:9001` console) e Evolution API
-(`:8080`). O bucket `atendehub-media` é criado pela própria API no boot.
+(`:8080`). O bucket `atendehub-media` é criado pela própria API no boot. O MinIO existe só em
+desenvolvimento (`docker-compose.override.yml`); em produção a mídia fica no Cloudflare R2 (B-64).
 
 As portas são publicadas pelo `docker-compose.override.yml`, que o Compose carrega sozinho, e ficam
 presas a `127.0.0.1` — não aparecem na rede local. Em produção (`-f docker-compose.yml -f
