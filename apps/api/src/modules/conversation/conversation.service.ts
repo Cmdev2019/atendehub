@@ -8,7 +8,8 @@ import {
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
-import { loadCompanyTimeZone, startOfDayInZone } from '../../shared/time/company-time';
+import { loadCompanyTimeZone, resolveTimeZone, startOfDayInZone } from '../../shared/time/company-time';
+import { BusinessHours, isWithinBusinessHours } from '../../shared/time/business-hours';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { formatStructuredLog } from '../../shared/logging/structured-log.util';
@@ -71,6 +72,21 @@ export class ConversationService {
     private readonly notificationService: NotificationService,
     @InjectQueue(QUEUE_NAMES.SLA_CHECK) private readonly slaQueue: Queue<SlaCheckJobData>,
   ) {}
+
+  // B-98 (L-10): expediente do fluxo de auto-atendimento ativo, no fuso da
+  // empresa. Sem fluxo ativo ou sem horário configurado, vale sempre.
+  private async isWithinCompanyBusinessHours(companyId: string): Promise<boolean> {
+    const flow = await this.prisma.autoAttendanceFlow.findUnique({
+      where: { companyId },
+      select: { isActive: true, businessHours: true, company: { select: { timezone: true } } },
+    });
+    if (!flow?.isActive) return true;
+    return isWithinBusinessHours(
+      flow.businessHours as BusinessHours | null,
+      new Date(),
+      resolveTimeZone(flow.company?.timezone),
+    );
+  }
 
   // ── SLA: agenda/cancela a checagem de violação (Fase B2) ───────────────────
   // jobId determinístico por conversa (B2-4): agendar sempre remove um job
@@ -326,8 +342,10 @@ export class ConversationService {
         data: {
           agentId: dto.agentId ?? null,
           departmentId: dto.departmentId,
-          // Se atribuiu um agente e a conversa estava em espera, move para OPEN
-          ...(dto.agentId && { status: ConversationStatus.OPEN }),
+          // Se atribuiu um agente e a conversa estava em espera, move para OPEN.
+          // B-98 (L-10): saiu da espera, a violação de SLA anterior não vale
+          // mais — senão uma 2ª espera nunca era alertada.
+          ...(dto.agentId && { status: ConversationStatus.OPEN, slaBreachedAt: null }),
         },
         select: {
           id: true,
@@ -447,6 +465,8 @@ export class ConversationService {
         where: { id },
         data: {
           status: dto.status,
+          // B-98 (L-10): fora da espera, a marca de SLA violado é zerada
+          ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null }),
           ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
           ...(dto.status === ConversationStatus.CLOSED && {
             closedAt: now,
@@ -575,6 +595,9 @@ export class ConversationService {
     whatsappConnectionId: string,
     channel: Channel = Channel.WHATSAPP,
     departmentId?: string | null,
+    // B-98 (L-10): conversa aberta pela própria empresa (1ª mensagem fromMe)
+    // não está "esperando atendimento" — sem SLA
+    startedByCompany = false,
   ): Promise<{
     conversation: Awaited<ReturnType<typeof this.prisma.conversation.create>>;
     isNew: boolean;
@@ -620,7 +643,9 @@ export class ConversationService {
 
       // Produtor de SLA (B2-3): só agenda quando há fila ativa resolvida —
       // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
-      if (queue) {
+      // B-98 (L-10): nem para conversa aberta pela empresa, nem fora do
+      // expediente configurado no auto-atendimento.
+      if (queue && !startedByCompany && (await this.isWithinCompanyBusinessHours(companyId))) {
         await this.scheduleSlaCheck(created.id, companyId, queue.maxWaitSecs);
       }
 

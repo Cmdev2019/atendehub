@@ -177,6 +177,8 @@ export class SendMessageService {
         ...(conversation.status === ConversationStatus.WAITING && {
           status: ConversationStatus.OPEN,
           agentId: senderId,
+          // B-98 (L-10): saiu da espera — zera a marca de SLA violado
+          slaBreachedAt: null,
         }),
       },
     });
@@ -312,6 +314,8 @@ export class SendMessageService {
         ...(conversation.status === ConversationStatus.WAITING && {
           status: ConversationStatus.OPEN,
           agentId: senderId,
+          // B-98 (L-10): saiu da espera — zera a marca de SLA violado
+          slaBreachedAt: null,
         }),
       },
     });

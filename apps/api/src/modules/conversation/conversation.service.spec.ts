@@ -366,6 +366,21 @@ describe('ConversationService — isolamento multi-tenant', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    // B-98 (L-10): sem zerar, uma 2ª espera da mesma conversa nunca era alertada
+    it('zera slaBreachedAt ao sair da espera e mantém ao voltar para WAITING', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING });
+      mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.OPEN, companyId: companyA });
+      await service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.OPEN });
+      expect(mockPrisma.conversation.update.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({ slaBreachedAt: null }),
+      );
+
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.RESOLVED });
+      mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING, companyId: companyA });
+      await service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.WAITING });
+      expect(mockPrisma.conversation.update.mock.calls[1][0].data).not.toHaveProperty('slaBreachedAt');
+    });
+
     it('não grava resolution em transições que não são para CLOSED', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-1',
