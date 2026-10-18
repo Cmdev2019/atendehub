@@ -1039,6 +1039,28 @@ button {
   white-space: nowrap;
 }
 
+/* B-74: aviso de tempo real fora do ar — no topo, para não colidir com o
+   banner de demonstração (embaixo) */
+.realtime-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: #1e3a8a;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
 /* Painel central do chat: coluna flex com altura presa à célula do grid —
    sem isso a lista cresce com a conversa e empurra o composer para fora */
 .chat-panel {

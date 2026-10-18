@@ -1,6 +1,15 @@
 import { io } from 'socket.io-client';
 import { apiClient } from './api';
 import { EventBus } from './eventBus';
+import {
+  closedByServer,
+  createSessionRenewer,
+  createStatusStore,
+  isHandshakeAuthError,
+} from './realtimeConnection';
+
+// Nova tentativa depois de erro de rede ao renovar o token (B-74)
+const RENEW_RETRY_MS = 5000;
 
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
 
@@ -27,8 +36,24 @@ export class WebSocketClient {
     this.bus = new EventBus();
     this.isConnected = false;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.refreshingToken = false;
+    // Estado para a UI (banner de reconexão) — B-74
+    this.status = createStatusStore();
+    this.hasConnectedBefore = false;
+
+    // B-74 (M-09): handshake recusado ou socket derrubado pelo servidor →
+    // renova o token via REST. Se o servidor recusar a renovação (logout,
+    // senha trocada, usuário desativado), a sessão acabou de verdade e o app
+    // volta ao login — antes ficava tentando com um token morto.
+    this.renewSession = createSessionRenewer({
+      refresh: () => apiClient.refreshToken(),
+      reconnect: () => this.socket?.connect(),
+      endSession: () => apiClient.notifySessionExpired(),
+      retryLater: () => setTimeout(() => this.socket?.connect(), RENEW_RETRY_MS),
+    });
+
+    // Assinatura no formato do useSyncExternalStore (funções já ligadas)
+    this.onStatusChange = (callback) => this.status.subscribe(callback);
+    this.getStatus = () => this.status.get();
   }
 
   connect(token) {
@@ -42,51 +67,46 @@ export class WebSocketClient {
           }),
           reconnection: true,
           reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-          reconnectionAttempts: this.maxReconnectAttempts,
+          reconnectionDelayMax: 10000,
+          // B-74 (M-09): sem limite — antes desistia após 5 tentativas, em
+          // silêncio, e o painel parava de receber mensagens até um F5.
+          reconnectionAttempts: Infinity,
         });
 
         this.socket.on('connect', () => {
           console.log('✅ WebSocket conectado!');
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.refreshingToken = false;
+          this.status.set('connected');
+          // Eventos perdidos enquanto o socket esteve fora não voltam —
+          // quem mostra listas recarrega ao ouvir 'reconnected'.
+          if (this.hasConnectedBefore) this.emit('reconnected');
+          this.hasConnectedBefore = true;
           resolve();
         });
 
-        this.socket.on('connect_error', async (error) => {
+        this.socket.on('connect_error', (error) => {
           console.error('❌ Erro de conexão WebSocket:', error.message);
           this.isConnected = false;
 
-          if (this.reconnectAttempts === 0) {
+          if (this.reconnectAttempts === 0 && !this.hasConnectedBefore) {
             reject(error);
           }
           this.reconnectAttempts++;
+          if (this.hasConnectedBefore) this.status.set('reconnecting');
 
-          // Handshake rejeitado por token ("Token não informado" / "Token
-          // inválido ou expirado"): renova via REST e reconecta com o novo.
-          // try/finally: se apiClient.refreshToken() rejeitar (refresh token
-          // também expirado), refreshingToken precisa voltar a false mesmo
-          // assim — sem isso, a flag travava em true para sempre e nenhuma
-          // reconexão por token nunca mais era tentada nesta sessão de página.
-          if (/token/i.test(error.message || '') && !this.refreshingToken) {
-            this.refreshingToken = true;
-            try {
-              const refreshed = await apiClient.refreshToken();
-              if (refreshed && this.socket) {
-                this.socket.connect();
-              }
-            } catch (refreshErr) {
-              console.warn('⚠️ Falha ao renovar token para reconectar o WebSocket:', refreshErr.message);
-            } finally {
-              this.refreshingToken = false;
-            }
-          }
+          // Recusa do handshake desliga a reconexão automática do Socket.IO —
+          // só volta se renovarmos o token.
+          if (isHandshakeAuthError(error)) this.renewSession();
         });
 
-        this.socket.on('disconnect', () => {
-          console.warn('⚠️ WebSocket desconectado');
+        this.socket.on('disconnect', (reason) => {
+          console.warn('⚠️ WebSocket desconectado:', reason);
           this.isConnected = false;
+          if (reason === 'io client disconnect') return; // disconnect() nosso
+
+          this.status.set('reconnecting');
+          if (closedByServer(reason)) this.renewSession();
         });
 
         // Repassa os eventos do backend para os listeners locais
@@ -110,6 +130,8 @@ export class WebSocketClient {
     if (this.socket) {
       this.socket.disconnect();
       this.isConnected = false;
+      this.hasConnectedBefore = false;
+      this.status.set('idle');
       console.log('⏸️ WebSocket desconectado gracefully');
     }
   }

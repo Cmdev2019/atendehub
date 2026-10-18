@@ -22,14 +22,15 @@ describe('UserController — troca de senha (B-51)', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('repassa o id do usuário do token como requisitante', () => {
-    controller.changePassword(user, 'qualquer-id', dto);
+  it('repassa o id do usuário do token como requisitante, e a sessão dele (B-74)', () => {
+    controller.changePassword({ ...user, sessionId: 'sessao-1' }, 'qualquer-id', dto);
 
     expect(mockUserService.changePassword).toHaveBeenCalledWith(
       'company-a',
       'qualquer-id',
       dto,
       'user-a',
+      'sessao-1',
     );
   });
 

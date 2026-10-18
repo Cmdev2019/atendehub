@@ -21,6 +21,7 @@ import { EmptyChatState } from "./components/EmptyChatState";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { DemoBanner } from "./components/DemoBanner";
+import { RealtimeStatusBanner } from "./components/RealtimeStatusBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useConversations } from "./hooks/useConversations";
 
@@ -185,6 +186,7 @@ function AppContent() {
     "div",
     { className: "app-shell" },
     h(DemoBanner),
+    h(RealtimeStatusBanner),
     isAuthenticated ? h(Dashboard) : h(LoginPage),
   );
 }

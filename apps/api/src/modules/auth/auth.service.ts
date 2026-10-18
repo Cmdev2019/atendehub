@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { EventsService } from '../events/events.service';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -30,6 +31,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly tokenBlacklist: TokenBlacklistService,
+    private readonly events: EventsService,
   ) {}
 
   // ── Valida email + senha (usado pelo LocalStrategy) ───────────────────────
@@ -221,10 +223,12 @@ export class AuthService {
   // Refresh tokens são revogados no banco; access tokens ainda dentro da
   // validade caem pela marca `sessionsRevokedAt`, conferida no JwtStrategy.
   // `userData` vai no mesmo update — a troca de senha e o fim das sessões
-  // acontecem juntos ou não acontecem.
+  // acontecem juntos ou não acontecem. Os sockets abertos caem em seguida
+  // (B-74), menos o da sessão `keepSession` (quem trocou a própria senha).
   async revokeAllSessions(
     userId: string,
     userData: Prisma.UserUpdateInput = {},
+    keepSession?: string,
   ): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction([
@@ -237,6 +241,7 @@ export class AuthService {
         data: { revokedAt: now },
       }),
     ]);
+    this.events.disconnectUser(userId, keepSession);
   }
 
   // ── Logout — revoga o refresh token e opcionalmente o access token ────────
@@ -253,6 +258,11 @@ export class AuthService {
     // Se o access token foi fornecido, adiciona à blacklist
     if (accessToken) {
       await this.revokeAccessToken(accessToken);
+
+      // B-74 (M-09): o socket desta sessão cai junto — antes seguia recebendo
+      // eventos depois do logout.
+      const jti = (this.jwtService.decode(accessToken) as JwtPayload | null)?.jti;
+      if (jti) this.events.disconnectSession(jti);
     }
   }
 

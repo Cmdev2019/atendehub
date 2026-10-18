@@ -35,10 +35,13 @@ export function useNotifications() {
     const handleRefetch = () => fetchNotifications();
     wsClient.on('sla.breached', handleRefetch);
     wsClient.on('conversation.assigned', handleRefetch);
+    // B-74: notificações criadas enquanto o socket esteve fora
+    wsClient.on('reconnected', handleRefetch);
 
     return () => {
       wsClient.off('sla.breached', handleRefetch);
       wsClient.off('conversation.assigned', handleRefetch);
+      wsClient.off('reconnected', handleRefetch);
     };
   }, [fetchNotifications]);
 

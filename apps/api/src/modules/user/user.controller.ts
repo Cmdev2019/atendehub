@@ -111,7 +111,7 @@ export class UserController {
     @Param('id') id: string,
     @Body() dto: ChangePasswordDto,
   ) {
-    return this.userService.changePassword(user.companyId, id, dto, user.id);
+    return this.userService.changePassword(user.companyId, id, dto, user.id, user.sessionId);
   }
 
   // POST /api/v1/users/:id/reset-password
