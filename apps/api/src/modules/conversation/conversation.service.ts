@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -19,6 +20,16 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { SlaCheckJobData } from '../sla/sla-check.processor';
+
+// B-73 (M-07): o índice único parcial do B-49 permite uma só conversa ativa
+// (WAITING/OPEN) por contato. Reativar uma RESOLVED quando o contato já abriu
+// outra batia nele e respondia 500; agora é um 409 com o motivo.
+function rethrowActiveConversationConflict(err: unknown): never {
+  if (isUniqueConstraintViolation(err)) {
+    throw new ConflictException('Este contato já tem outra conversa ativa');
+  }
+  throw err;
+}
 
 // Campos padrão para listagem
 const CONVERSATION_LIST_SELECT = {
@@ -286,6 +297,13 @@ export class ConversationService {
   ) {
     const before = await this.findOne(companyId, id);
 
+    // B-73 (M-07): atribuir agente punha a conversa em OPEN sem olhar o status
+    // — uma conversa encerrada voltava a ficar ativa, contornando a regra do
+    // updateStatus (CLOSED não reabre). Encerrada não recebe atribuição.
+    if (before.status === ConversationStatus.CLOSED) {
+      throw new BadRequestException('Não é possível atribuir uma conversa encerrada');
+    }
+
     // Valida agente se informado
     if (dto.agentId) {
       const agent = await this.prisma.user.findFirst({
@@ -302,24 +320,26 @@ export class ConversationService {
       if (!dept) throw new NotFoundException('Departamento não encontrado');
     }
 
-    const updated = await this.prisma.conversation.update({
-      where: { id },
-      data: {
-        agentId: dto.agentId ?? null,
-        departmentId: dto.departmentId,
-        // Se atribuiu um agente e a conversa estava em espera, move para OPEN
-        ...(dto.agentId && { status: ConversationStatus.OPEN }),
-      },
-      select: {
-        id: true,
-        status: true,
-        companyId: true,
-        agentId: true,
-        departmentId: true,
-        agent: { select: { id: true, name: true, avatarUrl: true } },
-        department: { select: { id: true, name: true } },
-      },
-    });
+    const updated = await this.prisma.conversation
+      .update({
+        where: { id },
+        data: {
+          agentId: dto.agentId ?? null,
+          departmentId: dto.departmentId,
+          // Se atribuiu um agente e a conversa estava em espera, move para OPEN
+          ...(dto.agentId && { status: ConversationStatus.OPEN }),
+        },
+        select: {
+          id: true,
+          status: true,
+          companyId: true,
+          agentId: true,
+          departmentId: true,
+          agent: { select: { id: true, name: true, avatarUrl: true } },
+          department: { select: { id: true, name: true } },
+        },
+      })
+      .catch(rethrowActiveConversationConflict);
 
     // Atribuir agente tira a conversa da espera — cancela a checagem de SLA
     // pendente (se não cancelar, o processor ainda reconsulta o status e não
@@ -422,29 +442,31 @@ export class ConversationService {
     const wasWaiting = conversation.status === ConversationStatus.WAITING;
 
     const now = new Date();
-    const updated = await this.prisma.conversation.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
-        ...(dto.status === ConversationStatus.CLOSED && {
-          closedAt: now,
-          resolution: dto.resolution,
-          resolutionNote: dto.resolutionNote,
-        }),
-      },
-      select: {
-        id: true,
-        status: true,
-        companyId: true,
-        resolvedAt: true,
-        closedAt: true,
-        resolution: true,
-        resolutionNote: true,
-        updatedAt: true,
-        queueId: true,
-      },
-    });
+    const updated = await this.prisma.conversation
+      .update({
+        where: { id },
+        data: {
+          status: dto.status,
+          ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
+          ...(dto.status === ConversationStatus.CLOSED && {
+            closedAt: now,
+            resolution: dto.resolution,
+            resolutionNote: dto.resolutionNote,
+          }),
+        },
+        select: {
+          id: true,
+          status: true,
+          companyId: true,
+          resolvedAt: true,
+          closedAt: true,
+          resolution: true,
+          resolutionNote: true,
+          updatedAt: true,
+          queueId: true,
+        },
+      })
+      .catch(rethrowActiveConversationConflict);
 
     // Reentrada em WAITING (ex.: reaberta) agenda um novo prazo de SLA; sair
     // de WAITING por qualquer outro caminho que não o assign() cancela o job

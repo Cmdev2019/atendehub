@@ -161,6 +161,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-73 (2026-10-18, M-07):** atribuir um atendente não reabre mais uma conversa encerrada (responde
+  400). Reabrir ou atribuir uma conversa resolvida quando o contato já tem outra conversa ativa responde
+  409 com o motivo, em vez de erro 500.
 - **B-69 (2026-10-18, M-14):** filtros booleanos das listagens (`?isActive=`, `?isBlocked=`,
   `?unreadOnly=`) deixam de inverter o resultado. A conversão implícita de tipos transformava o
   texto `"false"` da query em `true`; agora ela fica desligada no ValidationPipe e cada campo
