@@ -599,7 +599,7 @@ Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
 Item: `{ id, name, phone, profileName, profilePicture, status, platform, isActive, lastSeenAt, createdAt, department: {id,name,color} | null, _count: { conversations } }`
 
 ### `GET /whatsapp/:id` — + `sessionName`, `battery`, `updatedAt`
-### `POST /whatsapp` — `{ name (≤60), departmentId? }` → cria a instância na Evolution com webhook configurado
+### `POST /whatsapp` — `{ name (≤60), departmentId? }` → cria a instância na Evolution (sem webhook próprio: os eventos chegam pelo webhook global da Evolution, B-82). `400` passado o limite de conexões do plano (`maxChannels`)
 ### `GET /whatsapp/:id/qrcode` → `{ qrCode: "data:image/png;base64,..." | "<base64>", code? }`
 ### `GET /whatsapp/:id/status` → sincroniza com a Evolution e retorna `{ status, ... }`
 ### `POST /whatsapp/:id/disconnect` · `PATCH /whatsapp/:id` · `DELETE /whatsapp/:id`
@@ -627,11 +627,32 @@ nginx decidirem se a instância deve receber tráfego — o `GET /health` acima
 não serve pra isso (não checa nada além do processo estar de pé).
 
 ## Webhooks — `/webhooks/evolution` (público com apikey)
-`POST` consumido pela Evolution API. Autenticação: header `apikey` comparado
-(timing-safe) com `EVOLUTION_API_KEY` — sem a env, **500 fail-closed**; chave
-errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por instância** (campo `instance` do body; sem ele, por IP) — B-56. Eventos: `QRCODE_UPDATED`,
+`POST` consumido pela Evolution API (webhook **global** da Evolution — B-82). Autenticação
+(B-88, conferido em `webhook.controller.ts`): a chave vem do header **`x-evolution-signature`**
+ou, sem ele, do campo **`apikey` do corpo** (é como a Evolution v2 manda) — o header tem
+prioridade. Comparação timing-safe com `EVOLUTION_API_KEY`: sem a env, **500 fail-closed**;
+chave ausente ou errada, **403**. Body até **25mb** (mídia base64). Limite: **1.200
+eventos/60s por instância** (campo `instance` do body; sem ele, por IP) — B-56. O nome do
+evento é normalizado (`messages.upsert` → `MESSAGES_UPSERT`). Tratados: `QRCODE_UPDATED`,
 `CONNECTION_UPDATE`, `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `MESSAGES_DELETE`,
-`SEND_MESSAGE`, `CONTACTS_UPSERT`.
+`CONTACTS_UPSERT`; os demais são ignorados. Responde `200 { received: true }` assim que o
+evento entra na fila (shard do contato, B-79); o processamento é assíncrono, com retry e DLQ.
+
+### `GET /webhooks/metrics` (B-39) — requer `ADMIN`
+Texto no formato de exposição do Prometheus (`text/plain; version=0.0.4`): contadores de
+jobs (processados, falhas por classificação, retries, movidos para a DLQ — em memória, por
+réplica) e profundidade **ao vivo** das filas: `webhook_queue_depth{queue="webhook_waiting"}`,
+`_active`, `_delayed`, `_failed` (soma dos shards, B-79) e `{queue="webhook-dlq"}`.
+
+### DLQ do webhook — `/webhooks/dlq` (B-39) — requer `ADMIN`, só a própria empresa
+Eventos que esgotaram as tentativas (ou falharam de forma permanente). Item de outra empresa
+responde **404**, como se não existisse; item sem empresa identificada não aparece para ninguém.
+- `GET /webhooks/dlq` → **array puro**, mais recentes primeiro:
+  `{ id, event, instance, error, attempts, timestamp, requestId, conversationId, messageId, status, reason }`
+- `POST /webhooks/dlq/:jobId/reprocess` → `200 { requeued: true, newJobId }` — devolve o
+  evento à fila (shard do contato) com a mesma política de retry; reprocessar duas vezes é
+  seguro (a gravação deduplica por `externalId`).
+- `DELETE /webhooks/dlq/:jobId` → `200 { discarded: true }`
 
 ---
 
@@ -683,12 +704,14 @@ errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por
 
 ---
 
-## ⚠️ Divergências conhecidas do frontend/mock (alvo de F1-2/F1-3)
+## ⚠️ Divergências conhecidas do frontend/mock
 
-1. **Mock** responde listas como `{ data, pagination }`; o real usa `{ data, meta }`.
-2. **Mock de mensagem** usa `{ type: 'agent'|'customer', text, time: 'HH:MM' }`;
-   o real usa `{ senderType, content, sentAt }` — o front converte via
-   `toUiMessage`/`toUiConversation` (`src/hooks/useConversations.js`).
-3. `apiClient.register()` chama rota inexistente (F1-4).
-4. `GET /whatsapp` e `GET /departments` retornam **array puro** — o helper
-   `unwrap()` do SettingsPanel tolera ambos os formatos.
+Revisado em 2026-10-18 (B-88). Já resolvidas e removidas desta lista: o mock responde listas
+como `{ data, meta }`, igual à API; as fixtures de conversa seguem o shape do contrato e o
+front converte com `toUiMessage`/`toUiConversation`; `apiClient.register()` não existe mais
+(o cadastro é `registerCompany`, B-9).
+
+1. `GET /whatsapp` e `GET /departments` retornam **array puro**, não `{ data, meta }` — o helper
+   `unwrap()` do SettingsPanel tolera os dois formatos.
+2. **Sem Swagger:** este contrato é mantido à mão e não há conferência automática contra o
+   código (B-45, pendente).
