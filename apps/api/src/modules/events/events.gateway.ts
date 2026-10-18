@@ -14,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { AccessSessionService } from '../auth/access-session.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import {
   ConversationScopeService,
@@ -30,6 +31,16 @@ export interface AuthenticatedSocket extends Socket {
     role: string;
   };
 }
+
+// Erro de autenticação do handshake. O `data.code` chega ao cliente em
+// `connect_error` (err.data) e separa "renove o token" de falha de rede.
+function handshakeAuthError(message: string) {
+  return Object.assign(new UnauthorizedException(message), { data: { code: 'UNAUTHORIZED' } });
+}
+
+// Sala de uma sessão (o `jti` do access token) — o logout derruba só os
+// sockets daquela sessão (B-74).
+export const sessionRoom = (jti: string) => `session:${jti}`;
 
 @WebSocketGateway({
   cors: {
@@ -52,11 +63,17 @@ export class EventsGateway
     { userId: string; companyId: string; connectedAt: Date }
   >();
 
+  // B-74 (M-09): o socket cai quando o access token do handshake expira — o
+  // cliente reconecta com o token atual (renovado via REST se preciso), e a
+  // reconexão passa de novo por todas as checagens.
+  private readonly expiryTimers = new Map<string, NodeJS.Timeout>();
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly scope: ConversationScopeService,
+    private readonly accessSession: AccessSessionService,
   ) {}
 
   afterInit(server: Server) {
@@ -67,32 +84,48 @@ export class EventsGateway
 
     // ── Middleware de autenticação no handshake ────────────────────────────
     server.use((socket: AuthenticatedSocket, next) => {
-      try {
-        const token =
-          socket.handshake.auth?.token ??
-          socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
-          socket.handshake.query?.token as string;
-
-        if (!token) {
-          return next(new UnauthorizedException('Token não informado'));
-        }
-
-        const payload = this.jwtService.verify<JwtPayload>(token, {
-          secret: this.config.get<string>('JWT_SECRET'),
-        });
-
-        socket.user = {
-          id: payload.sub,
-          companyId: payload.companyId,
-          email: payload.email,
-          role: payload.role,
-        };
-
-        next();
-      } catch {
-        next(new UnauthorizedException('Token inválido ou expirado'));
-      }
+      void this.authenticate(socket).then(
+        () => next(),
+        (err: Error) => next(err),
+      );
     });
+  }
+
+  // B-74 (M-09): antes só a assinatura era conferida — token revogado no
+  // logout, de usuário desativado ou de sessão encerrada pela troca de senha
+  // ainda abria socket. Agora vale a mesma regra do HTTP (AccessSessionService).
+  private async authenticate(socket: AuthenticatedSocket): Promise<void> {
+    const token =
+      socket.handshake.auth?.token ??
+      socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
+      (socket.handshake.query?.token as string);
+
+    if (!token) throw handshakeAuthError('Token não informado');
+
+    let payload: JwtPayload;
+    try {
+      payload = this.jwtService.verify<JwtPayload>(token, {
+        secret: this.config.get<string>('JWT_SECRET'),
+      });
+    } catch {
+      throw handshakeAuthError('Token inválido ou expirado');
+    }
+
+    let user;
+    try {
+      user = await this.accessSession.validate(token, payload);
+    } catch (err) {
+      throw handshakeAuthError((err as Error).message);
+    }
+
+    socket.user = {
+      id: user.id,
+      companyId: user.companyId,
+      email: user.email,
+      role: user.role,
+    };
+    socket.data.jti = payload.jti;
+    socket.data.exp = payload.exp;
   }
 
   // ── Conexão estabelecida ──────────────────────────────────────────────────
@@ -108,6 +141,8 @@ export class EventsGateway
     // próxima conexão.
     await socket.join(`company:${companyId}`);
     await socket.join(`agent:${userId}`);
+    if (socket.data.jti) await socket.join(sessionRoom(socket.data.jti));
+    this.scheduleExpiry(socket);
     const departmentIds = seesWholeCompany(socket.user)
       ? []
       : await this.scope.departmentIdsOf(userId);
@@ -135,6 +170,12 @@ export class EventsGateway
 
   // ── Desconexão ────────────────────────────────────────────────────────────
   handleDisconnect(socket: AuthenticatedSocket) {
+    const timer = this.expiryTimers.get(socket.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.expiryTimers.delete(socket.id);
+    }
+
     const client = this.connectedClients.get(socket.id);
     if (client) {
       this.logger.log(
@@ -194,6 +235,18 @@ export class EventsGateway
   @SubscribeMessage('ping')
   handlePing() {
     return { pong: true, timestamp: Date.now() };
+  }
+
+  private scheduleExpiry(socket: AuthenticatedSocket) {
+    if (!socket.data.exp) return;
+    const ms = Math.max(0, socket.data.exp * 1000 - Date.now());
+    const timer = setTimeout(() => {
+      this.expiryTimers.delete(socket.id);
+      socket.disconnect(true);
+    }, ms);
+    // Não segura o processo vivo no shutdown só por causa deste timer.
+    timer.unref?.();
+    this.expiryTimers.set(socket.id, timer);
   }
 
   // ── Utilitário: total de clientes conectados ──────────────────────────────

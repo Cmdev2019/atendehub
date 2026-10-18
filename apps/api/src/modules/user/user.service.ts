@@ -17,6 +17,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuthService } from '../auth/auth.service';
+import { EventsService } from '../events/events.service';
 
 // Gera senha temporária que já satisfaz a política de senha do produto
 // (ChangePasswordDto: mín. 8, 1 maiúscula, 1 minúscula, 1 número) — sem
@@ -61,6 +62,7 @@ export class UserService {
     private readonly auditLog: AuditLogService,
     private readonly storage: StorageService,
     private readonly auth: AuthService,
+    private readonly events: EventsService,
   ) {}
 
   // ── Listar com paginação e filtros ────────────────────────────────────────
@@ -189,9 +191,17 @@ export class UserService {
       select: USER_SELECT,
     });
 
+    // B-74 (M-09): papel novo muda as salas do socket (empresa inteira ou só
+    // departamentos) e desativação tira o acesso — os sockets abertos caem e,
+    // na reconexão, o handshake decide de novo.
+    const roleChanged = !!dto.role && dto.role !== before.role;
+    if (roleChanged || (dto.isActive === false && before.isActive)) {
+      this.events.disconnectUser(id);
+    }
+
     // Mudança de role é a ação sensível aqui — edições de nome/telefone/avatar
     // não entram na auditoria v1 (decisão B1-4, ver Registro de decisões)
-    if (dto.role && dto.role !== before.role) {
+    if (roleChanged) {
       await this.auditLog.record({
         companyId,
         userId: requesterId,
@@ -253,6 +263,7 @@ export class UserService {
     id: string,
     dto: ChangePasswordDto,
     requesterId: string,
+    sessionId?: string,
   ) {
     if (id !== requesterId) {
       throw new ForbiddenException('Você só pode trocar a sua própria senha');
@@ -280,8 +291,8 @@ export class UserService {
 
     // B-72 (M-08): a senha nova encerra todas as sessões — quem tinha a
     // antiga (outro aparelho, token vazado) sai. Este aparelho recebe um par
-    // de tokens novo para continuar logado.
-    await this.auth.revokeAllSessions(id, { passwordHash });
+    // de tokens novo para continuar logado, e o socket dele não cai (B-74).
+    await this.auth.revokeAllSessions(id, { passwordHash }, sessionId);
 
     await this.auditLog.record({
       companyId,
@@ -343,6 +354,9 @@ export class UserService {
       data: { isActive: false },
       select: USER_SELECT,
     });
+
+    // B-74 (M-09): usuário desativado perde o socket aberto na hora.
+    this.events.disconnectUser(id);
 
     await this.auditLog.record({
       companyId,

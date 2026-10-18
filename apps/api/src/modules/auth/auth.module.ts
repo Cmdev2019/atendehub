@@ -6,7 +6,8 @@ import { APP_GUARD } from '@nestjs/core';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { TokenBlacklistService } from './token-blacklist.service';
+import { SessionModule } from './session.module';
+import { EventsModule } from '../events/events.module';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -16,6 +17,10 @@ import { RolesGuard } from './guards/roles.guard';
 @Module({
   imports: [
     PassportModule,
+    // B-74: blacklist e validação de sessão vêm do SessionModule (uma só
+    // conexão Redis da blacklist, compartilhada com o WebSocket).
+    SessionModule,
+    EventsModule,
     // Registra o JwtModule com secret carregado via ConfigService (após .env ser lido)
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -28,7 +33,6 @@ import { RolesGuard } from './guards/roles.guard';
   controllers: [AuthController],
   providers: [
     AuthService,
-    TokenBlacklistService,
     RefreshTokenCleanupService,
     LocalStrategy,
     JwtStrategy,

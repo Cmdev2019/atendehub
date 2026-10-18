@@ -1,16 +1,24 @@
 # ADR-0017 — WebSocket autenticado por handshake JWT com Redis Adapter; paridade de revogação com o HTTP ainda não implementada
 
-- **Status:** Implementada (handshake + Redis Adapter) · Proposta (paridade de blacklist/`isActive`)
+- **Status:** Implementada (handshake + Redis Adapter; paridade de revogação com o HTTP desde a v1.1, B-74)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-18
 - **Autor:** Engenharia
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/src/modules/events/events.gateway.ts`,
   `apps/api/src/shared/websocket/redis-io.adapter.ts`
 
 > Ciclo de vida conforme `README.md` desta pasta.
+
+> **v1.1 (2026-10-18, B-74 / M-09 da auditoria de 2026-10-16):** a Pergunta 2 foi resolvida.
+> O handshake usa a mesma regra do HTTP (`AccessSessionService`: tipo do token, blacklist,
+> usuário ativo e sessões encerradas pela troca de senha). Sockets abertos caem quando o
+> access token do handshake expira, no logout (só a sessão daquele token), na troca/reset de
+> senha, na desativação e na mudança de papel. O cliente reconecta sem limite, mostra um aviso
+> enquanto está fora e recarrega a lista ao voltar. As seções abaixo registram o estado de
+> 2026-08-05.
 
 ## Contexto
 
@@ -103,7 +111,7 @@ revogação explícita — a mesma classe de risco que já motivou B-38/B-39 no 
   autenticação, não autorização de sala).
 
 ### Negativas
-- Paridade de revogação ausente — achado 🟠 Alto da AGR, sem correção ainda.
+- Paridade de revogação ausente — achado 🟠 Alto da AGR. **Corrigido na v1.1 (B-74).**
 
 ### Neutras / a observar
 - `join:conversation` já revalida `companyId` contra a conversa pedida (`events.gateway.ts:142`)
@@ -123,7 +131,7 @@ revogação explícita — a mesma classe de risco que já motivou B-38/B-39 no 
 - **AER (Constituição):** AER-015
 - **ASNF (Manual):** ASNF-031, ASNF-084, ASNF-114
 - **ATM:** Parte IV (Matriz de Componentes — WebSocket), Parte VII (item sem ID, sugestão A)
-- **Roadmap:** sem ID formal ainda — sugestão da AGR §16, candidata a item novo
+- **Roadmap:** B-74 (M-09 da auditoria de 2026-10-16)
 
 ## Evidências
 

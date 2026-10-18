@@ -631,13 +631,24 @@ errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por
 ## Socket.IO — namespace `/ws`
 
 - **URL:** `http://localhost:3001/ws` (config `VITE_WS_URL`)
-- **Handshake:** `auth: { token: <accessToken JWT> }` — rejeitado com
-  `connect_error` `"Token não informado"` / `"Token inválido ou expirado"`
+- **Handshake:** `auth: { token: <accessToken JWT> }`. Vale a mesma regra do HTTP (B-74):
+  só access token, fora da blacklist, de usuário ativo e emitido depois do último
+  encerramento de sessões. Recusa = `connect_error` com `data: { code: "UNAUTHORIZED" }` e
+  mensagem `"Token não informado"`, `"Token inválido ou expirado"`, `"Tipo de token inválido"`,
+  `"Token foi revogado"`, `"Usuário não encontrado ou inativo"` ou `"Sessão encerrada"`.
+  Recusado no handshake, o Socket.IO não reconecta sozinho: o cliente renova o token
+  (`POST /auth/refresh`) e chama `connect()` de novo.
+- **Desconexão pelo servidor** (`disconnect` com motivo `"io server disconnect"`, B-74): quando
+  o access token do handshake expira, no logout (só os sockets daquela sessão), na troca ou
+  reset de senha (menos a sessão de quem trocou a própria senha), na desativação do usuário e
+  na mudança de papel (as salas dependem dele). O cliente renova o token e reconecta; se a
+  renovação for recusada, a sessão acabou.
 - **Salas automáticas:** `company:<companyId>` e `agent:<userId>` no connect, mais as
   salas de escopo (B-40): `company:<companyId>:all` para ADMIN/SUPERVISOR; para AGENT,
   `company:<companyId>:dept:<departmentId>` de cada departamento seu e
   `company:<companyId>:dept:none` (conversas sem departamento). Departamentos mudados
-  durante a sessão valem na próxima conexão.
+  durante a sessão valem na próxima conexão (no máximo até o access token expirar, B-74).
+  Mais `session:<jti>` (B-74), usada para derrubar só a sessão que fez logout.
 - **Emissão:** eventos de conversa (`message.*`, `conversation.*`, `sla.breached`) saem
   para a **união** de `conversation:<id>` + `company:<companyId>:all` + a sala do
   departamento da conversa + `agent:<agentId>` atribuído — nunca mais para a empresa

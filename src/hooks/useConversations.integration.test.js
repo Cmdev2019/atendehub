@@ -110,6 +110,32 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  // B-74 (M-09): eventos perdidos com o socket fora do ar não voltam — ao
+  // reconectar, a lista e as métricas são buscadas de novo, mantendo a
+  // conversa aberta selecionada.
+  it('ressincroniza lista e métricas ao reconectar o WebSocket, mantendo a conversa ativa', async () => {
+    mockApiClient.getConversations
+      .mockResolvedValueOnce({ data: [{ id: 'c1', contact: 'Ana', messages: [] }, { id: 'c2', contact: 'Bia', messages: [] }] })
+      .mockResolvedValueOnce({ data: [{ id: 'c3', contact: 'Caio', messages: [] }, { id: 'c2', contact: 'Bia', messages: [] }] });
+    mockApiClient.getConversationStats
+      .mockResolvedValueOnce({ totalActive: 2 })
+      .mockResolvedValueOnce({ totalActive: 5 });
+    mockApiClient.getMessages.mockResolvedValue({ data: [], meta: { hasMore: false } });
+
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.conversations.map((c) => c.id)).toEqual(['c1', 'c2']));
+    act(() => result.current.setActiveId('c2'));
+
+    const reconnected = mockWsClient.on.mock.calls.find((call) => call[0] === 'reconnected')[1];
+    await act(async () => {
+      await reconnected();
+    });
+
+    expect(result.current.conversations.map((c) => c.id)).toEqual(['c3', 'c2']);
+    expect(result.current.activeId).toBe('c2');
+    await waitFor(() => expect(result.current.stats.totalActive).toBe(5));
+  });
+
   it('carrega conversas do API ao montar', async () => {
     const mockConversations = [
       {

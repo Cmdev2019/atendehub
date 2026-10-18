@@ -7,6 +7,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { AuthService } from '../auth/auth.service';
+import { EventsService } from '../events/events.service';
 
 jest.mock('bcrypt');
 
@@ -30,6 +31,7 @@ const mockPrisma = {
 const mockAuditLog = { record: jest.fn() };
 const mockStorage = { upload: jest.fn() };
 const mockAuth = { revokeAllSessions: jest.fn(), issueTokens: jest.fn() };
+const mockEvents = { disconnectUser: jest.fn() };
 
 describe('UserService — isolamento multi-tenant', () => {
   let service: UserService;
@@ -47,6 +49,7 @@ describe('UserService — isolamento multi-tenant', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: StorageService, useValue: mockStorage },
         { provide: AuthService, useValue: mockAuth },
+        { provide: EventsService, useValue: mockEvents },
       ],
     }).compile();
 
@@ -178,6 +181,8 @@ describe('UserService — isolamento multi-tenant', () => {
 
       await service.update(companyA, 'user-1', { role: Role.SUPERVISOR }, requesterId);
 
+      // B-74 (M-09): salas do socket dependem do papel — reconecta.
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'user.role_changed',
@@ -199,6 +204,22 @@ describe('UserService — isolamento multi-tenant', () => {
       await service.update(companyA, 'user-1', { name: 'Novo Nome' }, requesterId);
 
       expect(mockAuditLog.record).not.toHaveBeenCalled();
+      expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
+    });
+
+    it('desativar pelo update derruba os sockets do usuário (B-74)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        id: 'user-1',
+        companyId: companyA,
+        role: Role.AGENT,
+        isActive: true,
+        departments: [],
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', isActive: false });
+
+      await service.update(companyA, 'user-1', { isActive: false }, requesterId);
+
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
     });
   });
 
@@ -330,13 +351,22 @@ describe('UserService — isolamento multi-tenant', () => {
       (bcrypt.hash as jest.Mock).mockResolvedValueOnce('hash-novo');
       mockAuth.issueTokens.mockResolvedValueOnce({ accessToken: 'a2', refreshToken: 'r2' });
 
-      const result = await service.changePassword(companyA, requesterId, dto, requesterId);
+      const result = await service.changePassword(
+        companyA,
+        requesterId,
+        dto,
+        requesterId,
+        'sessao-atual',
+      );
 
       expect(bcrypt.compare).toHaveBeenCalledWith('SenhaAtual1', 'hash-antigo');
-      // B-72 (M-08): hash novo e fim das sessões no mesmo update.
-      expect(mockAuth.revokeAllSessions).toHaveBeenCalledWith(requesterId, {
-        passwordHash: 'hash-novo',
-      });
+      // B-72 (M-08): hash novo e fim das sessões no mesmo update; B-74: a
+      // sessão de quem trocou mantém o socket.
+      expect(mockAuth.revokeAllSessions).toHaveBeenCalledWith(
+        requesterId,
+        { passwordHash: 'hash-novo' },
+        'sessao-atual',
+      );
       // O par novo é emitido depois da revogação, sem o hash da senha.
       expect(mockAuth.issueTokens).toHaveBeenCalledWith(authUser);
       expect(mockAuth.revokeAllSessions.mock.invocationCallOrder[0]).toBeLessThan(
@@ -429,6 +459,20 @@ describe('UserService — isolamento multi-tenant', () => {
       ).rejects.toThrow(BadRequestException);
       // Nem chega a checar o banco — a guarda de auto-desativação vem antes
       expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('desativa e derruba os sockets abertos do usuário (B-74)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        id: 'user-1',
+        companyId: companyA,
+        role: Role.AGENT,
+        departments: [],
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', isActive: false });
+
+      await service.remove(companyA, 'user-1', requesterId);
+
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
     });
   });
 });

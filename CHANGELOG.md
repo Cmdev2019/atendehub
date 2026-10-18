@@ -53,6 +53,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-74 (2026-10-18, M-09):** o tempo real (WebSocket) segue as mesmas regras de sessão do resto da
+  API. Logout, troca ou reset de senha, desativação e mudança de papel derrubam as conexões abertas, e
+  um token revogado não conecta mais. No painel, a reconexão não desiste mais depois de 5 tentativas,
+  aparece o aviso "Reconectando ao tempo real" enquanto a conexão está fora, e a lista de conversas
+  e as notificações são recarregadas quando ela volta.
 - **B-72 (2026-10-18, M-08):** trocar ou resetar a senha encerra todas as sessões abertas do usuário, em
   qualquer aparelho. Quem troca a própria senha continua logado na aba atual (a resposta traz tokens
   novos). A renovação de sessão passou a ser atômica e reconhece reuso de um token já trocado. A API não

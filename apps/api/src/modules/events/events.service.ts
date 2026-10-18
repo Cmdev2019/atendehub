@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { roomsForConversation } from './scope-rooms';
-import { EventsGateway } from './events.gateway';
+import { EventsGateway, sessionRoom } from './events.gateway';
 import { StorageService } from '../../shared/storage/storage.service';
 
 // ─── Payloads tipados por evento ─────────────────────────────────────────────
@@ -200,6 +200,21 @@ export class EventsService {
     this.logger.debug(
       `connection.status → company:${companyId} | ${payload.sessionName} : ${payload.status}`,
     );
+  }
+
+  // ── Encerramento de sessão (B-74 / M-09) ──────────────────────────────────
+  // Sem isto, o socket aberto seguia recebendo eventos depois do logout, da
+  // desativação do usuário ou da troca de senha. Via adapter do Redis, vale
+  // para sockets em qualquer réplica. `keepSession` preserva a sessão de quem
+  // trocou a própria senha: ela recebe tokens novos e não deve cair.
+  disconnectUser(userId: string, keepSession?: string): void {
+    const target = this.gateway.server.in(`agent:${userId}`);
+    (keepSession ? target.except(sessionRoom(keepSession)) : target).disconnectSockets(true);
+    this.logger.log(`Sockets do usuário ${userId} desconectados (sessão encerrada)`);
+  }
+
+  disconnectSession(jti: string): void {
+    this.gateway.server.in(sessionRoom(jti)).disconnectSockets(true);
   }
 
   // ── SLA violado (conversa esperando muito tempo) ───────────────────────────

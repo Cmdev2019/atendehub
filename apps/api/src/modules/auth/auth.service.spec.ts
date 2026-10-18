@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { EventsService } from '../events/events.service';
 import { Role } from '@prisma/client';
 
 jest.mock('bcrypt');
@@ -49,6 +50,11 @@ const mockTokenBlacklist = {
   add: jest.fn(),
 };
 
+const mockEvents = {
+  disconnectUser: jest.fn(),
+  disconnectSession: jest.fn(),
+};
+
 describe('AuthService', () => {
   let service: AuthService;
 
@@ -77,6 +83,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfig },
         { provide: TokenBlacklistService, useValue: mockTokenBlacklist },
+        { provide: EventsService, useValue: mockEvents },
       ],
     }).compile();
 
@@ -315,6 +322,8 @@ describe('AuthService', () => {
         data: { revokedAt: expect.any(Date) },
       });
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+      // B-74 (M-09): os sockets do usuário caem junto.
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1', undefined);
     });
 
     it('rejeita quando o refresh token expirou', async () => {
@@ -403,6 +412,20 @@ describe('AuthService', () => {
         'meu-access-token',
         expect.any(Number),
       );
+    });
+
+    // B-74 (M-09): só os sockets desta sessão caem — outros aparelhos do
+    // mesmo usuário seguem conectados.
+    it('derruba o socket da sessão do access token', async () => {
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
+      const futureExp = Math.floor(Date.now() / 1000) + 300;
+      mockJwtService.decode.mockReturnValue({ exp: futureExp, jti: 'sessao-1' });
+
+      await service.logout('meu-refresh-token', 'meu-access-token');
+      mockJwtService.decode.mockReset();
+
+      expect(mockEvents.disconnectSession).toHaveBeenCalledWith('sessao-1');
+      expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
     });
 
     it('não blacklista um access token que já expirou', async () => {

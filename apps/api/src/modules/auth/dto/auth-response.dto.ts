@@ -7,6 +7,9 @@ export class AuthUserDto {
   email: string;
   role: Role;
   avatarUrl: string | null;
+  // `jti` do access token da requisição (B-74) — só existe em `req.user`,
+  // para a troca de senha manter a sessão de quem trocou.
+  sessionId?: string;
 }
 
 export class AuthResponseDto {

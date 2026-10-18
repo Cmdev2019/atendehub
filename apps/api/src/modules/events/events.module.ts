@@ -3,10 +3,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventsGateway } from './events.gateway';
 import { EventsService } from './events.service';
+import { SessionModule } from '../auth/session.module';
 
 @Module({
   imports: [
     ConfigModule,
+    SessionModule,
     // registerAsync garante que JWT_SECRET é lido após o ConfigModule carregar o .env
     JwtModule.registerAsync({
       imports: [ConfigModule],

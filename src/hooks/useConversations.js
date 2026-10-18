@@ -301,6 +301,38 @@ export function useConversations(currentUserId) {
     }
   }, [loadedFromApi, openHasMore, openLoadingMore, openPage, mergeConversations]);
 
+  // B-74 (M-09): eventos emitidos enquanto o socket esteve fora não voltam —
+  // ao reconectar, a lista e as métricas são buscadas de novo. A conversa
+  // aberta continua selecionada se ainda estiver na lista; as mensagens dela
+  // recarregam porque a lista nova chega com `messagesLoaded: false`.
+  useEffect(() => {
+    const resync = async () => {
+      try {
+        const response = await apiClient.getConversations();
+        if (!response.data) return;
+        const normalized = response.data.map(toUiConversation);
+        setConversations(normalized);
+        setActiveId((current) =>
+          normalized.some((c) => c.id === current) ? current : normalized[0]?.id,
+        );
+        setLoadedFromApi(true);
+        // A paginação por aba recomeça da lista nova
+        setQueuePage(0);
+        setQueueHasMore(true);
+        setMinePage(0);
+        setMineHasMore(true);
+        setOpenPage(0);
+        setOpenHasMore(true);
+      } catch (error) {
+        console.warn('⚠️ Erro ao ressincronizar conversas:', error.message);
+      }
+      fetchStats();
+    };
+
+    wsClient.on('reconnected', resync);
+    return () => wsClient.off('reconnected', resync);
+  }, [fetchStats]);
+
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
   useEffect(() => {
