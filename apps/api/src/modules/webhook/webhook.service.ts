@@ -3,7 +3,7 @@ import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { MessageType, MessageStatus, SenderType } from '@prisma/client';
+import { MessageType, MessageStatus, Prisma, SenderType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ContactService } from '../contact/contact.service';
 import { ConversationService } from '../conversation/conversation.service';
@@ -18,6 +18,7 @@ import {
   mediaDownloadJobId,
 } from './media-download.processor';
 import { WEBHOOK_STEP, WebhookStep, planWebhookSteps } from './webhook-steps';
+import { classifyMessage, isNonContactJid } from './whatsapp-message';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { AutoAttendanceEngineService } from '../auto-attendance/auto-attendance-engine.service';
 import { extractPhoneFromJid, isOpaqueLidJid } from '../../shared/whatsapp/jid.util';
@@ -38,23 +39,10 @@ interface EvolutionMessageKey {
   id: string;          // ID da mensagem no WhatsApp
 }
 
-interface EvolutionMessageContent {
-  conversation?: string;
-  imageMessage?: { caption?: string; mimetype: string; url?: string };
-  videoMessage?: { caption?: string; mimetype: string; url?: string };
-  audioMessage?: { mimetype: string; url?: string };
-  documentMessage?: { title?: string; mimetype: string; url?: string };
-  stickerMessage?: { url?: string };
-  locationMessage?: { degreesLatitude: number; degreesLongitude: number };
-  contactMessage?: { displayName: string };
-  reactionMessage?: { text: string; key: EvolutionMessageKey };
-  extendedTextMessage?: { text: string };
-}
-
 interface EvolutionMessage {
   key: EvolutionMessageKey;
   pushName?: string;         // nome do contato
-  message?: EvolutionMessageContent;
+  message?: Record<string, any>; // conteúdo cru — classificado em whatsapp-message.ts (B-81)
   messageType?: string;
   messageTimestamp?: number;
   status?: string;
@@ -154,9 +142,10 @@ export class WebhookService {
 
     if (!key?.remoteJid) return;
 
-    // Ignora mensagens de grupos (@g.us)
-    if (key.remoteJid.endsWith('@g.us')) {
-      this.logger.debug(`Mensagem de grupo ignorada: ${key.remoteJid}`);
+    // Ignora o que não é conversa com um contato: grupos, status (stories),
+    // listas de transmissão e canais (B-81 — antes só grupo era filtrado)
+    if (isNonContactJid(key.remoteJid)) {
+      this.logger.debug(`Mensagem fora de conversa com contato ignorada: ${key.remoteJid}`);
       return;
     }
 
@@ -183,6 +172,23 @@ export class WebhookService {
     }
 
     const { companyId, id: whatsappConnectionId, departmentId } = connection;
+
+    // B-81 (M-02): classifica ANTES de criar contato/conversa — reação,
+    // edição e mensagens de controle não são mensagem nova. Antes, uma reação
+    // numa conversa encerrada abria conversa nova, com saudação e menu.
+    const classified = classifyMessage(message);
+    if (classified.kind === 'ignore') {
+      this.logger.debug(`Mensagem ${key.id} ignorada (${classified.reason})`);
+      return;
+    }
+    if (classified.kind === 'reaction') {
+      await this.applyReaction(companyId, whatsappConnectionId, classified.targetId, classified.text, key.fromMe);
+      return;
+    }
+    if (classified.kind === 'edit') {
+      await this.applyEdit(companyId, whatsappConnectionId, classified.targetId, classified.content);
+      return;
+    }
 
     // Upsert do contato. pushName é o nome de quem ENVIOU a mensagem:
     // em mensagens fromMe ele é o dono da conexão, não o contato —
@@ -219,8 +225,8 @@ export class WebhookService {
         departmentId,
       );
 
-    // Determina tipo e conteúdo da mensagem
-    const { type, content, mimeType, fileName } = this.extractMessageContent(message);
+    // Tipo e conteúdo, já desembrulhados (B-81)
+    const { type, content, mimeType, fileName } = classified;
 
     // Determina se é mensagem do agente (fromMe) ou do cliente
     const senderType = key.fromMe ? SenderType.AGENT : SenderType.CLIENT;
@@ -521,84 +527,65 @@ export class WebhookService {
     }
   }
 
-  // ── Extrai tipo e conteúdo de um objeto de mensagem da Evolution ──────────
-  // B-50: a URL de mídia que vem no payload (`*.url`) não é extraída de
-  // propósito — a mídia só é obtida via Evolution (getBase64FromMediaMessage),
-  // nunca baixando um endereço que veio no conteúdo da mensagem.
-  private extractMessageContent(message?: EvolutionMessageContent): {
-    type: MessageType;
-    content: string;
-    mimeType?: string;
-    fileName?: string;
-  } {
-    if (!message) return { type: MessageType.TEXT, content: '' };
-
-    if (message.conversation) {
-      return { type: MessageType.TEXT, content: message.conversation };
+  // ── Reação a uma mensagem existente (B-81) ────────────────────────────────
+  // Fica na mensagem original (metadata.reaction); texto vazio = reação
+  // removida. Mensagem de origem desconhecida (anterior ao AtendeHub): ignora.
+  private async applyReaction(
+    companyId: string,
+    whatsappConnectionId: string,
+    targetExternalId: string,
+    text: string,
+    fromMe: boolean,
+  ): Promise<void> {
+    const target = await this.prisma.message.findUnique({
+      where: { whatsappConnectionId_externalId: { whatsappConnectionId, externalId: targetExternalId } },
+      select: { id: true, conversationId: true, metadata: true },
+    });
+    if (!target) {
+      this.logger.debug(`Reação a mensagem desconhecida (${targetExternalId}) ignorada`);
+      return;
     }
 
-    if (message.extendedTextMessage?.text) {
-      return { type: MessageType.TEXT, content: message.extendedTextMessage.text };
+    const { reaction: _old, ...metadata } = (target.metadata ?? {}) as Prisma.JsonObject;
+    await this.prisma.message.update({
+      where: { id: target.id },
+      data: { metadata: text ? { ...metadata, reaction: { text, fromMe } } : metadata },
+    });
+    await this.eventsService.emitMessageUpdated({
+      companyId,
+      conversationId: target.conversationId,
+      messageId: target.id,
+      reaction: text || null,
+    });
+  }
+
+  // ── Edição de uma mensagem existente (B-81) ───────────────────────────────
+  private async applyEdit(
+    companyId: string,
+    whatsappConnectionId: string,
+    targetExternalId: string,
+    content: string,
+  ): Promise<void> {
+    const target = await this.prisma.message.findUnique({
+      where: { whatsappConnectionId_externalId: { whatsappConnectionId, externalId: targetExternalId } },
+      select: { id: true, conversationId: true },
+    });
+    if (!target) {
+      this.logger.debug(`Edição de mensagem desconhecida (${targetExternalId}) ignorada`);
+      return;
     }
 
-    if (message.imageMessage) {
-      return {
-        type: MessageType.IMAGE,
-        content: message.imageMessage.caption ?? '',
-        mimeType: message.imageMessage.mimetype,
-      };
-    }
-
-    if (message.videoMessage) {
-      return {
-        type: MessageType.VIDEO,
-        content: message.videoMessage.caption ?? '',
-        mimeType: message.videoMessage.mimetype,
-      };
-    }
-
-    if (message.audioMessage) {
-      return {
-        type: MessageType.AUDIO,
-        content: '',
-        mimeType: message.audioMessage.mimetype,
-      };
-    }
-
-    if (message.documentMessage) {
-      return {
-        type: MessageType.DOCUMENT,
-        content: message.documentMessage.title ?? '',
-        mimeType: message.documentMessage.mimetype,
-        fileName: message.documentMessage.title,
-      };
-    }
-
-    if (message.stickerMessage) {
-      return {
-        type: MessageType.STICKER,
-        content: '',
-        mimeType: 'image/webp',
-      };
-    }
-
-    if (message.locationMessage) {
-      const { degreesLatitude, degreesLongitude } = message.locationMessage;
-      return {
-        type: MessageType.LOCATION,
-        content: `${degreesLatitude},${degreesLongitude}`,
-      };
-    }
-
-    if (message.contactMessage) {
-      return { type: MessageType.CONTACT_CARD, content: message.contactMessage.displayName };
-    }
-
-    if (message.reactionMessage) {
-      return { type: MessageType.REACTION, content: message.reactionMessage.text };
-    }
-
-    return { type: MessageType.TEXT, content: '' };
+    await this.prisma.message.update({
+      where: { id: target.id },
+      data: { content, isEdited: true },
+    });
+    await this.eventsService.emitMessageUpdated({
+      companyId,
+      conversationId: target.conversationId,
+      messageId: target.id,
+      content,
+      isEdited: true,
+    });
   }
 
   // ── Extrai o identificador (número ou id opaco) de um JID do WhatsApp ─────

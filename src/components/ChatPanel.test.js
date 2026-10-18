@@ -201,3 +201,25 @@ describe('ChatPanel — anexo recebido não salvo (B-77)', () => {
     expect(screen.getByText(/Documento/)).toBeInTheDocument();
   });
 });
+
+// B-81 (M-02): reação e edição recebidas pelo WhatsApp
+describe('ChatPanel — reação e edição (B-81)', () => {
+  it('mostra a reação no balão e a marca de editada', () => {
+    renderChatPanel({
+      conversation: {
+        ...baseConversation,
+        messages: [{ id: 'm1', type: 'customer', text: 'corrigido', time: '10:00', reaction: '👍', isEdited: true }],
+      },
+    });
+
+    expect(screen.getByLabelText('Reação: 👍')).toBeInTheDocument();
+    expect(screen.getByText(/editada/)).toBeInTheDocument();
+  });
+
+  it('sem reação nem edição, nada a mais aparece', () => {
+    renderChatPanel();
+
+    expect(screen.queryByLabelText(/Reação/)).toBeNull();
+    expect(screen.queryByText(/editada/)).toBeNull();
+  });
+});

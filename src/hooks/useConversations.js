@@ -40,6 +40,9 @@ export function toUiMessage(message) {
     // B-77: motivo de o anexo recebido não ter sido salvo (tipo não aceito,
     // download esgotado) — o balão mostra o aviso no lugar do arquivo
     mediaError: message.metadata?.mediaError ?? null,
+    // B-81: reação e edição recebidas pelo WhatsApp
+    reaction: message.metadata?.reaction?.text ?? null,
+    isEdited: Boolean(message.isEdited),
   };
 }
 
@@ -417,19 +420,26 @@ export function useConversations(currentUserId) {
     // termina DEPOIS do message.new; este evento troca o placeholder pela
     // mídia real sem precisar de refresh
     const handleMessageUpdated = (payload) => {
-      const { conversationId, messageId, attachment, mediaError } = payload ?? {};
+      const { conversationId, messageId, attachment, mediaError, content, isEdited, reaction } = payload ?? {};
       if (!conversationId || !messageId) return;
 
-      // B-77: o anexo não pôde ser salvo — troca o placeholder pelo aviso
+      // B-77: anexo não salvo (mediaError); B-81: edição (content/isEdited) e
+      // reação (null = removida) recebidas — atualiza só os campos que vieram
       if (!attachment?.url) {
-        if (!mediaError) return;
+        const changes = {
+          ...(mediaError && { mediaError }),
+          ...(content !== undefined && { text: content }),
+          ...(isEdited !== undefined && { isEdited }),
+          ...(reaction !== undefined && { reaction }),
+        };
+        if (Object.keys(changes).length === 0) return;
         setConversations((prev) =>
           prev.map((conv) =>
             conv.id !== conversationId
               ? conv
               : {
                   ...conv,
-                  messages: conv.messages?.map((m) => (m.id === messageId ? { ...m, mediaError } : m)),
+                  messages: conv.messages?.map((m) => (m.id === messageId ? { ...m, ...changes } : m)),
                 },
           ),
         );

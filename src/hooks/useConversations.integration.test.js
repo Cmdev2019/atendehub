@@ -439,6 +439,45 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  // B-81 (M-02): edição e reação chegam como message.updated sem anexo
+  it('message.updated com edição e reação atualiza o texto, a marca e a reação', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+    const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
+    act(() => {
+      handlerOf('message.new')({
+        conversationId: '1',
+        companyId: 'company-1',
+        message: { id: 'msg-e', senderType: 'CLIENT', content: 'errado', type: 'TEXT', sentAt: '2026-10-18T10:00:00.000Z' },
+      });
+    });
+    act(() => {
+      handlerOf('message.updated')({ conversationId: '1', messageId: 'msg-e', content: 'certo', isEdited: true });
+    });
+    act(() => {
+      handlerOf('message.updated')({ conversationId: '1', messageId: 'msg-e', reaction: '👍' });
+    });
+
+    await waitFor(() => {
+      const msg = result.current.activeConversation.messages.find((m) => m.id === 'msg-e');
+      expect(msg.text).toBe('certo');
+      expect(msg.isEdited).toBe(true);
+      expect(msg.reaction).toBe('👍');
+    });
+
+    act(() => {
+      handlerOf('message.updated')({ conversationId: '1', messageId: 'msg-e', reaction: null });
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversation.messages.find((m) => m.id === 'msg-e').reaction).toBeNull();
+    });
+  });
+
   it('não duplica mensagem recebida via message.new (dedupe por id)', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [{ id: 'msg-1', type: 'customer', text: 'Oi', time: '10:00' }] }],

@@ -133,6 +133,10 @@ export class EventsService {
     messageId: string;
     attachment?: { id: string; url: string; mimeType: string; fileName?: string | null };
     mediaError?: string;
+    // B-81: edição (texto novo) e reação (null = removida) recebidas
+    content?: string;
+    isEdited?: boolean;
+    reaction?: string | null;
   }): Promise<void> {
     const { companyId, conversationId } = payload;
     const signedPayload = await this.storage.presignDeep(payload);
@@ -140,7 +144,7 @@ export class EventsService {
     await this.emitToConversation(companyId, conversationId, 'message.updated', signedPayload);
 
     this.logger.debug(
-      `message.updated → msg ${payload.messageId} (${payload.attachment ? 'anexo pronto' : `sem anexo: ${payload.mediaError}`})`,
+      `message.updated → msg ${payload.messageId}`,
     );
   }
 
