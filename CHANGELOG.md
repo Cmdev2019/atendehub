@@ -13,6 +13,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 ## [Não lançado]
 
 ### Adicionado
+- **B-63 (2026-10-17):** testes end-to-end na CI. Job novo `api-e2e` com Postgres, Redis e MinIO reais
+  roda todos os e2e da API a cada PR — antes só rodavam na máquina de quem lembrava. Novo e2e de
+  autorização HTTP com a aplicação inteira (papéis, dono do recurso, isolamento entre empresas e escopo
+  por departamento). Cobertura mínima dos testes unitários no job `api` (catraca logo abaixo da atual).
 - Estrutura de documentação em 41 áreas numeradas, cada uma com README declarando objetivo,
   responsabilidade, conteúdo esperado, quem utiliza, quando utilizar e quem pode alterar
 - `docs/00-Governanca/` com plano de reestruturação, convenção de nomenclatura e boas práticas

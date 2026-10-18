@@ -50,7 +50,7 @@ ASNF → ATM. Cada uma referencia a matriz de rastreabilidade
 | [0015](ADR-0015-imagem-docker-multi-stage-sem-hardening-de-runtime.md) | Docker multi-stage; hardening de runtime pendente | Implementada (build e runtime — B-44, 2026-10-17) | Docker | AGR §10 | Revisar se a base da imagem virar problema medido |
 | [0016](ADR-0016-nginx-como-borda-sem-hardening-proprio.md) | Nginx como borda única; hardening pendente | Implementada (topologia) / **Proposta** (hardening) | Nginx, WebSocket | AGR §6/§9 | Obrigatória ao implementar **B-43** |
 | [0017](ADR-0017-websocket-autenticado-por-handshake-jwt.md) | WebSocket por handshake JWT; paridade de revogação pendente | Implementada (handshake) / **Proposta** (paridade) | WebSocket, Redis | AGR §9.1 | Recomendada, independente de outro item |
-| [0018](ADR-0018-estrategia-de-testes-unitario-mockado-e2e-dirigido.md) | Testes: unitário mockado, e2e dirigido, gate pendente | Implementada (o que existe) / **Proposta** (gate) | Todos (via CI) | ABR §10, AGR §10.1 | Antes ou junto de **B-40** |
+| [0018](ADR-0018-estrategia-de-testes-unitario-mockado-e2e-dirigido.md) | Testes: unitário mockado, e2e dirigido, gate pendente | Implementada (gate de cobertura e e2e na CI — B-63, 2026-10-17) | Todos (via CI) | ABR §10, AGR §10.1 | Subir o piso quando a cobertura subir |
 
 ## ADRs previstas (v1.1 em diante — ainda pendentes)
 

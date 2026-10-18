@@ -39,5 +39,81 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Tests
-        run: npm test
+      # M-22/B-63: com piso de cobertura (coverageThreshold em jest.config.js)
+      - name: Tests (com cobertura mínima)
+        run: npm run test:cov -- --coverageReporters=text-summary
+
+  # M-22/B-63: os e2e (Postgres, Redis e MinIO reais) nunca rodavam na CI —
+  # só na máquina de quem lembrava de rodar. Inclui a autorização HTTP com o
+  # AppModule inteiro (papéis, dono do recurso, empresa e escopo), que cobre
+  # controllers e guards, antes com 0% de cobertura.
+  api-e2e:
+    name: api-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atendehub
+          POSTGRES_PASSWORD: ci_postgres
+          POSTGRES_DB: atendehub
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U atendehub"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      # Sem senha: services do Actions não aceitam o `--requirepass` do comando
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      # A imagem oficial minio/minio saiu do Docker Hub (descontinuação do MinIO
+      # Community — M-16 da auditoria). bitnamilegacy/minio:2025.6.13 é o mesmo
+      # build da versão usada no projeto (RELEASE.2025-06-13T11-33-47Z) e já
+      # sobe o servidor sozinha.
+      minio:
+        image: bitnamilegacy/minio:2025.6.13
+        env:
+          MINIO_ROOT_USER: ci_minio
+          MINIO_ROOT_PASSWORD: ci_minio_secret
+        ports: ['9000:9000']
+        options: >-
+          --health-cmd "curl -sf http://localhost:9000/minio/health/live"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://atendehub:ci_postgres@localhost:5432/atendehub?schema=atendehub
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+      MINIO_ENDPOINT: http://localhost:9000
+      MINIO_ROOT_USER: ci_minio
+      MINIO_ROOT_PASSWORD: ci_minio_secret
+      MINIO_BUCKET: atendehub-media
+      MINIO_REGION: us-east-1
+      JWT_SECRET: ci-jwt-secret-com-mais-de-32-caracteres-para-o-e2e
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret-diferente-com-mais-de-32-caracteres
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      EVOLUTION_API_URL: http://localhost:8080
+      EVOLUTION_API_KEY: ci-evolution-key
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - run: npm ci
+
+      - name: Migrations
+        run: npx prisma migrate deploy
+
+      - name: E2E
+        run: npm run test:e2e
