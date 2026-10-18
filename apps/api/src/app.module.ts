@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
+import { TenantContextInterceptor } from './shared/tenant/tenant-context.interceptor';
 import { RedisModule } from './shared/redis/redis.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { RateLimitModule } from './shared/rate-limit/rate-limit.module';
@@ -113,6 +114,12 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
     {
       provide: APP_INTERCEPTOR,
       useClass: MediaPresignInterceptor,
+    },
+    // B-83 (M-19 / B-41): empresa do usuário autenticado no contexto da
+    // requisição — o Prisma consulta com o papel sujeito ao RLS.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantContextInterceptor,
     },
   ],
 })

@@ -17,6 +17,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuthService } from '../auth/auth.service';
+import { runAsSystem } from '../../shared/tenant/tenant-context';
 import { EventsService } from '../events/events.service';
 
 // Gera senha temporária que já satisfaz a política de senha do produto
@@ -137,9 +138,14 @@ export class UserService {
     // E-mail é único GLOBALMENTE (B-20), não só na empresa — o login busca
     // por e-mail sem companyId, então a checagem precisa ser global também,
     // senão a violação da constraint no create() viraria um 500 cru.
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
-    });
+    // B-83: runAsSystem — com o RLS, a consulta na empresa do requisitante não
+    // enxergaria o e-mail cadastrado em outra.
+    const existing = await runAsSystem(() =>
+      this.prisma.user.findUnique({
+        where: { email: dto.email.toLowerCase().trim() },
+        select: { id: true },
+      }),
+    );
 
     if (existing) {
       throw new ConflictException('Já existe um usuário com este e-mail');

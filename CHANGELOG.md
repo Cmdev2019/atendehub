@@ -60,6 +60,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-83 (2026-10-18, M-19 / B-41):** o banco passa a impedir, sozinho, que uma requisição de uma empresa
+  leia ou altere dados de outra, mesmo que alguma consulta da API esqueça o filtro por empresa
+  (Row-Level Security do Postgres). O script de inicialização do banco também deixa de exigir que o
+  usuário do Postgres se chame `atendehub`.
 - **B-74 (2026-10-18, M-09):** o tempo real (WebSocket) segue as mesmas regras de sessão do resto da
   API. Logout, troca ou reset de senha, desativação e mudança de papel derrubam as conexões abertas, e
   um token revogado não conecta mais. No painel, a reconexão não desiste mais depois de 5 tentativas,

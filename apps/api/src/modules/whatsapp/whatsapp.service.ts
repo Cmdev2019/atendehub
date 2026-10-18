@@ -11,6 +11,7 @@ import { EvolutionService } from './evolution.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { EventsService } from '../events/events.service';
+import { runAsSystem } from '../../shared/tenant/tenant-context';
 
 @Injectable()
 export class WhatsappService {
@@ -94,9 +95,11 @@ export class WhatsappService {
     const sessionName = `${slug}-${safeName}-${Date.now()}`;
 
     // Verifica se já existe sessão com esse nome
-    const existing = await this.prisma.whatsAppConnection.findUnique({
-      where: { sessionName },
-    });
+    // B-83: sessionName é único no sistema todo (é o nome da instância na
+    // Evolution) — runAsSystem para enxergar o de outras empresas.
+    const existing = await runAsSystem(() =>
+      this.prisma.whatsAppConnection.findUnique({ where: { sessionName }, select: { id: true } }),
+    );
     if (existing) throw new ConflictException('Já existe uma conexão com esse nome');
 
     // Cria instância na Evolution API — os eventos chegam pelo webhook global

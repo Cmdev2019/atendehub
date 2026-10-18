@@ -1,12 +1,12 @@
-# ADR-0010 — Row-Level Security como rede de isolamento multi-tenant (proposta, relacionada a B-41)
+# ADR-0010 — Row-Level Security como rede de isolamento multi-tenant (implementada no B-83)
 
-- **Status:** Proposta
+- **Status:** Aceita e implementada (v1.1, B-83 — 2026-10-18)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-18
 - **Autor:** Engenharia (formalização do item v1.0 já listado em `INDICE.md` desde 2026-08-01)
 - **Revisores:** —
-- **Versão:** 1.0
-- **Decisores:** Architecture Review Board (decisão ainda não aprovada — ver Status)
+- **Versão:** 1.1
+- **Decisores:** Responsável pelo projeto (plano da auditoria de 2026-10-16, Fase 2, M-19)
 - **Contexto técnico:** `infra/postgres/init.sql`, `apps/api/src/shared/prisma/prisma.service.ts`,
   as 14 tabelas do schema com `companyId`
 
@@ -14,6 +14,47 @@
 > documenta a direção já apontada por 3 revisões anteriores (ABR, AGR, AER), não uma decisão
 > tomada e implementada. Marcada assim deliberadamente, por regra desta série de revisões
 > ("nunca criar decisões fictícias").
+
+## v1.1 — como ficou implementado (B-83, 2026-10-18)
+
+**Decisão:** Alternativa A + B, como proposto, com estes detalhes:
+
+- **Papel `atendehub_tenant`** (migration `b83_rls_tenant_isolation`): sem login, sem
+  `BYPASSRLS`, com acesso às tabelas do schema da aplicação. Política `tenant_isolation`
+  (`USING` e `WITH CHECK`) `"companyId" = current_company_id()` nas 11 tabelas com `companyId`,
+  e `"id" = current_company_id()` em `companies`. **Por que um papel:** o usuário da aplicação é
+  dono das tabelas e superusuário no container do Postgres, e para ele o RLS não vale, nem com
+  `FORCE ROW LEVEL SECURITY`. Assumir o papel com `SET LOCAL ROLE` mantém um único
+  `DATABASE_URL`.
+- **Extensão do Prisma** (`tenant-rls.extension.ts`): com empresa no contexto, cada operação vira
+  uma transação curta, `set_config('app.current_company_id', …, true)` + `SET LOCAL ROLE
+  atendehub_tenant` + a consulta. Os dois valem só dentro da transação, e a conexão volta limpa
+  para o pool (há teste para isso).
+- **Contexto:** `TenantContextInterceptor` (global) grava o `companyId` do usuário autenticado num
+  `AsyncLocalStorage` próprio (`shared/tenant/tenant-context.ts`). Interceptors rodam depois
+  dos guards, então o `JwtStrategy` consulta sem contexto (o usuário ainda não é conhecido).
+- **Escape explícito:** `runAsSystem(fn)`, para checagens que precisam ver todas as empresas de
+  propósito (e-mail único, `sessionName` único). É fácil de auditar com uma busca por
+  `runAsSystem`.
+
+**Limites conhecidos (aceitos):**
+
+- Sem empresa no contexto, nada muda: login, cadastro, webhook, jobs de fila e o handshake do
+  WebSocket seguem dependendo dos filtros explícitos (que existem e têm testes). A rede cobre o
+  lugar onde um filtro esquecido vazaria dado: a requisição autenticada.
+- Operações dentro de `$transaction` explícito e SQL cru (`$queryRaw`/`$executeRaw`) não recebem o
+  papel, porque não dá para injetar o `SET` na transação de quem chamou. Hoje são três
+  transações (cadastro de empresa, encerramento de sessões, opções do auto-atendimento) e
+  consultas de relatório com filtro explícito.
+- Custo: uma transação de 3 comandos por operação do Prisma em requisição autenticada.
+- Tabelas sem `companyId` (mensagens, anexos, notas, opções de menu, refresh tokens) ficam sem
+  política. O acesso a elas parte de uma conversa ou de um usuário, que já estão protegidos.
+
+**Validação:** e2e `rls-tenant-isolation` contra o Postgres real. Com o contexto da empresa A, uma
+consulta sem filtro por empresa não enxerga a linha de B em nenhuma das 12 tabelas; `updateMany`
+e `deleteMany` sobre B afetam 0 linhas; criar em nome de B é recusado pela política. Por HTTP,
+uma rota de teste que "esquece" o `companyId` (com e sem `await`) devolve só A. Sem contexto,
+`runAsSystem` e o retorno ao pool enxergam tudo.
 
 ## Contexto
 
