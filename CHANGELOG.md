@@ -12,6 +12,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
+_Nada ainda._
+
+## [0.1.0] - 2026-10-18
+
+Primeira versão marcada (tag `v0.1.0`). Fecha as Fases 0, 1 e 2 do plano da auditoria de
+2026-10-16 (B-50 a B-90) e tudo o que veio antes. Itens em espera, que dependem de produção:
+B-43, B-64, verificação de e-mail e CAPTCHA (B-85).
+
 ### Adicionado
 - **B-63 (2026-10-17):** testes end-to-end na CI. Job novo `api-e2e` com Postgres, Redis e MinIO reais
   roda todos os e2e da API a cada PR — antes só rodavam na máquina de quem lembrava. Novo e2e de
@@ -27,6 +35,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-90 (2026-10-18, M-24):** o `ROADMAP_ESTABILIZACAO.md` virou um painel curto (de 390 KB para 18 KB); o
+  detalhe de cada item, as decisões e o changelog foram para `docs/03-Roadmap/ROADMAP-HISTORICO.md`, sem perda.
 - **B-89 (2026-10-18, M-24):** documentação revisada contra o código — números do projeto gerados por
   `scripts/project-stats.mjs` em vez de fixados à mão, README, SECURITY, RUNBOOK e índice de ADRs atualizados.
 - **B-88 (2026-10-18, M-25):** o contrato da API documenta a fila de falhas do webhook (listar, reprocessar,
@@ -297,5 +307,5 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 Categorias: **Adicionado** · **Alterado** · **Descontinuado** · **Removido** · **Corrigido** ·
 **Segurança**
 
-A partir da primeira tag, este arquivo é gerado por automação a partir dos commits (Conventional
-Commits) e revisado manualmente antes da publicação.
+Cada versão nasce da seção `[Não lançado]`, renomeada para `[X.Y.Z] - data` no mesmo PR que fecha
+o conjunto de itens; o `master` recebe então a tag anotada `vX.Y.Z` (ver `CONTRIBUTING.md`).

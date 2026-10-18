@@ -5,11 +5,13 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
 
 ## 📌 Fontes de verdade (leia antes de trabalhar)
 
-1. **`ROADMAP_ESTABILIZACAO.md`** (raiz) — documento vivo canônico do projeto
-   como um todo: status por item, decisões e changelog. **Regras:** todo
-   problema novo vira item com ID antes de ser corrigido; todo item concluído
-   exige evidência no changelog; atualizar painel e "Próxima ação" ao fim de
-   cada sessão.
+1. **`ROADMAP_ESTABILIZACAO.md`** (raiz) — painel curto e canônico: onde estamos,
+   próximos passos, itens abertos e o backlog em uma linha por item. O detalhe de
+   cada item, as decisões e o changelog ficam em
+   `docs/03-Roadmap/ROADMAP-HISTORICO.md` (B-90). **Regras:** todo problema novo
+   vira item com ID antes de ser corrigido (linha curta no painel + linha
+   detalhada no histórico); todo item concluído exige evidência no changelog do
+   histórico; atualizar "Onde estamos" e "Próximos passos" ao fim de cada sessão.
 2. **`ROADMAP_BACKEND.md`** (raiz) — documento vivo com foco exclusivo em
    `apps/api`, Prisma/PostgreSQL e filas (Bull/Redis). Criado em 2026-07-21:
    decisão de fechar todo o backend e banco antes de retomar o frontend.
