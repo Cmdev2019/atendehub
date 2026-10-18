@@ -172,6 +172,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-88 | M-25 | API_CONTRACT.md desatualizado em pontos operacionais | ✅ 2026-10-18 |
 | B-89 | M-24 | Divergências confirmadas na documentação (seção 10.2 da auditoria) | ✅ 2026-10-18 |
 | B-90 | M-24 | Roadmap ilegível (390 KB, linhas de 8.700 caracteres): painel curto aqui, detalhe e histórico em docs/03-Roadmap/ROADMAP-HISTORICO.md | ✅ 2026-10-18 |
+| B-91 | L-02 | Raiz do repositório limpa: relatório de inclusão de padrões movido para docs/99-Arquivo (os PDFs já tinham saído no B-89) | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 

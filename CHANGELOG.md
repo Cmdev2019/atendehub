@@ -12,7 +12,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
-_Nada ainda._
+### Alterado
+- **B-91 (2026-10-18, L-02):** relatório de inclusão de padrões movido da raiz para `docs/99-Arquivo/`.
 
 ## [0.1.0] - 2026-10-18
 
