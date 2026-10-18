@@ -7,8 +7,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
+      // B-101 (L-15): sem o `query` como evento — nada o escutava e o Prisma
+      // montava o evento a cada consulta à toa
       log: [
-        { emit: 'event', level: 'query' },
         { emit: 'stdout', level: 'error' },
         { emit: 'stdout', level: 'warn' },
       ],

@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bull';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { TenantContextInterceptor } from './shared/tenant/tenant-context.interceptor';
+import { RetentionModule } from './modules/retention/retention.module';
 import { RedisModule } from './shared/redis/redis.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { RateLimitModule } from './shared/rate-limit/rate-limit.module';
@@ -101,6 +102,8 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
     WebhookModule,
     // ── SLA ──────────────────────────────────────────────────────────────────
     SlaModule,
+    // B-101: purga diária de dados operacionais
+    RetentionModule,
   ],
   providers: [
     // Aplica rate limiting globalmente. Sem isso, o ThrottlerModule.forRoot()
