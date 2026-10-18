@@ -27,6 +27,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-64 (2026-10-18):** mídia de produção no **Cloudflare R2**. A imagem do MinIO usada no projeto saiu
+  do Docker Hub e do quay.io, e um servidor novo não subia a stack. O MinIO fica só em desenvolvimento e
+  na CI (`bitnamilegacy/minio`, mesmo build, fixado por digest, no `docker-compose.override.yml`). A API
+  assina as URLs com o host do storage e troca só a origem pela do domínio de mídia; o nginx repassa
+  `media.<domínio>` ao R2. A CI passa a conferir toda semana se as imagens fixadas existem. Impacto no
+  deploy: conta e bucket no R2, token só de objetos e a variável nova `MEDIA_STORAGE_HOST` (ver RUNBOOK);
+  em dev, o volume do MinIO criado pela imagem antiga precisa de um ajuste de dono (RUNBOOK).
 - **B-57 (2026-10-17):** Node.js 20 (fora de suporte desde 30/04/2026) substituído pelo **Node.js 24
   LTS** nas imagens Docker da API e do nginx, na CI e no campo `engines` (`>=24`); actions
   `checkout`/`setup-node` da v4 (que já avisavam da depreciação do Node 20 nos runners) para a v7.

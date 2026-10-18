@@ -2,10 +2,10 @@
 
 - **Status:** Validada
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-10-17
+- **Última revisão:** 2026-10-18
 - **Autor:** Engenharia (formalização retroativa — decisão já tomada e implementada em B-38)
 - **Revisores:** —
-- **Versão:** 1.1
+- **Versão:** 1.2
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/src/shared/storage/storage.service.ts`, `MediaPresignInterceptor`
 
@@ -107,11 +107,16 @@ expirar, não é proteção absoluta, é redução de exposição de "permanente
 ### Neutras / a observar
 - Avatar de perfil do WhatsApp (servido pela própria Evolution/Meta) passa direto, sem
   modificação — não é um objeto do nosso bucket (`storage.service.ts:230`).
+- Desde a v1.2 (B-64), produção usa o Cloudflare R2 e não há MinIO no servidor. Toda a mídia
+  passa pelo nginx (`media.<domínio>` → R2): consome banda do servidor, em troca de o host de
+  mídia ser nosso — CSP e URLs não mudam se o provedor mudar.
+- A Evolution não pode ligar o S3 dela no bucket da API: no boot ela aplica leitura anônima no
+  bucket, a menos que `S3_SKIP_POLICY=true` (conferido no código da v2.3.4, B-64).
 
 ## Componentes Afetados
 
 - [ ] Controllers · [x] Services (`StorageService`) · [ ] Repositories · [ ] Prisma · [ ] Redis
-- [ ] Bull · [x] Storage · [ ] Docker · [ ] Nginx · [x] WebSocket (`EventsService` usa
+- [ ] Bull · [x] Storage · [x] Docker · [x] Nginx (bloco `media.`, B-59/B-64) · [x] WebSocket (`EventsService` usa
   `presignDeep`) · [ ] Banco · [x] Outros: `MediaPresignInterceptor` (interceptor global)
 
 ## Relação com Governança
@@ -153,6 +158,7 @@ reconferência de `companyId` (sugestão D da AGR §16) — nesse momento, atual
 |---|---|---|
 | 2026-08-05 | Criação — formaliza retroativamente a decisão já implementada em B-38 | 1.0 |
 | 2026-10-17 | Correção do caminho de produção (C-07 da auditoria de 2026-10-16, B-59). A validação original só cobria o desenvolvimento: as URLs eram assinadas com o host interno do MinIO (`http://minio:9000` em produção), que o navegador não resolve — e trocar o host depois de assinar invalida a assinatura V4. Decisão (responsável do projeto, 2026-10-17): manter URL assinada, servida por um subdomínio próprio (`media.<domínio>`) no nginx, repassando ao MinIO com o `Host` preservado — preferida à alternativa de rota autenticada na API (sem domínio extra, mas com a mídia passando pelo Node e exigindo token na URL, já que `<img>`/`<audio>` não enviam o cabeçalho `Authorization`). Implementação: variável `MINIO_PUBLIC_ENDPOINT` (obrigatória em https em produção) usada só por um cliente de assinatura com região fixa; host de mídia só com GET/HEAD no caminho do bucket e CSP `sandbox` nas respostas; CSP do app restrita a esse host. Validado ponta a ponta com MinIO real, a imagem do nginx e o `StorageService` compilado (ver B-59 no roadmap). | 1.1 |
+| 2026-10-18 | Storage de produção passa a ser o **Cloudflare R2** (B-64, decisão do responsável do projeto em 2026-10-17): a imagem do MinIO usada no projeto saiu do Docker Hub e do quay.io, e o MinIO Community não publica mais imagens. O MinIO fica só em desenvolvimento e na CI (`bitnamilegacy/minio:2025.6.13`, mesmo build, fixado por digest). Muda o jeito de assinar: o R2 só aceita URL assinada no host S3 da conta (`<conta>.r2.cloudflarestorage.com`), nunca em domínio próprio — então a API assina com o host do storage (um cliente só; o cliente de assinatura do B-59 saiu) e troca só a origem da URL pela do `MINIO_PUBLIC_ENDPOINT`, e o nginx repassa ao R2 com o `Host` do R2, TLS verificado e upstream com `resolve`. A frase da v1.1 "trocar o host depois de assinar invalida a assinatura" vale só se o storage receber o host trocado — aqui ele recebe o original. O host do R2 é uma variável só (`MEDIA_STORAGE_HOST`) para API e nginx, e o nginx recusa subir sem ela. O R2 não implementa bucket policy: com `MINIO_MANAGE_BUCKET=false` a API só confere que o bucket existe, e a privacidade é a do próprio R2 (sem acesso público ligado). Validado com o `StorageService` compilado, o nginx com esta configuração e um storage S3 com TLS no papel do R2: 16/16 verificações, incluindo assinatura adulterada, URL expirada, escrita pelo domínio de mídia e o controle "Host do domínio de mídia chegando ao storage" (403). Pendência registrada no mapa de dados pessoais: o R2 não tem região no Brasil. | 1.2 |
 
 ## Referências
 

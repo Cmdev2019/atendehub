@@ -30,7 +30,7 @@ DevOps. Rotina nova só entra em vigor após uma restauração de teste bem-suce
 
 ## Estado atual
 
-O `RUNBOOK.md` já documenta backup/restore de Postgres e MinIO, com restauração validada localmente. Automação ainda não existe.
+O `RUNBOOK.md` já documenta backup/restore de Postgres (restauração validada localmente) e do MinIO de desenvolvimento. Em produção a mídia fica no Cloudflare R2 (B-64): a cópia do bucket está descrita, mas ainda não foi validada. Automação ainda não existe.
 
 ---
 

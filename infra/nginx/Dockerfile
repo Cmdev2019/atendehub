@@ -37,5 +37,12 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY infra/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY infra/nginx/security-headers.conf /etc/nginx/security-headers.conf
+# B-64: upstream do storage de mídia, gerado no boot a partir do .env
+# (MEDIA_STORAGE_HOST). O filtro deixa o envsubst trocar só as variáveis
+# MEDIA_STORAGE_* — $host e afins são variáveis do próprio nginx. O script
+# 15-* recusa subir sem um host válido (sem ele, a mídia daria 502 calada).
+COPY infra/nginx/templates /etc/nginx/templates
+COPY --chmod=755 infra/nginx/entrypoint/15-media-storage-host.sh /docker-entrypoint.d/
+ENV NGINX_ENVSUBST_FILTER=^MEDIA_STORAGE_
 
 EXPOSE 80 443

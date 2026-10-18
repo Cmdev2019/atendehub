@@ -73,9 +73,10 @@ jobs:
       # A imagem oficial minio/minio saiu do Docker Hub (descontinuação do MinIO
       # Community — M-16 da auditoria). bitnamilegacy/minio:2025.6.13 é o mesmo
       # build da versão usada no projeto (RELEASE.2025-06-13T11-33-47Z) e já
-      # sobe o servidor sozinha.
+      # sobe o servidor sozinha. Mesmo digest do docker-compose.override.yml
+      # (B-64) — produção não usa MinIO.
       minio:
-        image: bitnamilegacy/minio:2025.6.13
+        image: bitnamilegacy/minio:2025.6.13@sha256:628d6a09902e59001eadc82590735eda210bf5d5a68cd72dfbb6894b3c1f97eb
         env:
           MINIO_ROOT_USER: ci_minio
           MINIO_ROOT_PASSWORD: ci_minio_secret

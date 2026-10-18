@@ -62,13 +62,19 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private client: Minio.Client;
-  // C-07/B-59: cliente usado SÓ para assinar URLs de download, apontado para
-  // o endereço público da mídia (MINIO_PUBLIC_ENDPOINT, ex.
-  // https://media.atendehub.com). A assinatura V4 inclui o host: assinar com
-  // o endpoint interno (http://minio:9000) gerava URLs que o navegador não
-  // resolve, e trocar o host depois de assinar invalida a assinatura. Sem a
-  // variável (dev), é o próprio `client`.
-  private signer: Minio.Client;
+  // C-07/B-59, revisto no B-64: a URL é assinada pelo próprio `client`, com
+  // o host do storage (MINIO_ENDPOINT) — é ele quem confere a assinatura V4,
+  // que inclui o host. Com MINIO_PUBLIC_ENDPOINT (produção:
+  // https://media.<domínio>), só a origem da URL já assinada é trocada pela
+  // do domínio de mídia, e o nginx repassa a requisição ao storage com o
+  // Host original (bloco `media.` do nginx.conf). No Cloudflare R2 é o único
+  // jeito: URL assinada não funciona com domínio próprio, só com
+  // <conta>.r2.cloudflarestorage.com. Sem a variável (dev), a URL sai como
+  // foi assinada.
+  private publicOrigin?: string;
+  // B-64: false quando o bucket vive num storage gerenciado (R2 em
+  // produção), criado e mantido privado no painel do provedor.
+  private manageBucket: boolean;
   private bucket: string;
   // Endpoint interno usado só para compor/decompor a identidade do objeto
   // (`${internalEndpoint}/${bucket}/${key}`, formato mantido por
@@ -101,8 +107,8 @@ export class StorageService implements OnModuleInit {
     }
 
     // Região explícita: sem ela o SDK consulta a região do bucket pela rede
-    // antes de assinar — o que, no cliente público, seria uma chamada da API
-    // ao próprio domínio de mídia.
+    // (GetBucketLocation) antes de assinar. No R2 a região é `auto`
+    // (`us-east-1` também é aceita).
     const region = this.config.get<string>('MINIO_REGION', 'us-east-1');
     const credentials = {
       accessKey: accessKey || 'minioadmin', // Padrão apenas para dev local
@@ -124,18 +130,8 @@ export class StorageService implements OnModuleInit {
           '(ex.: https://media.atendehub.com) — sem ele, nenhuma mídia carrega no navegador (C-07).',
       );
     }
-    if (publicEndpoint) {
-      const pub = new URL(publicEndpoint);
-      this.signer = new Minio.Client({
-        endPoint: pub.hostname,
-        port: Number(pub.port) || (pub.protocol === 'https:' ? 443 : 80),
-        useSSL: pub.protocol === 'https:',
-        region,
-        ...credentials,
-      });
-    } else {
-      this.signer = this.client;
-    }
+    this.publicOrigin = publicEndpoint ? new URL(publicEndpoint).origin : undefined;
+    this.manageBucket = this.config.get<string>('MINIO_MANAGE_BUCKET', 'true') !== 'false';
 
     this.bucket = this.config.get<string>('MINIO_BUCKET', 'atendehub-media');
     this.internalEndpoint = endpoint.replace(/\/+$/, '');
@@ -153,6 +149,23 @@ export class StorageService implements OnModuleInit {
   async onModuleInit() {
     try {
       const exists = await this.client.bucketExists(this.bucket);
+
+      // B-64: no storage gerenciado a API só confere que o bucket existe. O
+      // R2 nem implementa bucket policy (o bucket é privado enquanto não se
+      // liga acesso público no painel), e o token da API só alcança objetos.
+      if (!this.manageBucket) {
+        if (!exists) {
+          this.logger.error(
+            `Bucket "${this.bucket}" não existe no storage — crie no painel do provedor (RUNBOOK, B-64).`,
+          );
+          return;
+        }
+        this.logger.log(
+          `StorageService inicializado — bucket: ${this.bucket} (gerenciado pelo provedor; URLs assinadas por ${this.defaultExpirySeconds}s)`,
+        );
+        return;
+      }
+
       if (!exists) {
         await this.client.makeBucket(this.bucket);
         this.logger.log(`Bucket "${this.bucket}" criado.`);
@@ -179,7 +192,7 @@ export class StorageService implements OnModuleInit {
       );
     } catch (err: any) {
       this.logger.error(
-        `Falha ao verificar/criar/proteger bucket MinIO: ${err.message}`,
+        `Falha ao verificar/criar/proteger o bucket do storage: ${err.message}`,
       );
       // Não lança exceção para permitir o boot mesmo sem MinIO (dev local)
     }
@@ -251,11 +264,12 @@ export class StorageService implements OnModuleInit {
    * o B-38 — o bucket é privado).
    */
   async getPresignedUrl(key: string, expirySeconds?: number): Promise<string> {
-    return this.signer.presignedGetObject(
+    const signed = await this.client.presignedGetObject(
       this.bucket,
       key,
       expirySeconds ?? this.defaultExpirySeconds,
     );
+    return this.toPublicUrl(signed);
   }
 
   /**
@@ -330,6 +344,16 @@ export class StorageService implements OnModuleInit {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  // Troca só esquema e host da URL assinada pelos do domínio de mídia,
+  // preservando caminho e query byte a byte — sem decodificar nem
+  // recodificar nada — porque é sobre eles (e sobre o Host que o nginx
+  // repassa) que o storage confere a assinatura.
+  private toPublicUrl(signedUrl: string): string {
+    if (!this.publicOrigin) return signedUrl;
+    const pathStart = signedUrl.indexOf('/', signedUrl.indexOf('://') + 3);
+    return this.publicOrigin + signedUrl.slice(pathStart);
+  }
 
   private buildPrefix(): string {
     return `${this.internalEndpoint}/${this.bucket}/`;

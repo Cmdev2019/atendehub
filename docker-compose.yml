@@ -1,6 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # AtendeHub — Infraestrutura local de desenvolvimento
-# Sobe: PostgreSQL · Redis · MinIO · Evolution API
+# Sobe: PostgreSQL · Redis · Evolution API — e, em desenvolvimento, o MinIO
+# (definido só no docker-compose.override.yml: em produção a mídia fica no
+# Cloudflare R2, B-64)
 # Uso: docker compose up -d
 #
 # Este arquivo NÃO publica portas (B-55). Em desenvolvimento, o
@@ -49,35 +51,9 @@ services:
     networks:
       - atendehub_net
 
-  # ── MinIO (S3 compatível — armazena mídias do WhatsApp) ─────────────────────
-  minio:
-    image: minio/minio:RELEASE.2025-06-13T11-33-47Z
-    container_name: atendehub_minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-atendehub_minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_123}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    networks:
-      - atendehub_net
-
-  # Bucket "atendehub-media" é criado pela própria API no boot
-  # (StorageService#onModuleInit — makeBucket) — não precisa de container
-  # auxiliar (B-5, removido 2026-07-24: usava
-  # minio/mc:RELEASE.2025-06-13T11-33-47Z, tag que saiu do Docker Hub e
-  # travava o `docker compose up`; era redundante mesmo antes disso, já que
-  # a API faz exatamente o mesmo trabalho). Bucket é PRIVADO (B-38,
-  # 2026-07-29) — onModuleInit ativamente REVOGA qualquer bucket policy
-  # (setBucketPolicy(bucket, '') a cada boot, hardening de 2026-08-01 pós-
-  # auditoria — uma policy pública herdada de código antigo não sumia
-  # sozinha) em vez de aplicar uma pública como fazia antes do B-38.
+  # ── Storage de mídia ─────────────────────────────────────────────────────────
+  # Não fica neste arquivo (B-64): em desenvolvimento é o MinIO do
+  # docker-compose.override.yml; em produção, o Cloudflare R2, fora da stack.
 
   # ── Evolution API v2 (camada WhatsApp / Baileys) ─────────────────────────────
   evolution:
@@ -118,14 +94,12 @@ services:
       WEBHOOK_EVENTS_CONTACTS_UPSERT: "true"
       WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
       WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
-      STORAGE_ENABLED: "true"
-      STORAGE_PROVIDER: s3
-      STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-atendehub_minio}
-      STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_123}
-      STORAGE_BUCKET: atendehub-media
-      STORAGE_ENDPOINT: http://minio:9000
-      STORAGE_FORCE_PATH_STYLE: "true"
-      STORAGE_REGION: us-east-1
+      # Mídia: a Evolution NÃO grava no storage (B-64). A API baixa cada mídia
+      # pela própria Evolution (getBase64FromMediaMessage) e guarda no bucket
+      # dela. As variáveis STORAGE_* que ficavam aqui nunca valeram (a v2 só
+      # lê S3_*). Não ligar o S3 da Evolution no bucket da API: no boot ela
+      # aplica leitura ANÔNIMA no bucket (s3:GetObject para "*") a menos que
+      # S3_SKIP_POLICY=true, e ainda duplicaria a mídia dos contatos (LGPD).
     volumes:
       - evolution_data:/evolution/instances
     extra_hosts:
@@ -137,7 +111,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
   evolution_data:
 
 # ─── Redes ────────────────────────────────────────────────────────────────────

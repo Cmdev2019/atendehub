@@ -17,16 +17,19 @@
                         │   api (NestJS, :3001)   │
                         └───┬─────────┬───────────┘
                             │         │
-                    ┌───────▼──┐  ┌───▼────┐   ┌───────┐   ┌───────────┐
-                    │ postgres │  │ redis  │   │ minio │   │ evolution │
-                    └──────────┘  └────────┘   └───────┘   └───────────┘
+                    ┌───────▼──┐  ┌───▼────┐   ┌───────────┐
+                    │ postgres │  │ redis  │   │ evolution │
+                    └──────────┘  └────────┘   └───────────┘
+
+ Fora do servidor: Cloudflare R2 (bucket da mídia, B-64) — a API grava e
+ assina; o nginx repassa media.<domínio> → R2. Não há MinIO em produção.
 ```
 
 Sem container `web` separado — o front (Vite+React) é build estático,
 servido direto pelo `nginx` (decisão B6-2).
 
 **Portas (B-55):** em produção só o `nginx` publica portas (80/443). Postgres,
-Redis, MinIO, Evolution e API ficam só na rede interna `atendehub_net` —
+Redis, Evolution e API ficam só na rede interna `atendehub_net` —
 nenhum deles é alcançável de fora do servidor. Não acrescente `ports` a esses
 serviços no `docker-compose.prod.yml`: o Compose soma as listas ao combinar
 arquivos, e o job `compose-ports` da CI recusa o PR. Para acessar um serviço
@@ -47,7 +50,9 @@ cair silenciosamente num valor de desenvolvimento:
 
 | Variável | Onde é validada | Falha se... |
 |---|---|---|
-| `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `docker-compose.prod.yml` (`${VAR:?...}`) | ausente |
+| `POSTGRES_PASSWORD`, `REDIS_PASSWORD` | `docker-compose.prod.yml` (`${VAR:?...}`) | ausente |
+| `MEDIA_STORAGE_HOST` | `docker-compose.prod.yml` e boot do `nginx` (`infra/nginx/entrypoint/15-media-storage-host.sh`) | ausente, ou com esquema/porta — é só o host S3 do R2, ex. `<conta>.r2.cloudflarestorage.com` (B-64). Vira o `MINIO_ENDPOINT` da API e o upstream do nginx |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `apps/api/src/shared/storage/storage.service.ts` (boot) | ausente — em produção são o **Access Key ID** e o **Secret Access Key** do token do R2 (o prefixo `MINIO_` é histórico) |
 | `EVOLUTION_API_KEY`, `EVOLUTION_SERVER_URL`, `EVOLUTION_WEBHOOK_URL` | `docker-compose.prod.yml` | ausente — `EVOLUTION_WEBHOOK_URL` deve usar a rede interna (`http://api:3001/api/v1/webhooks/evolution`), já que a porta 3001 não é publicada |
 | `VITE_API_URL`, `VITE_WS_URL` | `docker-compose.prod.yml` (build args do `nginx`) | ausente — reflete no **build**, não dá pra trocar depois sem rebuildar a imagem |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | `apps/api/src/main.ts` (`validateSecrets`) | ausente, < 32 chars, ou contém placeholder inseguro conhecido |
@@ -82,16 +87,21 @@ app e API ao mesmo tempo — agendar a troca antes do vencimento.
 - Host desconhecido (inclusive acesso pelo IP do servidor) é recusado: 444 no
   HTTP e handshake TLS recusado no HTTPS.
 
-**Mídia (B-59):** fotos, áudios e documentos do chat são baixados pelo
+**Mídia (B-59, B-64):** fotos, áudios e documentos do chat são baixados pelo
 navegador em `https://media.<domínio>/<bucket>/...`, com URL assinada pela API
-(válida por `MEDIA_SIGNED_URL_EXPIRATION`, padrão 600 s). O nginx repassa ao
-MinIO só GET/HEAD no caminho do bucket (`/atendehub-media/`); o resto responde
-404. Trocar o domínio de mídia exige ajustar `server_name` do bloco `media.` no
-`nginx.conf`, `img-src`/`media-src` no `security-headers.conf` e
-`MINIO_PUBLIC_ENDPOINT`; trocar o `MINIO_BUCKET` exige ajustar o `location` do
-bloco `media.`. Sintoma de configuração errada: imagem quebrada no chat com
-403 (`SignatureDoesNotMatch` — host diferente do assinado) ou erro de CSP no
-console do navegador.
+(válida por `MEDIA_SIGNED_URL_EXPIRATION`, padrão 600 s). A API assina com o
+host do R2 e troca só a origem da URL pela do `MINIO_PUBLIC_ENDPOINT`; o nginx
+repassa ao R2 só GET/HEAD no caminho do bucket (`/atendehub-media/`), com o
+`Host` de volta ao do R2 e TLS verificado; o resto responde 404. Trocar o
+domínio de mídia exige ajustar `server_name` do bloco `media.` no `nginx.conf`,
+`img-src`/`media-src` no `security-headers.conf` e `MINIO_PUBLIC_ENDPOINT`;
+trocar o `MINIO_BUCKET` exige ajustar o `location` do bloco `media.`. Sintomas:
+- imagem quebrada com **403** (`SignatureDoesNotMatch`): o host assinado não é o
+  que o R2 recebeu — `MEDIA_STORAGE_HOST` diferente do host do R2, ou token de
+  outra conta;
+- imagem quebrada com **502**: o nginx não alcança o R2 (DNS ou TLS) — ver
+  `docker compose ... logs nginx`;
+- erro de CSP no console do navegador: domínio de mídia fora da CSP.
 
 **Limite de requisições na API (B-56):**
 - Atrás do nginx, a API calcula o IP do cliente pelo `X-Forwarded-For`
@@ -108,6 +118,65 @@ console do navegador.
   o limite por IP do nginx continua valendo.
 - Para liberar um bloqueio na hora (ex.: escritório inteiro travado no login):
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T redis redis-cli -a $REDIS_PASSWORD --scan --pattern 'throttle:*:block' | xargs -r docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T redis redis-cli -a $REDIS_PASSWORD del`
+
+### Storage de mídia (Cloudflare R2) — B-64
+
+Em produção a mídia não fica no servidor: fica num bucket do Cloudflare R2. O
+bucket é criado e mantido **privado** no painel do R2 — a API não cria bucket
+nem mexe em política (`MINIO_MANAGE_BUCKET=false`, fixado no
+`docker-compose.prod.yml`; o R2 nem implementa bucket policy).
+
+> **Antes de subir mídia real de cliente da saúde**, ver a pendência 7 do
+> [mapa de dados pessoais](../35-LGPD/MAPA-DE-DADOS-PESSOAIS.md): o R2 não tem
+> região no Brasil (transferência internacional). A alternativa (AWS S3 em São
+> Paulo) usa o mesmo código e o mesmo nginx.
+
+Configuração (uma vez):
+1. No painel do R2, criar o bucket `atendehub-media`. **Não** ligar acesso
+   público (subdomínio `r2.dev` nem domínio próprio no bucket): a mídia só sai
+   por URL assinada, pelo `media.<domínio>` — URL assinada do R2 nem funciona
+   em domínio próprio.
+2. Criar um token de API do R2 com permissão **Object Read & Write** só neste
+   bucket. Ele mostra o Access Key ID e o Secret Access Key uma única vez.
+3. No `.env` de produção:
+   ```bash
+   MEDIA_STORAGE_HOST=<conta>.r2.cloudflarestorage.com   # host S3 da conta, sem https://
+   MINIO_ROOT_USER=<Access Key ID do token>
+   MINIO_ROOT_PASSWORD=<Secret Access Key do token>
+   MINIO_BUCKET=atendehub-media
+   MINIO_REGION=auto
+   MINIO_PUBLIC_ENDPOINT=https://media.<domínio>
+   ```
+   O `MINIO_ENDPOINT` da API sai do `MEDIA_STORAGE_HOST` (um valor no `.env` é
+   ignorado em produção) — assim a API e o nginx nunca divergem de host.
+
+Conferir depois do deploy — o log da API deve trazer `StorageService
+inicializado — bucket: atendehub-media (gerenciado pelo provedor; ...)`, e este
+teste, rodado no servidor, sobe uma imagem de 1 pixel, baixa pelo domínio de
+mídia e apaga (validado contra o MinIO de dev em 2026-10-18):
+```bash
+P="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+URL=$($P exec -T api node -e '
+const { StorageService } = require("./dist/shared/storage/storage.service");
+const s = new StorageService({ get: (k, d) => process.env[k] ?? d });
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+s.upload(png, "image/png", "smoke-b64").then((up) => s.presignUrl(up.url)).then((u) => console.log(u));
+' | tail -1)
+echo "$URL"                                           # https://media.<domínio>/atendehub-media/smoke-b64/...
+curl -s -o /dev/null -w '%{http_code}\n' "$URL"       # tem de dar 200
+KEY=$(echo "$URL" | sed -E 's#^https?://[^/]+/[^/]+/([^?]+).*#\1#')
+$P exec -T api node -e '
+const { StorageService } = require("./dist/shared/storage/storage.service");
+new StorageService({ get: (k, d) => process.env[k] ?? d }).delete(process.argv[1]).then(() => console.log("apagado:", process.argv[1]));
+' "$KEY"
+```
+
+**Evolution e storage:** a Evolution não grava mídia no bucket (a API baixa
+cada mídia por ela, em base64, e guarda no bucket dela). Não ligar o S3 da
+Evolution (`S3_ENABLED`) apontando para o bucket da API: no boot ela aplica
+leitura **anônima** no bucket, a menos que `S3_SKIP_POLICY=true`. As variáveis
+`STORAGE_*` que existiam no compose nunca tiveram efeito (a v2 só lê `S3_*`) e
+foram removidas no B-64.
 
 ## Deploy
 
@@ -162,8 +231,9 @@ produção:
 ## Backup e restore (B-10)
 
 Dois alvos: **PostgreSQL** (dado principal — empresas, conversas, mensagens,
-usuários; perda é irreversível) e **MinIO** (mídias do WhatsApp — fotos,
-áudios, documentos; perda é inconveniente, mas não paralisa o produto).
+usuários; perda é irreversível) e a **mídia** (fotos, áudios, documentos do
+WhatsApp; perda é inconveniente, mas não paralisa o produto) — em produção no
+Cloudflare R2, em desenvolvimento no MinIO local (B-64).
 Comandos abaixo testados de verdade contra o ambiente local desta sessão
 (dump restaurado num banco separado, contagem de linhas conferida igual;
 tarball do MinIO extraído e validado).
@@ -205,9 +275,33 @@ Depois de restaurar: `npx prisma migrate deploy` (dentro do container `api`)
 antes de subir a API — o dump é só o dado, não garante que o schema bate com
 a versão do código que vai rodar.
 
-### MinIO (bucket `atendehub-media`)
+### Mídia em produção (R2)
 
-Nível de fidelidade: cópia do volume Docker (`atendehub_minio_data`) via
+Não há volume no servidor: o backup é uma **cópia do bucket** para outro lugar
+(outra conta/provedor S3), por exemplo com `rclone sync` usando um remote do
+tipo S3 com `provider = Cloudflare`, com uma chave **só de leitura** no bucket
+de origem. Procedimento ainda não validado (sem conta R2 de teste) e sem
+automação — entra junto da automação de backup pendente. A cópia guarda mídia
+de titulares: segue a mesma política de descarte dos backups (pendência 2 do
+mapa de dados pessoais).
+
+### MinIO de desenvolvimento (bucket `atendehub-media`)
+
+**Volume criado pela imagem antiga (B-64):** a imagem atual
+(`bitnamilegacy/minio`) roda como UID 1001 e lê os dados em
+`/bitnami/minio/data`; a oficial antiga (`minio/minio`) rodava como root em
+`/data`. O volume é o mesmo (`atendehub_minio_data`) — só os donos dos arquivos
+precisam mudar, uma vez:
+```bash
+docker compose stop minio && docker compose rm -f minio
+MSYS_NO_PATHCONV=1 docker run --rm -v atendehub_minio_data:/data alpine chown -R 1001:1001 /data
+docker compose up -d minio
+```
+Feito no ambiente de dev em 2026-10-18: 25 objetos preservados, bucket privado.
+A imagem antiga continua lendo o volume (roda como root), então a troca tem
+volta.
+
+Nível de fidelidade do backup: cópia do volume Docker (`atendehub_minio_data`) via
 container Alpine descartável — mais simples que `mc mirror` (o projeto já
 apanhou de `minio/mc` uma vez, B-5: a tag da imagem sumiu do Docker Hub no
 meio de um `docker compose up`) e suficiente porque mídia do WhatsApp é
@@ -234,8 +328,8 @@ complexidade de pausar o container só por causa disso.
 ```bash
 docker volume create atendehub_minio_data   # se o volume não existir mais
 docker run --rm -v atendehub_minio_data:/data -v "$(pwd)/backups":/backup alpine \
-  tar xzf /backup/minio_data_XXXXXXXX.tar.gz -C /data
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d minio
+  sh -c 'tar xzf /backup/minio_data_XXXXXXXX.tar.gz -C /data && chown -R 1001:1001 /data'
+docker compose up -d minio
 ```
 
 ## Retenção de dados e LGPD (B-17)

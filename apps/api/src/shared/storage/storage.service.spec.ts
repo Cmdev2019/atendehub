@@ -84,6 +84,38 @@ describe('StorageService', () => {
 
       await expect(service.onModuleInit()).resolves.not.toThrow();
     });
+
+    // B-64: no R2 o bucket é criado e mantido privado no painel — o R2 nem
+    // implementa bucket policy, e chamar setBucketPolicy derrubaria o resto
+    // da checagem com erro a cada boot.
+    describe('com MINIO_MANAGE_BUCKET=false (storage gerenciado, R2)', () => {
+      const managed = () => {
+        const svc = new StorageService({
+          get: (key: string, fallback?: any) =>
+            ({ MINIO_ENDPOINT: 'https://conta.r2.cloudflarestorage.com', MINIO_MANAGE_BUCKET: 'false' } as Record<string, string>)[key] ??
+            fallback,
+        } as unknown as ConfigService);
+        return { svc, minio: (svc as any).client };
+      };
+
+      it('só confere que o bucket existe — não cria nem mexe em policy', async () => {
+        const { svc, minio } = managed();
+
+        await svc.onModuleInit();
+
+        expect(minio.bucketExists).toHaveBeenCalledWith('atendehub-media');
+        expect(minio.makeBucket).not.toHaveBeenCalled();
+        expect(minio.setBucketPolicy).not.toHaveBeenCalled();
+      });
+
+      it('bucket inexistente não é criado nem derruba o boot', async () => {
+        const { svc, minio } = managed();
+        minio.bucketExists.mockResolvedValueOnce(false);
+
+        await expect(svc.onModuleInit()).resolves.not.toThrow();
+        expect(minio.makeBucket).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ── deleteByUrl (B-29) ───────────────────────────────────────────────────────
@@ -238,8 +270,8 @@ describe('StorageService', () => {
     });
   });
 
-  // ── C-07/B-59: URL assinada com o endereço PÚBLICO da mídia ─────────────────
-  describe('endpoint público da mídia (C-07)', () => {
+  // ── C-07/B-59, revisto no B-64: URL assinada servida pelo domínio de mídia ──
+  describe('endpoint público da mídia (C-07/B-64)', () => {
     const MinioClient = jest.requireMock('minio').Client as jest.Mock;
 
     const build = (values: Record<string, string>) =>
@@ -249,35 +281,51 @@ describe('StorageService', () => {
 
     beforeEach(() => MinioClient.mockClear());
 
-    it('assina com um cliente apontado para MINIO_PUBLIC_ENDPOINT (https, região fixa)', async () => {
-      const svc = build({
-        MINIO_ENDPOINT: 'http://minio:9000',
-        MINIO_PUBLIC_ENDPOINT: 'https://media.atendehub.com',
-        MINIO_REGION: 'us-east-1',
-      });
+    const R2 = {
+      MINIO_ENDPOINT: 'https://conta.r2.cloudflarestorage.com',
+      MINIO_PUBLIC_ENDPOINT: 'https://media.atendehub.com',
+      MINIO_REGION: 'auto',
+    };
 
-      expect(MinioClient).toHaveBeenCalledTimes(2);
-      expect(MinioClient.mock.calls[0][0]).toMatchObject({ endPoint: 'minio', port: 9000, useSSL: false, region: 'us-east-1' });
-      expect(MinioClient.mock.calls[1][0]).toMatchObject({
-        endPoint: 'media.atendehub.com',
-        port: 443,
-        useSSL: true,
-        region: 'us-east-1',
-      });
-
-      await svc.getPresignedUrl('images/a.jpg');
-      const internal = MinioClient.mock.results[0].value;
-      const signer = MinioClient.mock.results[1].value;
-      expect(signer.presignedGetObject).toHaveBeenCalledWith('atendehub-media', 'images/a.jpg', 600);
-      expect(internal.presignedGetObject).not.toHaveBeenCalled();
-    });
-
-    it('sem MINIO_PUBLIC_ENDPOINT fora de produção (dev), assina com o próprio cliente interno', async () => {
-      const svc = build({ MINIO_ENDPOINT: 'http://localhost:9000' });
+    // O storage confere a assinatura contra o Host que recebe — que o nginx
+    // repassa como o do R2. Assinar com o host do domínio de mídia (como no
+    // B-59, com o MinIO atrás do nginx) daria 403 no R2.
+    it('assina com o host do storage, num cliente só (região do .env)', async () => {
+      const svc = build(R2);
 
       expect(MinioClient).toHaveBeenCalledTimes(1);
+      expect(MinioClient.mock.calls[0][0]).toMatchObject({
+        endPoint: 'conta.r2.cloudflarestorage.com',
+        port: 443,
+        useSSL: true,
+        region: 'auto',
+      });
+
       await svc.getPresignedUrl('images/a.jpg');
-      expect(MinioClient.mock.results[0].value.presignedGetObject).toHaveBeenCalled();
+      expect(MinioClient.mock.results[0].value.presignedGetObject).toHaveBeenCalledWith(
+        'atendehub-media',
+        'images/a.jpg',
+        600,
+      );
+    });
+
+    it('troca só a origem pela do domínio de mídia, preservando caminho e query byte a byte', async () => {
+      const svc = build(R2);
+      const signed =
+        'https://conta.r2.cloudflarestorage.com/atendehub-media/c1/images/a%20b.jpg' +
+        '?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=k%2F20261018%2Fauto%2Fs3%2Faws4_request' +
+        '&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123';
+      MinioClient.mock.results[0].value.presignedGetObject.mockResolvedValueOnce(signed);
+
+      const url = await svc.getPresignedUrl('c1/images/a b.jpg');
+
+      expect(url).toBe(signed.replace('https://conta.r2.cloudflarestorage.com', 'https://media.atendehub.com'));
+    });
+
+    it('sem MINIO_PUBLIC_ENDPOINT (dev), devolve a URL como foi assinada', async () => {
+      const svc = build({ MINIO_ENDPOINT: 'http://localhost:9000' });
+
+      expect(await svc.getPresignedUrl('images/a.jpg')).toBe('https://signed.example/images/a.jpg?expiry=600');
     });
 
     it('em produção, recusa subir sem MINIO_PUBLIC_ENDPOINT em https', () => {

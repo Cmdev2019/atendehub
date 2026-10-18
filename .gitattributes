@@ -1,0 +1,4 @@
+# Scripts de shell rodam dentro de containers Linux: com CRLF (checkout no
+# Windows com core.autocrlf=true) o `sh` quebra. Ex.: o script de boot do
+# nginx (infra/nginx/entrypoint, B-64).
+*.sh text eol=lf

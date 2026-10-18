@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# AtendeHub — Portas de desenvolvimento
+# AtendeHub — Desenvolvimento: portas e MinIO local
 # Carregado automaticamente pelo `docker compose up -d` (sem `-f`).
 # NÃO é usado em produção: o deploy passa `-f docker-compose.yml
 # -f docker-compose.prod.yml`, e com `-f` explícito o Compose ignora este
@@ -21,11 +21,42 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
+  # ── MinIO (S3 compatível) — SÓ desenvolvimento (B-64) ──────────────────────
+  # Em produção a mídia fica no Cloudflare R2 e este serviço não existe: ele
+  # está aqui, e não no compose base, para o deploy nem conhecê-lo. A imagem
+  # oficial minio/minio saiu do Docker Hub e do quay.io;
+  # bitnamilegacy/minio:2025.6.13 é o mesmo build (commit a6c538c5 do
+  # RELEASE.2025-06-13T11-33-47Z), congelado — serve para dev e CI, onde o
+  # dado é descartável, nunca para produção. Fixada por digest: tag de
+  # repositório legado pode ser reescrita.
+  # O bucket "atendehub-media" é criado pela própria API no boot e mantido
+  # privado (StorageService#onModuleInit, B-38).
   minio:
+    image: bitnamilegacy/minio:2025.6.13@sha256:628d6a09902e59001eadc82590735eda210bf5d5a68cd72dfbb6894b3c1f97eb
+    container_name: atendehub_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-atendehub_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_123}
+    volumes:
+      # A imagem da Bitnami roda como UID 1001 e guarda os dados em
+      # /bitnami/minio/data (a oficial rodava como root em /data). Volume
+      # criado pela imagem antiga: "MinIO de desenvolvimento" no RUNBOOK.
+      - minio_data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     ports:
       - "127.0.0.1:9000:9000"   # API S3
       - "127.0.0.1:9001:9001"   # console web
+    networks:
+      - atendehub_net
 
   evolution:
     ports:
       - "127.0.0.1:8080:8080"
+
+volumes:
+  minio_data:
