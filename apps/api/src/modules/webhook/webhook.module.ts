@@ -8,6 +8,7 @@ import { WebhookDlqService } from './webhook-dlq.service';
 import { WebhookMetricsService } from './webhook-metrics.service';
 import { MediaDownloadService } from './media-download.service';
 import { WebhookProcessor } from './webhook.processor';
+import { MediaDownloadProcessor } from './media-download.processor';
 import { ContactModule } from '../contact/contact.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { MessageModule } from '../message/message.module';
@@ -37,6 +38,7 @@ import { WEBHOOK_BACKOFF_STRATEGY, buildWebhookBackoffStrategy } from './webhook
     }),
     // DLQ — sem processor registrado (nada consome automaticamente).
     BullModule.registerQueue({ name: QUEUE_NAMES.WEBHOOK_DLQ }),
+    BullModule.registerQueue({ name: QUEUE_NAMES.MEDIA_DOWNLOAD }),
     ContactModule,
     ConversationModule,
     MessageModule,
@@ -49,6 +51,7 @@ import { WEBHOOK_BACKOFF_STRATEGY, buildWebhookBackoffStrategy } from './webhook
     WebhookService,
     MediaDownloadService,
     WebhookProcessor,
+    MediaDownloadProcessor,
     WebhookDlqService,
     WebhookMetricsService,
   ],

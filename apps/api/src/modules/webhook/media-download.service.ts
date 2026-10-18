@@ -44,6 +44,10 @@ export class MediaDownloadService {
    * @param mimeType - MIME type esperado
    * @param companyId - ID da empresa
    * @param fileName - Nome original do arquivo (opcional)
+   *
+   * B-76 (M-01): lança em qualquer falha (antes devolvia null e a mídia se
+   * perdia) — quem chama é o MediaDownloadProcessor, e o erro faz o Bull
+   * agendar a próxima tentativa.
    */
   async downloadFromEvolution(
     sessionName: string,
@@ -51,65 +55,55 @@ export class MediaDownloadService {
     mimeType: string,
     companyId: string,
     fileName?: string,
-  ): Promise<MediaDownloadResult | null> {
-    try {
-      this.logger.debug(
-        `Baixando mídia via Evolution API: session=${sessionName}, msgId=${messageId}`,
-      );
+  ): Promise<MediaDownloadResult> {
+    this.logger.debug(
+      `Baixando mídia via Evolution API: session=${sessionName}, msgId=${messageId}`,
+    );
 
-      const { data } = await axios.post(
-        `${this.evolutionBaseUrl}/chat/getBase64FromMediaMessage/${sessionName}`,
-        { message: { key: { id: messageId } } },
-        {
-          headers: {
-            apikey: this.evolutionApiKey,
-            'Content-Type': 'application/json',
-          },
-          timeout: this.downloadTimeoutMs,
+    const { data } = await axios.post(
+      `${this.evolutionBaseUrl}/chat/getBase64FromMediaMessage/${sessionName}`,
+      { message: { key: { id: messageId } } },
+      {
+        headers: {
+          apikey: this.evolutionApiKey,
+          'Content-Type': 'application/json',
         },
-      );
+        timeout: this.downloadTimeoutMs,
+      },
+    );
 
-      const base64 = data?.base64;
-      const mediaMimeType = data?.mimetype || mimeType;
+    const base64 = data?.base64;
+    const mediaMimeType = data?.mimetype || mimeType;
 
-      if (!base64) {
-        this.logger.warn(`Evolution API não retornou base64 para msgId=${messageId}`);
-        return null;
-      }
-
-      // Remove prefixo "data:mime/type;base64," se presente
-      const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
-      const buffer = Buffer.from(cleanBase64, 'base64');
-
-      if (buffer.length === 0) {
-        this.logger.warn('Base64 decodificou para buffer vazio');
-        return null;
-      }
-
-      const result: UploadResult = await this.storageService.upload(
-        buffer,
-        mediaMimeType,
-        companyId,
-        fileName,
-        buffer.length,
-      );
-
-      this.logger.debug(
-        `Mídia armazenada via Evolution: ${result.key} (${buffer.length} bytes)`,
-      );
-
-      return {
-        url: result.url,
-        mimeType: mediaMimeType,
-        size: buffer.length,
-        fileName,
-      };
-    } catch (err: any) {
-      this.logger.error(
-        `Falha ao baixar mídia da Evolution API: ${err.message}`,
-        err.stack,
-      );
-      return null;
+    if (!base64) {
+      throw new Error(`Evolution API não retornou base64 para msgId=${messageId}`);
     }
+
+    // Remove prefixo "data:mime/type;base64," se presente
+    const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+    const buffer = Buffer.from(cleanBase64, 'base64');
+
+    if (buffer.length === 0) {
+      throw new Error(`Base64 decodificou para buffer vazio (msgId=${messageId})`);
+    }
+
+    const result: UploadResult = await this.storageService.upload(
+      buffer,
+      mediaMimeType,
+      companyId,
+      fileName,
+      buffer.length,
+    );
+
+    this.logger.debug(
+      `Mídia armazenada via Evolution: ${result.key} (${buffer.length} bytes)`,
+    );
+
+    return {
+      url: result.url,
+      mimeType: mediaMimeType,
+      size: buffer.length,
+      fileName,
+    };
   }
 }

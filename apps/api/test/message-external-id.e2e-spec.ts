@@ -134,4 +134,29 @@ describe('Mensagens — externalId único por conexão (E2E, Postgres real)', ()
     expect(a.status).toBe(MessageStatus.READ);
     expect(b.status).toBe(MessageStatus.DELIVERED);
   });
+
+  // B-76 (M-01): o retry do webhook lê as etapas que faltam da própria
+  // mensagem; cada etapa concluída sai da lista no Postgres (array_remove).
+  it('etapas pendentes do webhook: o retry recebe o que falta e cada conclusão tira só a sua', async () => {
+    const externalId = `WA-${run}-4`;
+    const first = await messages.createFromWebhook({
+      ...incoming(connA, externalId, SenderType.CLIENT),
+      pendingWebhookSteps: ['preview', 'auto_reply', 'event_message_new'],
+    });
+    await messages.completeWebhookStep(first.id, 'preview');
+
+    // Retry: a mensagem já existe e devolve só o que ficou pendente
+    const retry = await messages.createFromWebhook({
+      ...incoming(connA, externalId, SenderType.CLIENT),
+      pendingWebhookSteps: ['preview', 'auto_reply', 'event_message_new'],
+    });
+    expect(retry.isNew).toBe(false);
+    expect(retry.pendingWebhookSteps).toEqual(['auto_reply', 'event_message_new']);
+
+    await messages.completeWebhookStep(first.id, 'auto_reply');
+    await messages.completeWebhookStep(first.id, 'auto_reply'); // repetida: sem efeito
+    await messages.completeWebhookStep(first.id, 'event_message_new');
+    const done = await prisma.message.findUniqueOrThrow({ where: { id: first.id } });
+    expect(done.pendingWebhookSteps).toEqual([]);
+  });
 });

@@ -170,6 +170,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-76 (2026-10-18, M-01):** mídia recebida pelo WhatsApp não se perde mais numa falha passageira — o
+  download é tentado de novo por alguns minutos. E se o processamento de uma mensagem cair no meio, a
+  nova tentativa faz o que faltou (prévia na lista, saudação, resposta do menu, aviso em tempo real) em
+  vez de pular tudo.
 - **B-73 (2026-10-18, M-07):** atribuir um atendente não reabre mais uma conversa encerrada (responde
   400). Reabrir ou atribuir uma conversa resolvida quando o contato já tem outra conversa ativa responde
   409 com o motivo, em vez de erro 500.
