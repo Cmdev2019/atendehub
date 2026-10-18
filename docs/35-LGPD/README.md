@@ -31,7 +31,12 @@ Encarregado de dados com apoio jurídico. Engenharia implementa, não decide bas
 
 ## Estado atual
 
-Implementado: anonimização de contato. Pendente: exportação de dados do titular e registro de operações. B-38 é uma não-conformidade aberta com o Art. 46.
+Atualizado em 2026-10-17 (B-62): mapa técnico dos dados pessoais, atendimento ao titular e
+purga da cópia da Evolution em [`MAPA-DE-DADOS-PESSOAIS.md`](MAPA-DE-DADOS-PESSOAIS.md).
+Implementado: exportação do titular (B-30), anonimização completa — contato, mídia (B-29),
+telefone no metadata das mensagens, notificações e auditoria sem PII (B-62) — e bucket privado
+(B-38). Pendente, por decisão do encarregado/jurídico: base legal, prazos de retenção,
+subprocessadores e plano de incidente (seção 5 do mapa).
 
 ---
 
