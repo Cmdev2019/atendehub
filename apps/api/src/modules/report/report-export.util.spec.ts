@@ -49,6 +49,30 @@ describe('report-export.util (B-33)', () => {
       const res = makeFakeRes();
       expect(() => sendCsv(res, 'vazio.csv', [])).not.toThrow();
     });
+
+    // B-71 (M-13): o nome do contato vem do WhatsApp, escolhido pelo próprio
+    // cliente — não pode virar fórmula ao abrir o CSV no Excel.
+    it('neutraliza células que começam como fórmula (CSV injection)', () => {
+      const res = makeFakeRes();
+      sendCsv(res, 'f.csv', [
+        { Contato: '=HYPERLINK("http://x","clique")' },
+        { Contato: '+5511999990000' },
+        { Contato: '-2+3' },
+        { Contato: '@SUM(A1)' },
+        { Contato: '\tcmd' },
+        { Contato: 'Ana = Maria' }, // "=" no meio não é fórmula
+      ]);
+      const bomPattern = new RegExp(String.fromCharCode(94, 92, 117, 70, 69, 70, 70));
+      const lines = res.getBuffer().toString('utf-8').replace(bomPattern, '').split('\n');
+      expect(lines.slice(1)).toEqual([
+        `"'=HYPERLINK(""http://x"",""clique"")"`,
+        `'+5511999990000`,
+        `'-2+3`,
+        `'@SUM(A1)`,
+        `'\tcmd`,
+        'Ana = Maria',
+      ]);
+    });
   });
 
   describe('sendPdf', () => {

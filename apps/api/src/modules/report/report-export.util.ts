@@ -12,8 +12,15 @@ import * as PDFDocument from 'pdfkit';
 // pra não duplicar a lógica de formatação em dois lugares.
 export type ExportRow = Record<string, string>;
 
+// B-71 (M-13): célula que começa com = + - @ (ou tab/CR) o Excel e o
+// LibreOffice leem como fórmula — e o nome do contato é definido pelo próprio
+// cliente no WhatsApp. Prefixo `'` (recomendação da OWASP para CSV injection)
+// força texto; um telefone "+55..." sai como "'+55...", ainda legível.
+const FORMULA_START = /^[=+\-@\t\r]/;
+
 function escapeCsvValue(value: string) {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const safe = FORMULA_START.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 // BOM no início: sem ele, o Excel no Windows abre acentuação em PT-BR como

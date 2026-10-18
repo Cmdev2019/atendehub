@@ -53,6 +53,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-71 (2026-10-18, M-13):** a exportação de relatório em CSV neutraliza células que começam como
+  fórmula (`=`, `+`, `-`, `@`): o nome do contato, escolhido pelo próprio cliente no WhatsApp, não é
+  mais executado como fórmula ao abrir o arquivo no Excel. Impacto: valores assim aparecem com um `'`
+  na frente (ex.: telefone `'+5511...`).
 - **B-62 (2026-10-17):** anonimização de contato sem rastros de PII. Além do cadastro e da mídia, agora
   remove o telefone de `messages.metadata.remoteJid`, troca o nome do contato no texto das notificações
   e deixa de gravar nome/telefone/e-mail no próprio registro de auditoria da anonimização. Novo mapa
