@@ -36,6 +36,7 @@ services:
     environment:
       SERVER_URL: ${EVOLUTION_SERVER_URL:?EVOLUTION_SERVER_URL obrigatório em produção}       # ex: https://evolution.suaempresa.com
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?EVOLUTION_API_KEY obrigatório em produção}
+      # B-82: webhook global = mecanismo único (instâncias sem webhook próprio)
       WEBHOOK_GLOBAL_URL: ${EVOLUTION_WEBHOOK_URL:?EVOLUTION_WEBHOOK_URL obrigatório em produção}
     deploy:
       resources:
