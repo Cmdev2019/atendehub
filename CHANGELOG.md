@@ -13,6 +13,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 ## [Não lançado]
 
 ### Alterado
+- **B-92 (2026-10-18, L-03):** o Dependabot sobe `prisma` e `@prisma/client` juntos e não propõe mais versões ímpares do Node na imagem da API.
 - **B-91 (2026-10-18, L-02):** relatório de inclusão de padrões movido da raiz para `docs/99-Arquivo/`.
 
 ## [0.1.0] - 2026-10-18

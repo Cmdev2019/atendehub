@@ -38,8 +38,14 @@ updates:
     commit-message: { prefix: "chore(deps)" }
     labels: ["dependências", "api"]
     groups:
+      # B-92 (L-03): pacotes acoplados sobem juntos em qualquer tipo de
+      # dependência (produção e desenvolvimento) — o grupo vem antes do
+      # dev-dependencies, e o Dependabot usa o primeiro que casar.
       nestjs:
         patterns: ["@nestjs/*"]
+        update-types: ["minor", "patch"]
+      prisma:
+        patterns: ["prisma", "@prisma/client"]
         update-types: ["minor", "patch"]
       dev-dependencies:
         dependency-type: development
@@ -48,6 +54,10 @@ updates:
   - package-ecosystem: docker
     directory: "/apps/api"
     schedule: { interval: monthly }
+    # B-92 (L-03): Node ímpar nunca vira LTS — o PR do Node 25 foi um exemplo
+    ignore:
+      - dependency-name: "node"
+        versions: ["25.x", "27.x", "29.x"]
     commit-message: { prefix: "chore(deps)" }
     labels: ["dependências", "docker"]
 
