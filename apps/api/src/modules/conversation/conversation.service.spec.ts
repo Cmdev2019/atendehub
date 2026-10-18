@@ -14,6 +14,8 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 // baixo dos panos; o que garante isolamento é o findFirst com { id, companyId }
 // nunca ser contornado por um update direto com só { id }.
 const mockPrisma = {
+  // M-04/B-61: fuso da empresa
+  company: { findUnique: jest.fn().mockResolvedValue({ timezone: 'America/Sao_Paulo' }) },
   conversation: {
     findMany: jest.fn().mockResolvedValue([]),
     count: jest.fn(),

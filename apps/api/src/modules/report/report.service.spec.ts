@@ -3,6 +3,8 @@ import { ReportService } from './report.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
 const mockPrisma = {
+  // M-04/B-61: fuso da empresa
+  company: { findUnique: jest.fn().mockResolvedValue({ timezone: 'America/Sao_Paulo' }) },
   conversation: { findMany: jest.fn(), count: jest.fn() },
   tag: { findMany: jest.fn() },
   user: { findMany: jest.fn() },
@@ -224,8 +226,10 @@ describe('ReportService (B-33)', () => {
           criadaEm: new Date('2026-01-10T10:00:00.000Z'),
           encerradaEm: new Date('2026-01-10T12:00:00.000Z'),
         },
-      ]);
+      ], 'America/Sao_Paulo');
 
+      // M-04/B-61: 10:00 UTC = 07:00 em São Paulo (antes saía no fuso do servidor)
+      expect(rows[0]['Criada em']).toBe('10/01/2026, 07:00');
       expect(Object.keys(rows[0])).toEqual([
         'Contato', 'Canal', 'Atendente', 'Departamento', 'Status', 'Resolução', 'Tags', 'Criada em', 'Encerrada em',
       ]);
@@ -257,6 +261,24 @@ describe('ReportService (B-33)', () => {
         'Em aberto': '1',
         'Tempo médio de resolução': '1h 0min',
       });
+    });
+  });
+
+  // M-04/B-61: o seletor de data do front manda AAAA-MM-DD; o último dia
+  // inteiro ficava de fora (limite em 00:00 UTC)
+  describe('período no fuso da empresa (M-04/B-61)', () => {
+    it('inclui o último dia inteiro e começa à meia-noite de São Paulo', async () => {
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.getAttendanceReport(companyA, '2026-10-01', '2026-10-17');
+
+      expect(result.period.from.toISOString()).toBe('2026-10-01T03:00:00.000Z');
+      expect(result.period.to.toISOString()).toBe('2026-10-18T02:59:59.999Z');
+      expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ createdAt: { gte: result.period.from, lte: result.period.to } }),
+        }),
+      );
     });
   });
 });

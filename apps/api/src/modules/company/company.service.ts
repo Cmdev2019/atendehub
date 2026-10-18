@@ -15,6 +15,7 @@ export class CompanyService {
         slug: true,
         logoUrl: true,
         plan: true,
+        timezone: true,
         maxAgents: true,
         maxChannels: true,
         isActive: true,
@@ -44,6 +45,7 @@ export class CompanyService {
         slug: true,
         logoUrl: true,
         plan: true,
+        timezone: true,
         updatedAt: true,
       },
     });

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConversationStatus, ConversationResolution, Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { loadCompanyTimeZone, parsePeriodBoundary } from '../../shared/time/company-time';
 
 const DEFAULT_PERIOD_DAYS = 30;
 
@@ -23,9 +24,11 @@ export class DashboardService {
     toInput?: string,
     scope: Prisma.ConversationWhereInput = {},
   ) {
-    const to = toInput ? new Date(toInput) : new Date();
+    // M-04/B-61: data sem hora vira início/fim do dia no fuso da empresa
+    const timeZone = await loadCompanyTimeZone(this.prisma, companyId);
+    const to = toInput ? parsePeriodBoundary(toInput, timeZone, 'end') : new Date();
     const from = fromInput
-      ? new Date(fromInput)
+      ? parsePeriodBoundary(fromInput, timeZone, 'start')
       : new Date(to.getTime() - DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
     const createdInPeriod = { companyId, createdAt: { gte: from, lte: to }, AND: [scope] };

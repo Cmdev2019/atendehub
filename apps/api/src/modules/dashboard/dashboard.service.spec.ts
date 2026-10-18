@@ -3,6 +3,8 @@ import { DashboardService } from './dashboard.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
 const mockPrisma = {
+  // M-04/B-61: fuso da empresa
+  company: { findUnique: jest.fn().mockResolvedValue({ timezone: 'America/Sao_Paulo' }) },
   conversation: { count: jest.fn() },
 };
 

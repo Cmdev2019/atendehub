@@ -1,6 +1,6 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { ReportService } from './report.service';
+import { ReportService, ReportPeriod } from './report.service';
 import { ReportQueryDto } from './dto/report-query.dto';
 import { sendCsv, sendPdf } from './report-export.util';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -30,7 +30,7 @@ export class ReportController {
       title: 'Base de atendimento',
       period: result.period,
       jsonBody: result,
-      exportRows: this.reportService.toAttendanceExportRows(result.rows),
+      exportRows: this.reportService.toAttendanceExportRows(result.rows, result.period.timeZone),
     });
   }
 
@@ -77,7 +77,7 @@ export class ReportController {
     args: {
       baseName: string;
       title: string;
-      period: { from: Date; to: Date };
+      period: ReportPeriod;
       jsonBody: unknown;
       exportRows: ReturnType<typeof this.reportService.toAttendanceExportRows>;
     },

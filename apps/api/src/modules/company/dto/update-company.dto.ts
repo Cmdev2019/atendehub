@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUrl, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsTimeZone, IsUrl, MaxLength } from 'class-validator';
 
 export class UpdateCompanyDto {
   @IsOptional()
@@ -9,4 +9,9 @@ export class UpdateCompanyDto {
   @IsOptional()
   @IsUrl({}, { message: 'logoUrl deve ser uma URL válida' })
   logoUrl?: string;
+
+  // M-04/B-61: fuso IANA, ex. "America/Sao_Paulo", "America/Manaus"
+  @IsOptional()
+  @IsTimeZone({ message: 'timezone deve ser um fuso IANA válido (ex.: America/Sao_Paulo)' })
+  timezone?: string;
 }

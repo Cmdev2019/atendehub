@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConversationStatus, ConversationResolution } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { loadCompanyTimeZone, parsePeriodBoundary } from '../../shared/time/company-time';
 import type { ExportRow } from './report-export.util';
 
 const DEFAULT_PERIOD_DAYS = 30;
@@ -12,9 +13,16 @@ const RESOLUTION_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelado',
 };
 
-function formatDateTime(date: Date | null) {
+// M-04/B-61: datas do CSV/PDF no fuso da empresa (antes, no do servidor — UTC)
+function formatDateTime(date: Date | null, timeZone: string) {
   if (!date) return '—';
-  return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone });
+}
+
+export interface ReportPeriod {
+  from: Date;
+  to: Date;
+  timeZone: string;
 }
 
 function formatHours(hours: number | null) {
@@ -35,20 +43,26 @@ function avgResolutionHours(convs: { createdAt: Date; closedAt: Date | null }[])
 export class ReportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private resolvePeriod(from?: string, to?: string) {
-    const to_ = to ? new Date(to) : new Date();
-    const from_ = from ? new Date(from) : new Date(to_.getTime() - DEFAULT_PERIOD_DAYS * 24 * HOUR_MS);
-    return { from: from_, to: to_ };
+  // M-04/B-61: o front manda AAAA-MM-DD — `new Date('2026-10-17')` é 00:00
+  // UTC, e o limite final cortava o último dia inteiro. Agora o período vai do
+  // início do primeiro dia ao FIM do último, no fuso da empresa.
+  private async resolvePeriod(companyId: string, from?: string, to?: string): Promise<ReportPeriod> {
+    const timeZone = await loadCompanyTimeZone(this.prisma, companyId);
+    const to_ = to ? parsePeriodBoundary(to, timeZone, 'end') : new Date();
+    const from_ = from
+      ? parsePeriodBoundary(from, timeZone, 'start')
+      : new Date(to_.getTime() - DEFAULT_PERIOD_DAYS * 24 * HOUR_MS);
+    return { from: from_, to: to_, timeZone };
   }
 
-  periodLabel(period: { from: Date; to: Date }) {
-    const fmt = (d: Date) => d.toLocaleDateString('pt-BR');
+  periodLabel(period: ReportPeriod) {
+    const fmt = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: period.timeZone });
     return `Período: ${fmt(period.from)} a ${fmt(period.to)}`;
   }
 
   // ── Base de atendimento (B-33) — lista detalhada de conversas do período ──
   async getAttendanceReport(companyId: string, from?: string, to?: string) {
-    const period = this.resolvePeriod(from, to);
+    const period = await this.resolvePeriod(companyId, from, to);
 
     const conversations = await this.prisma.conversation.findMany({
       where: { companyId, createdAt: { gte: period.from, lte: period.to } },
@@ -94,6 +108,7 @@ export class ReportService {
       criadaEm: Date;
       encerradaEm: Date | null;
     }[],
+    timeZone: string,
   ): ExportRow[] {
     return rows.map((r) => ({
       'Contato': r.contato,
@@ -103,8 +118,8 @@ export class ReportService {
       'Status': r.status,
       'Resolução': r.resolucao,
       'Tags': r.tags,
-      'Criada em': formatDateTime(r.criadaEm),
-      'Encerrada em': formatDateTime(r.encerradaEm),
+      'Criada em': formatDateTime(r.criadaEm, timeZone),
+      'Encerrada em': formatDateTime(r.encerradaEm, timeZone),
     }));
   }
 
@@ -112,7 +127,7 @@ export class ReportService {
   // Uma conversa com 2 tags entra na contagem das 2 — é o comportamento
   // esperado de um relatório "por categoria" com categorias não-exclusivas.
   async getByTagReport(companyId: string, from?: string, to?: string) {
-    const period = this.resolvePeriod(from, to);
+    const period = await this.resolvePeriod(companyId, from, to);
     const tags = await this.prisma.tag.findMany({
       where: { companyId },
       select: { id: true, name: true },
@@ -175,7 +190,7 @@ export class ReportService {
 
   // ── Por atendente (B-33) — desempenho de cada agente no período ──────────
   async getByAgentReport(companyId: string, from?: string, to?: string) {
-    const period = this.resolvePeriod(from, to);
+    const period = await this.resolvePeriod(companyId, from, to);
     const agents = await this.prisma.user.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true },
