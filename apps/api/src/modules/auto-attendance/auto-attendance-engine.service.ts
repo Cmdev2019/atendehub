@@ -12,6 +12,7 @@ import {
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { resolveTimeZone, zonedParts } from '../../shared/time/company-time';
 import { EventsService } from '../events/events.service';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
@@ -35,6 +36,7 @@ const FLOW_WITH_OPTIONS_SELECT = {
   inactivityTimeoutSecs: true,
   inactivityMessage: true,
   closingMessage: true,
+  company: { select: { timezone: true } },
   menuOptions: {
     select: { id: true, order: true, label: true, action: true, departmentId: true, queueId: true },
     orderBy: { order: 'asc' as const },
@@ -95,7 +97,8 @@ export class AutoAttendanceEngineService {
       if (!flow || !flow.isActive) return;
 
       const now = new Date();
-      if (!this.isWithinBusinessHours(flow.businessHours as any, now)) {
+      const timeZone = resolveTimeZone(flow.company?.timezone);
+      if (!this.isWithinBusinessHours(flow.businessHours as any, now, timeZone)) {
         if (flow.outOfHoursMessage) {
           await this.sendBotMessage(conversationId, sessionName, contactPhone, companyId, flow.outOfHoursMessage);
         }
@@ -301,20 +304,22 @@ export class AutoAttendanceEngineService {
     return options.find((o) => o.label.toLowerCase() === lower) ?? null;
   }
 
-  // Sem fuso horário configurável por empresa ainda — assume o horário do
-  // servidor. `businessHours` ausente = sempre "dentro do expediente" (não
+  // Horário de parede no fuso da EMPRESA (M-04/B-61) — antes usava o fuso do
+  // servidor (UTC no Docker) e o expediente ficava deslocado em 3 horas no
+  // Brasil. `businessHours` ausente = sempre "dentro do expediente" (não
   // bloqueia quem nunca configurou horário nenhum).
   private isWithinBusinessHours(
     hours: Record<string, { start: string; end: string }[]> | null,
     now: Date,
+    timeZone: string,
   ): boolean {
     if (!hours) return true;
 
-    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const ranges = hours[days[now.getDay()]];
+    const local = zonedParts(now, timeZone);
+    const ranges = hours[local.weekday];
     if (!ranges || ranges.length === 0) return false;
 
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowMinutes = local.hour * 60 + local.minute;
     return ranges.some((range) => {
       const [startH, startM] = range.start.split(':').map(Number);
       const [endH, endM] = range.end.split(':').map(Number);

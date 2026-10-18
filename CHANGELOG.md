@@ -131,6 +131,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-61 (2026-10-17):** datas e horários passam a seguir o fuso da empresa (novo campo
+  `companies.timezone`, padrão `America/Sao_Paulo`, editável pelo ADMIN em `PATCH /company/me`). Antes
+  tudo usava o fuso do servidor (UTC no Docker): o expediente do auto-atendimento ficava deslocado em 3
+  horas, "resolvidas hoje" virava às 21h, o último dia dos relatórios ficava de fora, e as datas do
+  CSV/PDF saíam em UTC; no front, o filtro de relatórios abria com o dia seguinte depois das 21h.
+  Impacto no deploy: migration nova (`b61_company_timezone`).
 - **B-60 (2026-10-17):** a caixa de entrada passa a sinalizar mensagens novas. Áudio, imagem, vídeo,
   documento e figurinha sem legenda agora sobem a conversa na lista, contam como não lidos e aparecem
   com rótulo na prévia ("Áudio", "Imagem"...) — antes só texto do cliente atualizava a conversa (B-42).

@@ -106,3 +106,12 @@ describe('ReportsView (B-33)', () => {
     await screen.findByText(/não está disponível em modo demonstração/);
   });
 });
+
+// M-04/B-61: o padrão do filtro usava a data UTC
+describe('toDateInputValue (M-04/B-61)', () => {
+  it('usa a data local, não a UTC', () => {
+    const { toDateInputValue } = require('./ReportsView');
+    const lateEvening = new Date(2026, 9, 17, 22, 30); // 17/10 às 22h30 locais
+    expect(toDateInputValue(lateEvening)).toBe('2026-10-17');
+  });
+});

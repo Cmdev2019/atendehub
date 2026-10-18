@@ -7,6 +7,7 @@ import {
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
+import { loadCompanyTimeZone, startOfDayInZone } from '../../shared/time/company-time';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { formatStructuredLog } from '../../shared/logging/structured-log.util';
@@ -143,8 +144,9 @@ export class ConversationService {
   // (do JWT) — "minhas"/"minhas sem resposta" são sempre sobre quem chamou,
   // nunca um parâmetro livre (evitaria vazar contagem de outro agente).
   async getStats(companyId: string, userId: string, scope: Prisma.ConversationWhereInput = {}) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    // "Hoje" no fuso da empresa (M-04/B-61) — no fuso do servidor (UTC), o
+    // dia virava às 21h no Brasil
+    const startOfToday = startOfDayInZone(new Date(), await loadCompanyTimeZone(this.prisma, companyId));
 
     // C-10/B-40: os números do atendente são só do que ele pode ver
     const activeWhere = { companyId, status: { not: ConversationStatus.CLOSED }, AND: [scope] };

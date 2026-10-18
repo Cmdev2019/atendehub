@@ -243,7 +243,9 @@ obrigatória, B-36), não uma tentativa de atendimento que não deu certo.
 > AGENT recebe **403**.
 
 Os 3 endpoints abaixo compartilham a mesma query: `from?`/`to?` (ISO 8601 —
-sem eles, últimos 30 dias) e `format?` (`json` padrão, `csv` ou `pdf` — os 2
+sem eles, últimos 30 dias; data sem hora, `AAAA-MM-DD`, vale do início do dia
+`from` ao **fim** do dia `to` no fuso da empresa — B-61; datas do CSV/PDF
+também saem nesse fuso) e `format?` (`json` padrão, `csv` ou `pdf` — os 2
 últimos viram download, `Content-Disposition: attachment`, em vez de JSON).
 
 ### `GET /reports/attendance` — base de atendimento
@@ -591,6 +593,9 @@ Autor: `{ id, name, avatarUrl }`. Notas nunca vão para o WhatsApp.
 
 ## Company — `/company`
 `GET /company/me` · `PATCH /company/me` — dados da empresa do usuário logado.
+Campo `timezone` (B-61): fuso IANA da empresa, padrão `America/Sao_Paulo`;
+`PATCH` (ADMIN) valida o fuso — inválido responde 400. Horário comercial do
+auto-atendimento, "resolvidas hoje", Dashboard e relatórios usam este fuso.
 
 ## Health — `/health` (público, sem throttle)
 `GET` (liveness — não toca dependência) → `{ "status": "ok", "timestamp": "...", "uptime": <segundos> }`

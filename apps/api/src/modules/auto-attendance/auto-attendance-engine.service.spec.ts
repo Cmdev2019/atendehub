@@ -108,6 +108,34 @@ describe('AutoAttendanceEngineService', () => {
       });
     });
 
+    // M-04/B-61: o expediente é avaliado no fuso da EMPRESA, não do servidor.
+    // 11:30 UTC de segunda = 08:30 em São Paulo (dentro de 08:00–09:00) e
+    // 07:30 em Manaus (fora). No fuso do servidor (UTC) daria 11:30 — fora.
+    it.each([
+      ['America/Sao_Paulo', true],
+      ['America/Manaus', false],
+    ])('expediente no fuso da empresa (%s → dentro=%s)', async (timezone, dentro) => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-10-19T11:30:00Z')); // segunda-feira
+
+      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+        isActive: true,
+        greetingMessage: 'Saudação',
+        businessHours: { mon: [{ start: '08:00', end: '09:00' }] },
+        outOfHoursMessage: 'Estamos fora do horário',
+        menuOptions: [],
+        company: { timezone },
+      });
+
+      await service.handleNewConversation({ companyId, conversationId, contactPhone, sessionName, queueGreetingMsg: null });
+
+      expect(mockEvolution.sendTextMessage).toHaveBeenCalledWith(
+        sessionName,
+        contactPhone,
+        dentro ? 'Saudação' : 'Estamos fora do horário',
+      );
+      jest.useRealTimers();
+    });
+
     it('fora do horário de atendimento, envia só a mensagem de fora do expediente (sem saudação/menu)', async () => {
       const sunday = new Date('2026-08-02T10:00:00'); // domingo
       jest.useFakeTimers().setSystemTime(sunday);

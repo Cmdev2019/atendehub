@@ -2,8 +2,12 @@ import { createElement as h, useEffect, useState } from 'react';
 import { apiClient } from '../services/api';
 import { Icon } from './icons';
 
-function toDateInputValue(date) {
-  return date.toISOString().slice(0, 10);
+// M-04/B-61: data LOCAL (do navegador) — `toISOString()` é UTC, e depois das
+// 21h no Brasil o filtro já abria com o dia seguinte. A API interpreta
+// AAAA-MM-DD no fuso da empresa, com o último dia inteiro incluído.
+export function toDateInputValue(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 const today = new Date();
