@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { AutoAttendanceAction } from '@prisma/client';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { AutoAttendanceAction, Prisma } from '@prisma/client';
 import { AutoAttendanceService } from './auto-attendance.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
@@ -119,6 +119,38 @@ describe('AutoAttendanceService', () => {
           action: AutoAttendanceAction.ROUTE_TO_QUEUE,
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // B-99 (L-11): antes, o departmentId junto de ROUTE_TO_QUEUE não era conferido
+    it('ROUTE_TO_QUEUE com departmentId de outra empresa é recusado', async () => {
+      mockPrisma.autoAttendanceFlow.upsert.mockResolvedValueOnce({ id: 'flow-1' });
+      mockPrisma.department.findFirst.mockResolvedValueOnce(null);
+      mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'fila-1' });
+
+      await expect(
+        service.createMenuOption(companyId, {
+          order: 1,
+          label: 'Fila',
+          action: AutoAttendanceAction.ROUTE_TO_QUEUE,
+          queueId: 'fila-1',
+          departmentId: 'dept-de-outra-empresa',
+        }),
+      ).rejects.toThrow('Departamento não encontrado');
+      expect(mockPrisma.department.findFirst).toHaveBeenCalledWith({
+        where: { id: 'dept-de-outra-empresa', companyId },
+      });
+      expect(mockPrisma.autoAttendanceMenuOption.create).not.toHaveBeenCalled();
+    });
+
+    it('order repetido responde 409 com o motivo (antes, 500)', async () => {
+      mockPrisma.autoAttendanceFlow.upsert.mockResolvedValueOnce({ id: 'flow-1' });
+      mockPrisma.autoAttendanceMenuOption.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }),
+      );
+
+      await expect(
+        service.createMenuOption(companyId, { order: 1, label: 'Dup', action: AutoAttendanceAction.END_CONVERSATION }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
