@@ -99,13 +99,9 @@ export class WhatsappService {
     });
     if (existing) throw new ConflictException('Já existe uma conexão com esse nome');
 
-    // URL do webhook que a Evolution vai chamar
-    const webhookUrl =
-      process.env.EVOLUTION_WEBHOOK_URL ??
-      'http://host.docker.internal:3001/api/v1/webhooks/evolution';
-
-    // Cria instância na Evolution API
-    const instance = await this.evolution.createInstance(sessionName, webhookUrl);
+    // Cria instância na Evolution API — os eventos chegam pelo webhook global
+    // da Evolution (B-82)
+    const instance = await this.evolution.createInstance(sessionName);
 
     this.logger.log(`Instância criada na Evolution: ${sessionName}`);
 
@@ -136,6 +132,13 @@ export class WhatsappService {
     if (conn.status === ConnectionStatus.CONNECTED) {
       throw new BadRequestException('Esta conexão já está conectada');
     }
+
+    // B-82 (M-26): instância antiga ainda pode ter o webhook próprio "por
+    // evento" ligado (só gerava 404). Reconectar é o momento natural de
+    // desligá-lo; falhar aqui não impede o QR code.
+    await this.evolution.disableInstanceWebhook(conn.sessionName).catch((err: Error) =>
+      this.logger.warn(`Não foi possível desligar o webhook próprio de ${conn.sessionName}: ${err.message}`),
+    );
 
     const qr = await this.evolution.getQrCode(conn.sessionName);
 

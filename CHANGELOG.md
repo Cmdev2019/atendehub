@@ -173,6 +173,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-82 (2026-10-18, M-26):** a Evolution passa a entregar cada evento uma vez só, pelo webhook global.
+  Antes cada número conectado tinha também um webhook próprio que chamava um endereço inexistente da
+  API e era repetido a cada evento. Números já conectados têm esse webhook desligado na próxima vez que
+  o QR code for gerado.
 - **B-81 (2026-10-18, M-02):** mensagens do WhatsApp que chegavam vazias passam a aparecer: temporárias,
   de visualização única, documento com legenda, enquetes e respostas de botão ou lista. Quando o cliente
   edita uma mensagem, o texto é atualizado e o balão ganha a marca "editada". A reação aparece no balão

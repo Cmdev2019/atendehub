@@ -74,7 +74,12 @@ export class EvolutionService {
   }
 
   // ── Criar instância (sessão) ───────────────────────────────────────────────
-  async createInstance(sessionName: string, webhookUrl: string): Promise<EvolutionInstance> {
+  // B-82 (M-26): sem webhook próprio. Os eventos chegam pelo webhook GLOBAL
+  // da Evolution (WEBHOOK_GLOBAL_* no docker-compose), o mecanismo único.
+  // Antes cada instância nascia também com um webhook "por evento", em que a
+  // Evolution acrescenta o nome do evento à URL (…/evolution/connection-update)
+  // — rota que não existe na API: toda entrega dele dava 404 e era repetida.
+  async createInstance(sessionName: string): Promise<EvolutionInstance> {
     try {
       const { data } = await this.http.post('/instance/create', {
         instanceName: sessionName,
@@ -85,20 +90,6 @@ export class EvolutionService {
         // webhooks — que o WebhookController rejeitaria (valida contra a
         // EVOLUTION_API_KEY global).
         token: this.apiKey,
-        webhook: {
-          url: webhookUrl,
-          byEvents: true,
-          base64: true,
-          events: [
-            'QRCODE_UPDATED',
-            'CONNECTION_UPDATE',
-            'MESSAGES_UPSERT',
-            'MESSAGES_UPDATE',
-            'MESSAGES_DELETE',
-            'SEND_MESSAGE',
-            'CONTACTS_UPSERT',
-          ],
-        },
       });
 
       return data?.instance ?? data;
@@ -107,6 +98,25 @@ export class EvolutionService {
         `Falha ao criar instância na Evolution API: ${err.response?.data?.message ?? err.message}`,
       );
     }
+  }
+
+  // ── Desliga o webhook próprio de uma instância (B-82 / M-26) ──────────────
+  // Instâncias criadas antes do B-82 têm o webhook "por evento" ligado. A
+  // URL é obrigatória no formato da Evolution mesmo desligado — vai a do
+  // webhook global, sem efeito.
+  async disableInstanceWebhook(sessionName: string): Promise<void> {
+    await this.http.post(`/webhook/set/${sessionName}`, {
+      webhook: {
+        enabled: false,
+        url: this.config.get<string>(
+          'EVOLUTION_WEBHOOK_URL',
+          'http://host.docker.internal:3001/api/v1/webhooks/evolution',
+        ),
+        byEvents: false,
+        base64: false,
+        events: [],
+      },
+    });
   }
 
   // ── Buscar QR Code ─────────────────────────────────────────────────────────
