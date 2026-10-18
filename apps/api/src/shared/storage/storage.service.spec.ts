@@ -268,6 +268,65 @@ describe('StorageService', () => {
       expect(client.putObject).toHaveBeenCalled();
       expect(result.key).toMatch(/\.pdf$/);
     });
+
+    // B-77 (M-03): anexos comuns recebidos pelo WhatsApp eram descartados em
+    // silêncio. Valem só para mídia recebida, sempre com download forçado.
+    describe('mídia recebida (inbound)', () => {
+      it.each([
+        ['application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx', 'documents'],
+        ['application/vnd.rar', '.rar', 'documents'],
+        ['application/x-7z-compressed', '.7z', 'documents'],
+        ['application/vnd.oasis.opendocument.text', '.odt', 'documents'],
+        ['video/webm', '.webm', 'videos'],
+        ['application/octet-stream', '.bin', 'documents'],
+      ])('aceita %s com download forçado', async (mime, ext, folder) => {
+        const result = await service.upload(Buffer.from('conteudo'), mime, 'company-1', undefined, undefined, {
+          inbound: true,
+        });
+
+        expect(result.key).toMatch(new RegExp(`^company-1/${folder}/[a-f0-9-]{36}\\${ext}$`));
+        const metaData = client.putObject.mock.calls[0][4];
+        expect(metaData).toEqual(
+          expect.objectContaining({ 'Content-Type': mime, 'Content-Disposition': 'attachment' }),
+        );
+      });
+
+      it('os mesmos tipos continuam recusados no upload do painel', async () => {
+        await expect(
+          service.upload(Buffer.from('conteudo'), 'application/octet-stream', 'company-1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(client.putObject).not.toHaveBeenCalled();
+      });
+
+      it('tipo da lista comum recebido continua abrindo no navegador (sem download forçado)', async () => {
+        await service.upload(JPEG_BYTES, 'image/jpeg', 'company-1', undefined, undefined, { inbound: true });
+
+        expect(client.putObject.mock.calls[0][4]).not.toHaveProperty('Content-Disposition');
+      });
+
+      it('tipo fora das duas listas é recusado mesmo recebido', async () => {
+        await expect(
+          service.upload(Buffer.from('<?php'), 'application/x-php', 'company-1', undefined, undefined, {
+            inbound: true,
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('aceita HEIC (foto do iPhone) com a assinatura certa e recusa um HEIC falso', async () => {
+        const heic = Buffer.concat([
+          Buffer.from([0x00, 0x00, 0x00, 0x18]),
+          Buffer.from('ftypheic', 'ascii'),
+          Buffer.alloc(8),
+        ]);
+        await expect(
+          service.upload(heic, 'image/heic', 'company-1', undefined, undefined, { inbound: true }),
+        ).resolves.toEqual(expect.objectContaining({ key: expect.stringMatching(/\.heic$/) }));
+
+        await expect(
+          service.upload(NOT_AN_IMAGE, 'image/heic', 'company-1', undefined, undefined, { inbound: true }),
+        ).rejects.toThrow(/não corresponde ao tipo declarado/);
+      });
+    });
   });
 
   // ── C-07/B-59, revisto no B-64: URL assinada servida pelo domínio de mídia ──

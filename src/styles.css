@@ -1015,6 +1015,13 @@ button {
   font-style: italic;
 }
 
+/* B-77: anexo recebido que não pôde ser salvo — aviso, não espera */
+.bubble-media-error {
+  opacity: 1;
+  font-style: normal;
+  align-items: flex-start;
+}
+
 .bubble-media + .bubble-text,
 .bubble-audio + .bubble-text {
   margin-top: 6px;

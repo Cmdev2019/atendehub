@@ -170,6 +170,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-77 (2026-10-18, M-03):** anexos comuns enviados pelo cliente (PowerPoint, RAR, 7z, OpenDocument,
+  foto HEIC do iPhone, WebM e arquivos genéricos) passam a ser salvos. Eles chegam ao atendente como
+  download, não abrem direto no navegador. Quando um anexo não pode ser salvo, o balão avisa o motivo
+  em vez de ficar carregando para sempre.
 - **B-76 (2026-10-18, M-01):** mídia recebida pelo WhatsApp não se perde mais numa falha passageira — o
   download é tentado de novo por alguns minutos. E se o processamento de uma mensagem cair no meio, a
   nova tentativa faz o que faltou (prévia na lista, saudação, resposta do menu, aviso em tempo real) em

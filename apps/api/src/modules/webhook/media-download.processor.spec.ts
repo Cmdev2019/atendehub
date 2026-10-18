@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { MediaDownloadProcessor, MediaDownloadJobData } from './media-download.processor';
 import { MediaDownloadService } from './media-download.service';
 
@@ -6,7 +7,10 @@ import { MediaDownloadService } from './media-download.service';
 // que faz o Bull tentar de novo — antes a falha era engolida e o anexo se
 // perdia para sempre).
 describe('MediaDownloadProcessor (B-76)', () => {
-  const mockPrisma = { attachment: { findFirst: jest.fn(), create: jest.fn() } };
+  const mockPrisma = {
+    attachment: { findFirst: jest.fn(), create: jest.fn() },
+    message: { findUnique: jest.fn(), update: jest.fn() },
+  };
   const mockMediaDownload = { downloadFromEvolution: jest.fn() };
   const mockEvents = { emitMessageUpdated: jest.fn() };
   const processor = new MediaDownloadProcessor(
@@ -28,6 +32,7 @@ describe('MediaDownloadProcessor (B-76)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPrisma.attachment.findFirst.mockResolvedValue(null);
+    mockPrisma.message.findUnique.mockResolvedValue({ metadata: { remoteJid: 'x@s.whatsapp.net' } });
   });
 
   it('baixa pela Evolution, grava o anexo e avisa a UI (message.updated)', async () => {
@@ -75,6 +80,40 @@ describe('MediaDownloadProcessor (B-76)', () => {
     await expect(processor.handle(job())).rejects.toThrow('timeout');
     expect(mockPrisma.attachment.create).not.toHaveBeenCalled();
     expect(mockEvents.emitMessageUpdated).not.toHaveBeenCalled();
+  });
+
+  // B-77 (M-03): antes o descarte era silencioso — o balão ficava com o
+  // placeholder para sempre e o atendente nem sabia que havia um arquivo.
+  it('tipo recusado pelo storage não é tentado de novo: registra o motivo na mensagem e avisa a UI', async () => {
+    mockMediaDownload.downloadFromEvolution.mockRejectedValueOnce(
+      new BadRequestException('Tipo de arquivo não permitido: application/x-msdownload'),
+    );
+
+    await expect(processor.handle(job())).resolves.toBeUndefined();
+
+    expect(mockPrisma.message.update).toHaveBeenCalledWith({
+      where: { id: 'msg-1' },
+      // O metadata existente é preservado
+      data: { metadata: { remoteJid: 'x@s.whatsapp.net', mediaError: 'unsupported_type' } },
+    });
+    expect(mockEvents.emitMessageUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1', mediaError: 'unsupported_type' }),
+    );
+  });
+
+  it('tentativas esgotadas registram download_failed; falha intermediária não registra nada', async () => {
+    await processor.onFailed(job(3), new Error('timeout'));
+    expect(mockPrisma.message.update).not.toHaveBeenCalled();
+
+    await processor.onFailed(job(6), new Error('timeout'));
+    expect(mockPrisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { metadata: expect.objectContaining({ mediaError: 'download_failed' }) },
+      }),
+    );
+    expect(mockEvents.emitMessageUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaError: 'download_failed' }),
+    );
   });
 
   // B-50: o fallback antigo baixava a URL vinda no conteúdo da mensagem

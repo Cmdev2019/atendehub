@@ -12,6 +12,13 @@ const MEDIA_LABELS = {
   CONTACT_CARD: 'Contato',
 };
 
+// B-77: anexo recebido que não pôde ser salvo — antes o balão ficava com o
+// placeholder para sempre, sem o atendente saber que havia um arquivo
+const MEDIA_ERROR_LABELS = {
+  unsupported_type: 'tipo de arquivo não aceito',
+  download_failed: 'não foi possível baixar',
+};
+
 // Conteúdo do balão: anexos (imagem/figurinha inline, áudio/vídeo com player,
 // resto como link), placeholder para mídia ainda não baixada e o texto/caption
 function renderBubbleContent(msg) {
@@ -45,6 +52,16 @@ function renderBubbleContent(msg) {
         ` ${att.fileName || MEDIA_LABELS[msg.mediaType] || 'Arquivo'}`,
       ));
     }
+  }
+
+  if (parts.length === 0 && msg.mediaError) {
+    parts.push(h(
+      'span',
+      { key: 'media-error', className: 'bubble-placeholder bubble-media-error', role: 'note' },
+      h(Icon, { name: 'warning', size: 13 }),
+      ` ${MEDIA_LABELS[msg.mediaType] || 'Anexo'} recebido, mas não salvo: `
+        + `${MEDIA_ERROR_LABELS[msg.mediaError] || 'erro desconhecido'}. Peça ao cliente para reenviar em outro formato.`,
+    ));
   }
 
   // Mensagem de mídia sem anexo carregado (evento em tempo real chega antes

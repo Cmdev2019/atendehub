@@ -667,7 +667,7 @@ errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por
 |---|---|
 | `connected` | confirmação pós-handshake |
 | `message.new` | `{ conversationId, companyId, message: { id, senderType, content, type, status, sentAt, externalId } }` — **sem attachments** (download é assíncrono) |
-| `message.updated` | `{ companyId, conversationId, messageId, attachment: { id, url, mimeType, fileName } }` — anexo pronto |
+| `message.updated` | `{ companyId, conversationId, messageId, attachment: { id, url, mimeType, fileName } }` — anexo pronto. Ou, sem `attachment`, `{ companyId, conversationId, messageId, mediaError }` quando o anexo recebido não pôde ser salvo (B-77): `"unsupported_type"` (tipo não aceito) ou `"download_failed"` (tentativas esgotadas). O mesmo motivo fica em `message.metadata.mediaError` na listagem |
 | `message.status` | `{ conversationId, companyId, externalId, status }` |
 | `conversation.created` | `{ companyId, conversation: { id, status, channel, contact: {id,name,phone,avatarUrl}, whatsappConnectionId, createdAt } }` |
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |

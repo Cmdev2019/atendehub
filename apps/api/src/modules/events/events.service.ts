@@ -125,18 +125,23 @@ export class EventsService {
   // B-38: `attachment.url` sai gravado como URL interna do MinIO — troca por
   // URL assinada antes de emitir (mesmo tratamento da resposta HTTP, ver
   // MediaPresignInterceptor).
+  // B-77: sem `attachment` e com `mediaError` quando o anexo não pôde ser
+  // salvo — a UI troca o placeholder pelo aviso em vez de esperar para sempre.
   async emitMessageUpdated(payload: {
     companyId: string;
     conversationId: string;
     messageId: string;
-    attachment: { id: string; url: string; mimeType: string; fileName?: string | null };
+    attachment?: { id: string; url: string; mimeType: string; fileName?: string | null };
+    mediaError?: string;
   }): Promise<void> {
     const { companyId, conversationId } = payload;
     const signedPayload = await this.storage.presignDeep(payload);
 
     await this.emitToConversation(companyId, conversationId, 'message.updated', signedPayload);
 
-    this.logger.debug(`message.updated → msg ${payload.messageId} (anexo pronto)`);
+    this.logger.debug(
+      `message.updated → msg ${payload.messageId} (${payload.attachment ? 'anexo pronto' : `sem anexo: ${payload.mediaError}`})`,
+    );
   }
 
   // ── Status de mensagem atualizado (entregue, lido) ────────────────────────
