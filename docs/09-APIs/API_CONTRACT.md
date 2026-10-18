@@ -659,7 +659,8 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 ## Socket.IO — namespace `/ws`
 
 - **URL:** `http://localhost:3001/ws` (config `VITE_WS_URL`)
-- **Handshake:** `auth: { token: <accessToken JWT> }`. Vale a mesma regra do HTTP (B-74):
+- **Handshake:** `auth: { token: <accessToken JWT> }` — só por aí; token na query string ou no header
+  `Authorization` não é aceito (B-93). Vale a mesma regra do HTTP (B-74):
   só access token, fora da blacklist, de usuário ativo e emitido depois do último
   encerramento de sessões. Recusa = `connect_error` com `data: { code: "UNAUTHORIZED" }` e
   mensagem `"Token não informado"`, `"Token inválido ou expirado"`, `"Tipo de token inválido"`,

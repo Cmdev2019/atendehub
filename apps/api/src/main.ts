@@ -11,6 +11,7 @@ import { RequestIdMiddleware } from './shared/logging/request-id.middleware';
 import { initSentry, SentryExceptionFilter } from './shared/monitoring/sentry';
 import { resolveTrustProxy } from './shared/rate-limit/trust-proxy';
 import { applyHttpPipeline } from './shared/http/http-pipeline';
+import { parseCorsOrigins } from './shared/http/cors-origins';
 
 // B-18: precisa rodar antes de qualquer outra coisa (padrão do SDK do
 // Sentry) — sem SENTRY_DSN configurado é um no-op seguro.
@@ -73,7 +74,7 @@ async function bootstrap() {
   app.use(compression());
 
   // ── CORS ───────────────────────────────────────────────────────────────────
-  const origins = process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'];
+  const origins = parseCorsOrigins(process.env.CORS_ORIGINS);
   validateCorsOrigins(config, origins);
   app.enableCors({
     origin: origins,

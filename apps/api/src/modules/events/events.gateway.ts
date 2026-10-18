@@ -21,6 +21,7 @@ import {
   seesWholeCompany,
 } from '../../shared/conversation-scope/conversation-scope.service';
 import { scopeRoomsForUser } from './scope-rooms';
+import { parseCorsOrigins } from '../../shared/http/cors-origins';
 
 // Estende o Socket para carregar os dados do usuário autenticado
 export interface AuthenticatedSocket extends Socket {
@@ -44,7 +45,7 @@ export const sessionRoom = (jti: string) => `session:${jti}`;
 
 @WebSocketGateway({
   cors: {
-    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(','),
+    origin: parseCorsOrigins(process.env.CORS_ORIGINS),
     credentials: true,
   },
   namespace: '/ws',
@@ -91,10 +92,10 @@ export class EventsGateway
   // logout, de usuário desativado ou de sessão encerrada pela troca de senha
   // ainda abria socket. Agora vale a mesma regra do HTTP (AccessSessionService).
   private async authenticate(socket: AuthenticatedSocket): Promise<void> {
-    const token =
-      socket.handshake.auth?.token ??
-      socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
-      (socket.handshake.query?.token as string);
+    // B-93 (L-04): só em `auth` (o que o cliente do painel usa). Pela query
+    // string o token acabava nos logs de acesso do proxy; pelo header, numa
+    // via que nenhum cliente nosso usa.
+    const token: string | undefined = socket.handshake.auth?.token;
 
     if (!token) throw handshakeAuthError('Token não informado');
 

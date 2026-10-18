@@ -120,6 +120,24 @@ describe('Sessão no WebSocket (E2E)', () => {
     expect(garbage).toEqual(expect.objectContaining({ connected: false, code: 'UNAUTHORIZED' }));
   });
 
+  // B-93 (L-04): pela query string o token ia parar nos logs do proxy
+  it('token na query string ou no header não é aceito, só em auth', async () => {
+    const user = await mkUser('erica', Role.AGENT);
+    const session = await auth.login(user);
+    const tryWith = (opts: Record<string, unknown>) =>
+      new Promise<string>((resolve) => {
+        const socket = io(`${base}/ws`, { transports: ['websocket'], reconnection: false, forceNew: true, ...opts });
+        sockets.push(socket);
+        socket.once('connected', () => resolve('conectou'));
+        socket.once('connect_error', (err) => resolve(err.message));
+      });
+
+    expect(await tryWith({ query: { token: session.accessToken } })).toBe('Token não informado');
+    expect(await tryWith({ extraHeaders: { authorization: `Bearer ${session.accessToken}` } })).toBe(
+      'Token não informado',
+    );
+  });
+
   it('logout derruba o socket da sessão e o token não reconecta; a outra sessão segue', async () => {
     const user = await mkUser('bruno', Role.AGENT);
     const notebook = await auth.login(user);

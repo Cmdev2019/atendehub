@@ -16,6 +16,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-92 (2026-10-18, L-03):** o Dependabot sobe `prisma` e `@prisma/client` juntos e não propõe mais versões ímpares do Node na imagem da API.
 - **B-91 (2026-10-18, L-02):** relatório de inclusão de padrões movido da raiz para `docs/99-Arquivo/`.
 
+### Segurança
+- **B-93 (2026-10-18, L-04):** `CORS_ORIGINS` aceita espaço depois da vírgula, e o WebSocket só aceita o token no campo `auth` — não mais na URL, onde ia parar em logs de proxy.
+
 ## [0.1.0] - 2026-10-18
 
 Primeira versão marcada (tag `v0.1.0`). Fecha as Fases 0, 1 e 2 do plano da auditoria de
