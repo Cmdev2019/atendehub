@@ -45,7 +45,7 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
       inject: [ConfigService, RedisThrottlerStorage],
       useFactory: buildThrottlerOptions,
     }),
-    // ── BullMQ (filas de processamento assíncrono) ───────────────────────────
+    // ── Bull (filas de processamento assíncrono — pacote `bull`, não BullMQ) ──
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

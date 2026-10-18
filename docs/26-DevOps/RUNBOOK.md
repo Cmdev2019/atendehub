@@ -353,7 +353,7 @@ processa dado pessoal de titular que não é o contratante.
 |---|---|---|
 | Contato (nome, telefone, e-mail, foto) | Postgres, tabela `contacts` | Indefinida — sem expiração automática |
 | Conversas e mensagens | Postgres, tabelas `conversations`/`messages` | Indefinida — sem expiração automática |
-| Mídia (foto, áudio, documento do WhatsApp) | MinIO, bucket `atendehub-media` | Indefinida — **nunca é apagada**, nem quando a mensagem/conversa/contato é apagado/anonimizado (`StorageService#delete` existe mas não é chamado em nenhum lugar do código) |
+| Mídia (foto, áudio, documento do WhatsApp) | MinIO, bucket `atendehub-media` | Apagada junto da anonimização do contato (B-29, via `StorageService#deleteByUrl`); fora isso, indefinida — sem expiração automática |
 | Logs de auditoria (`audit_logs`) | Postgres | Indefinida — sem TTL/purga; só desaparece se a `Company` inteira for removida (cascade), o que não é uma operação exposta hoje |
 
 **Não existe hoje** nenhuma rotina automática (cron/job) de expiração de
@@ -383,8 +383,9 @@ legítimo (aqui, o histórico de atendimento da empresa), desde que
 anonimizado. Apagar a conversa inteira destruiria histórico de negócio que
 não pertence só ao titular (ex.: a resposta do atendente).
 
-**Gaps conhecidos, registrados como itens novos de backlog (não corrigidos
-nesta sessão):**
+**Gaps registrados na época** (os dois foram fechados em 2026-07-25 — B-29
+apaga a mídia na anonimização, B-30 criou a exportação do contato; o texto
+abaixo fica como histórico):
 - **B-29** — a mídia do contato anonimizado permanece acessível no MinIO
   (a URL pública não expira nem é invalidada) mesmo depois da PII do
   contato ser removida do Postgres.
@@ -394,7 +395,7 @@ nesta sessão):**
   últimas 10 conversas) e `GET /conversations/:id/messages` de cada
   conversa relevante, e monta a resposta a mão.
 
-### Processo hoje (enquanto B-29/B-30 não são resolvidos)
+### Processo da época (antes do B-29/B-30 — histórico)
 
 1. **Exclusão**: `DELETE /contacts/:id` (autenticado como `ADMIN`) — cobre o
    caso comum de verdade agora (antes falhava silenciosamente com 500 pra

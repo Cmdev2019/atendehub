@@ -40,3 +40,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # B-89 (M-24): números do projeto contados do código, no resumo do job —
+      # os documentos apontam para cá em vez de repetir contagens que envelhecem
+      - name: Números do projeto
+        run: node scripts/project-stats.mjs >> "$GITHUB_STEP_SUMMARY"

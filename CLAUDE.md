@@ -35,17 +35,21 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
 - **Back** (`apps/api`): NestJS + Prisma + PostgreSQL, Redis/Bull, storage S3
   (MinIO em dev, Cloudflare R2 em produção — B-64), Socket.IO gateway.
   Porta **3001**, prefixo `/api/v1`.
-  - Multi-tenant: **toda** query filtra por `companyId`
+  - Multi-tenant: **toda** query filtra por `companyId`; o RLS do Postgres é a
+    rede de proteção nas requisições autenticadas (B-83). Escapes de propósito
+    usam `runAsSystem` (e precisam de `await` dentro — a consulta do Prisma é
+    preguiçosa)
   - `ValidationPipe` com `forbidNonWhitelisted` — campo extra no body = 400
 - **Evolution API** (Docker, porta 8080) faz a ponte com o WhatsApp; fala com
-  a API via webhooks (`/api/v1/webhooks/evolution`, header `apikey`).
+  a API pelo webhook global da Evolution (`/api/v1/webhooks/evolution`; chave no
+  campo `apikey` do corpo ou no header `x-evolution-signature` — B-82/B-88).
 
 ## Comandos
 
 ```bash
 # Front (na raiz)
 npm run dev          # dev server porta 3000
-npm test             # Jest (74 testes)
+npm test             # Jest (contagens: node scripts/project-stats.mjs)
 npm run build        # vite build
 
 # Back (apps/api)
