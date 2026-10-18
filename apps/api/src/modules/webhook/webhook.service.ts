@@ -293,12 +293,12 @@ export class WebhookService {
     // ── Auto-atendimento (B-35) ─────────────────────────────────────────────
     // Nunca reage a mensagens fromMe (o próprio negócio respondendo pelo
     // celular) — só a mensagens de verdade do cliente (ver planWebhookSteps).
+    // B-78: só enfileira; o robô envia na fila própria, fora deste worker.
+    const autoJob = { companyId, conversationId: conversation.id, contactPhone: contact.phone, sessionName };
     await step(WEBHOOK_STEP.AUTO_GREETING, async () =>
-      this.autoAttendanceEngine.handleNewConversation({
-        companyId,
-        conversationId: conversation.id,
-        contactPhone: contact.phone,
-        sessionName,
+      this.autoAttendanceEngine.enqueue(savedMessage.id, {
+        ...autoJob,
+        kind: 'greeting',
         // No retry a conversa já existe e o upsert não devolve a fila — a
         // saudação da fila vem do queueId gravado nela.
         queueGreetingMsg:
@@ -306,15 +306,13 @@ export class WebhookService {
       }),
     );
     // Só texto conta como resposta de menu — mídia/figurinha etc. enquanto o
-    // menu está aberto não é tratada como seleção inválida
+    // menu está aberto não é tratada como seleção inválida, mas renova o
+    // prazo de inatividade (AUTO_ACTIVITY)
     await step(WEBHOOK_STEP.AUTO_REPLY, () =>
-      this.autoAttendanceEngine.handleReply({
-        companyId,
-        conversationId: conversation.id,
-        contactPhone: contact.phone,
-        sessionName,
-        text: content,
-      }),
+      this.autoAttendanceEngine.enqueue(savedMessage.id, { ...autoJob, kind: 'reply', text: content }),
+    );
+    await step(WEBHOOK_STEP.AUTO_ACTIVITY, () =>
+      this.autoAttendanceEngine.enqueue(savedMessage.id, { ...autoJob, kind: 'activity' }),
     );
 
     // ── Emite evento em tempo real ─────────────────────────────────────────

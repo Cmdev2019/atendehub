@@ -17,6 +17,12 @@ import { EventsService } from '../events/events.service';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { AutoAttendanceInactivityJobData } from './auto-attendance-inactivity.processor';
+import {
+  AUTO_ATTENDANCE_JOB_OPTIONS,
+  AutoAttendanceJobData,
+  autoAttendanceJobId,
+} from './auto-attendance-jobs';
+import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 
 interface MenuOptionLike {
   id: string;
@@ -59,7 +65,35 @@ export class AutoAttendanceEngineService {
     private readonly sessionService: AutoAttendanceSessionService,
     @InjectQueue(QUEUE_NAMES.AUTO_ATTENDANCE_INACTIVITY)
     private readonly inactivityQueue: Queue<AutoAttendanceInactivityJobData>,
+    @InjectQueue(QUEUE_NAMES.AUTO_ATTENDANCE)
+    private readonly autoQueue: Queue<AutoAttendanceJobData>,
   ) {}
+
+  // ── Enfileira a reação do robô a uma mensagem do cliente (B-78) ───────────
+  // Chamado pelo webhook; quem executa é o AutoAttendanceProcessor. O id do
+  // job é o da mensagem: um retry do webhook não duplica a reação.
+  async enqueue(messageId: string, data: AutoAttendanceJobData): Promise<void> {
+    await this.autoQueue.add(data, {
+      ...AUTO_ATTENDANCE_JOB_OPTIONS,
+      jobId: autoAttendanceJobId(messageId),
+    });
+  }
+
+  // ── Qualquer mensagem do cliente com o menu aberto é atividade (B-78) ────
+  // Antes, o prazo de inatividade contava só a partir do menu: mídia enviada
+  // com o menu aberto ou uma resposta inválida não o renovavam, e a conversa
+  // era encerrada "por inatividade" com o cliente ativo.
+  async registerActivity(companyId: string, conversationId: string): Promise<void> {
+    if (!(await this.sessionService.isAwaitingMenuReply(conversationId))) return;
+
+    const flow = await this.prisma.autoAttendanceFlow.findUnique({
+      where: { companyId },
+      select: { inactivityTimeoutSecs: true },
+    });
+    if (flow?.inactivityTimeoutSecs) {
+      await this.scheduleInactivityCheck(conversationId, companyId, flow.inactivityTimeoutSecs);
+    }
+  }
 
   private inactivityJobId(conversationId: string) {
     return `auto-attendance-inactivity:${conversationId}`;
@@ -158,6 +192,10 @@ export class AutoAttendanceEngineService {
 
       const matched = this.matchOption(flow.menuOptions, text);
       if (!matched) {
+        // Resposta inválida também é sinal de vida (B-78)
+        if (flow.inactivityTimeoutSecs) {
+          await this.scheduleInactivityCheck(conversationId, companyId, flow.inactivityTimeoutSecs);
+        }
         await this.sendBotMessage(
           conversationId,
           sessionName,
@@ -259,20 +297,42 @@ export class AutoAttendanceEngineService {
     companyId: string,
     text: string,
   ): Promise<void> {
-    await this.evolutionService.sendTextMessage(sessionName, contactPhone, text);
+    const result = await this.evolutionService.sendTextMessage(sessionName, contactPhone, text);
+    const externalId: string | null = result?.key?.id ?? null;
 
-    const saved = await this.prisma.message.create({
-      data: {
-        conversationId,
-        senderType: SenderType.BOT,
-        content: text,
-        type: MessageType.TEXT,
-        status: MessageStatus.SENT,
-      },
+    // B-78 (M-05): grava o externalId devolvido pela Evolution e a conexão —
+    // sem eles, o eco da mensagem (MESSAGES_UPSERT fromMe) não casava com
+    // esta linha e virava uma 2ª mensagem, como se fosse do atendente.
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { whatsappConnectionId: true },
     });
+    const whatsappConnectionId = conversation?.whatsappConnectionId ?? null;
 
-    // B-60: resposta do robô não é mensagem não lida para o atendente
-    await this.conversationService.updateLastMessage(conversationId, text, { countAsUnread: false });
+    const data = {
+      conversationId,
+      whatsappConnectionId,
+      senderType: SenderType.BOT,
+      content: text,
+      type: MessageType.TEXT,
+      status: MessageStatus.SENT,
+      externalId,
+    };
+    let saved: { id: string; status: MessageStatus; sentAt: Date };
+    try {
+      saved = await this.prisma.message.create({ data });
+    } catch (err) {
+      // O eco chegou antes (outro worker): a linha já existe como fromMe —
+      // passa a ser do robô e não refaz efeitos do webhook.
+      if (!isUniqueConstraintViolation(err) || !externalId || !whatsappConnectionId) throw err;
+      saved = await this.prisma.message.update({
+        where: { whatsappConnectionId_externalId: { whatsappConnectionId, externalId } },
+        data: { senderType: SenderType.BOT, pendingWebhookSteps: [] },
+      });
+    }
+
+    // B-60/B-78: a resposta do robô não conta como não lida nem troca a
+    // prévia da conversa — a lista continua mostrando o que o cliente disse.
 
     this.eventsService.emitNewMessage({
       companyId,
@@ -284,7 +344,7 @@ export class AutoAttendanceEngineService {
         type: MessageType.TEXT,
         status: saved.status,
         sentAt: saved.sentAt,
-        externalId: null,
+        externalId,
       },
     });
   }

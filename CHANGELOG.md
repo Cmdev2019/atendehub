@@ -170,6 +170,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-78 (2026-10-18, M-05):** auto-atendimento. A mensagem do robô não aparece mais duplicada como se
+  fosse do atendente, e o texto do menu não substitui mais a prévia da conversa na lista. O cliente que
+  manda áudio, foto ou uma resposta inválida com o menu aberto não tem mais a conversa encerrada "por
+  inatividade". As respostas do robô saem de uma fila própria e não atrasam mais o recebimento de
+  mensagens.
 - **B-77 (2026-10-18, M-03):** anexos comuns enviados pelo cliente (PowerPoint, RAR, 7z, OpenDocument,
   foto HEIC do iPhone, WebM e arquivos genéricos) passam a ser salvos. Eles chegam ao atendente como
   download, não abrem direto no navegador. Quando um anexo não pode ser salvo, o balão avisa o motivo

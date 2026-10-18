@@ -205,8 +205,10 @@ Zera `unreadCount`. O front chama ao abrir a conversa e quando chega mensagem
 do cliente na conversa aberta (B-60).
 
 **`unreadCount` e `lastMessagePreview` (B-60):** toda mensagem nova (cliente,
-atendente, resposta pelo celular, robô) atualiza `lastMessageAt` e
+atendente, resposta pelo celular) atualiza `lastMessageAt` e
 `lastMessagePreview`; só mensagem do **cliente** incrementa `unreadCount`. A
+mensagem do robô do auto-atendimento não mexe em nenhum dos dois (B-78): a
+lista continua mostrando o que o cliente disse, não o texto do menu. A
 prévia é o texto/legenda ou, sem texto, o rótulo do tipo: `Imagem`, `Vídeo`,
 `Áudio`, `Documento`, `Figurinha`, `Localização`, `Contato`, `Reação`
 (antes, mídia sem legenda não atualizava a conversa — B-42 — e mídia enviada

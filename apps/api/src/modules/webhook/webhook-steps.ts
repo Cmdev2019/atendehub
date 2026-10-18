@@ -11,6 +11,7 @@ export const WEBHOOK_STEP = {
   PREVIEW: 'preview',
   AUTO_GREETING: 'auto_greeting',
   AUTO_REPLY: 'auto_reply',
+  AUTO_ACTIVITY: 'auto_activity', // B-78: mídia do cliente com menu aberto
   EVENT_CONVERSATION_CREATED: 'event_conversation_created',
   EVENT_MESSAGE_NEW: 'event_message_new',
 } as const;
@@ -32,6 +33,8 @@ export function planWebhookSteps(params: {
   // celular). Só texto conta como resposta de menu.
   if (!fromMe && isNewConversation) steps.push(WEBHOOK_STEP.AUTO_GREETING);
   else if (!fromMe && isTextReply) steps.push(WEBHOOK_STEP.AUTO_REPLY);
+  // B-78: qualquer outra mensagem do cliente renova o prazo do menu
+  else if (!fromMe) steps.push(WEBHOOK_STEP.AUTO_ACTIVITY);
   if (isNewConversation) steps.push(WEBHOOK_STEP.EVENT_CONVERSATION_CREATED);
   steps.push(WEBHOOK_STEP.EVENT_MESSAGE_NEW);
 

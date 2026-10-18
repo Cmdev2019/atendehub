@@ -14,6 +14,9 @@ export const QUEUE_NAMES = {
   MEDIA_DOWNLOAD: 'media-download',
   SLA_CHECK: 'sla-check',
   AUTO_ATTENDANCE_INACTIVITY: 'auto-attendance-inactivity',
+  // B-78: reações do robô (saudação, resposta de menu, atividade), fora do
+  // worker do webhook (AutoAttendanceProcessor)
+  AUTO_ATTENDANCE: 'auto-attendance',
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];

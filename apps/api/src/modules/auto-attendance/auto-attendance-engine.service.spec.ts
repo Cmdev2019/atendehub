@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bull';
-import { AutoAttendanceAction, ConversationResolution, ConversationStatus } from '@prisma/client';
+import { AutoAttendanceAction, ConversationResolution, ConversationStatus, Prisma } from '@prisma/client';
 import { AutoAttendanceEngineService } from './auto-attendance-engine.service';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
@@ -11,10 +11,10 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 
 const mockPrisma = {
   autoAttendanceFlow: { findUnique: jest.fn() },
-  message: { create: jest.fn() },
+  message: { create: jest.fn(), update: jest.fn() },
   conversation: { findUnique: jest.fn() },
 };
-const mockEvolution = { sendTextMessage: jest.fn().mockResolvedValue({}) };
+const mockEvolution = { sendTextMessage: jest.fn() };
 const mockConversationService = {
   updateLastMessage: jest.fn(),
   updateStatus: jest.fn(),
@@ -28,6 +28,7 @@ const mockSession = {
 };
 const fakeJob = { remove: jest.fn().mockResolvedValue(undefined) };
 const mockInactivityQueue = { add: jest.fn(), getJob: jest.fn() };
+const mockAutoQueue = { add: jest.fn() };
 
 describe('AutoAttendanceEngineService', () => {
   let service: AutoAttendanceEngineService;
@@ -40,6 +41,10 @@ describe('AutoAttendanceEngineService', () => {
     jest.clearAllMocks();
     mockInactivityQueue.getJob.mockResolvedValue(null);
     mockPrisma.message.create.mockResolvedValue({ id: 'msg-bot-1', sentAt: new Date(), status: 'SENT' });
+    mockEvolution.sendTextMessage.mockResolvedValue({ key: { id: 'wa-bot-1' } });
+    // sendBotMessage lê a conexão da conversa (B-78); os testes de inatividade
+    // ainda sobrescrevem a 1ª leitura com mockResolvedValueOnce.
+    mockPrisma.conversation.findUnique.mockResolvedValue({ whatsappConnectionId: 'conn-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +55,7 @@ describe('AutoAttendanceEngineService', () => {
         { provide: EventsService, useValue: mockEvents },
         { provide: AutoAttendanceSessionService, useValue: mockSession },
         { provide: getQueueToken(QUEUE_NAMES.AUTO_ATTENDANCE_INACTIVITY), useValue: mockInactivityQueue },
+        { provide: getQueueToken(QUEUE_NAMES.AUTO_ATTENDANCE), useValue: mockAutoQueue },
       ],
     }).compile();
 
@@ -102,10 +108,43 @@ describe('AutoAttendanceEngineService', () => {
       });
 
       expect(mockEvolution.sendTextMessage).toHaveBeenCalledWith(sessionName, contactPhone, 'Saudação da fila');
-      // B-60: resposta do robô atualiza a prévia, mas não vira "não lida"
-      expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith(conversationId, 'Saudação da fila', {
-        countAsUnread: false,
+      // B-60/B-78: resposta do robô não vira "não lida" nem troca a prévia
+      expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
+      // B-78: grava o externalId devolvido pela Evolution e a conexão — é o
+      // que faz o eco da mensagem casar com esta linha em vez de duplicar
+      expect(mockPrisma.message.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          senderType: 'BOT',
+          externalId: 'wa-bot-1',
+          whatsappConnectionId: 'conn-1',
+        }),
       });
+      expect(mockEvents.emitNewMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.objectContaining({ externalId: 'wa-bot-1' }) }),
+      );
+    });
+
+    it('B-78: se o eco chegou antes, a linha existente passa a ser do robô (sem duplicar)', async () => {
+      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+        isActive: true,
+        greetingMessage: 'Olá!',
+        businessHours: null,
+        menuOptions: [],
+      });
+      mockPrisma.message.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }),
+      );
+      mockPrisma.message.update.mockResolvedValueOnce({ id: 'msg-eco', sentAt: new Date(), status: 'DELIVERED' });
+
+      await service.handleNewConversation({ companyId, conversationId, contactPhone, sessionName, queueGreetingMsg: null });
+
+      expect(mockPrisma.message.update).toHaveBeenCalledWith({
+        where: { whatsappConnectionId_externalId: { whatsappConnectionId: 'conn-1', externalId: 'wa-bot-1' } },
+        data: { senderType: 'BOT', pendingWebhookSteps: [] },
+      });
+      expect(mockEvents.emitNewMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.objectContaining({ id: 'msg-eco' }) }),
+      );
     });
 
     // M-04/B-61: o expediente é avaliado no fuso da EMPRESA, não do servidor.
@@ -340,6 +379,61 @@ describe('AutoAttendanceEngineService', () => {
         sessionName,
         contactPhone,
         expect.stringContaining('Não entendi'),
+      );
+    });
+
+    // B-78 (M-05): resposta inválida é o cliente ativo — antes o prazo seguia
+    // contando do menu e a conversa fechava "por inatividade".
+    it('resposta inválida renova o prazo de inatividade', async () => {
+      mockSession.isAwaitingMenuReply.mockResolvedValueOnce(true);
+      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+        inactivityTimeoutSecs: 300,
+        menuOptions: [{ id: 'opt-1', order: 1, label: 'Suporte', action: AutoAttendanceAction.END_CONVERSATION, departmentId: null, queueId: null }],
+      });
+
+      await service.handleReply({ companyId, conversationId, contactPhone, sessionName, text: 'hã?' });
+
+      expect(mockInactivityQueue.add).toHaveBeenCalledWith(
+        { conversationId, companyId },
+        expect.objectContaining({ delay: 300_000, jobId: `auto-attendance-inactivity:${conversationId}` }),
+      );
+    });
+  });
+
+  // B-78 (M-05): mídia enviada com o menu aberto não é resposta, mas é sinal
+  // de vida — renova o prazo em vez de deixar a conversa fechar.
+  describe('registerActivity', () => {
+    it('com menu aberto, reagenda a inatividade a partir de agora', async () => {
+      mockSession.isAwaitingMenuReply.mockResolvedValueOnce(true);
+      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({ inactivityTimeoutSecs: 120 });
+      mockInactivityQueue.getJob.mockResolvedValueOnce(fakeJob);
+
+      await service.registerActivity(companyId, conversationId);
+
+      expect(fakeJob.remove).toHaveBeenCalled();
+      expect(mockInactivityQueue.add).toHaveBeenCalledWith(
+        { conversationId, companyId },
+        expect.objectContaining({ delay: 120_000 }),
+      );
+    });
+
+    it('sem menu aberto, não faz nada', async () => {
+      mockSession.isAwaitingMenuReply.mockResolvedValueOnce(false);
+
+      await service.registerActivity(companyId, conversationId);
+
+      expect(mockPrisma.autoAttendanceFlow.findUnique).not.toHaveBeenCalled();
+      expect(mockInactivityQueue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('enqueue (B-78)', () => {
+    it('enfileira a reação com o id da mensagem como id do job', async () => {
+      await service.enqueue('msg-1', { kind: 'activity', companyId, conversationId, contactPhone, sessionName });
+
+      expect(mockAutoQueue.add).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'activity', conversationId }),
+        expect.objectContaining({ jobId: 'auto:msg-1', attempts: 1 }),
       );
     });
   });

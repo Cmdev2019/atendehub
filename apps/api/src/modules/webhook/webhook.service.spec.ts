@@ -79,10 +79,9 @@ describe('WebhookService — processamento de eventos', () => {
     emitMessageUpdated: jest.fn(),
   };
   const mockMediaQueue = { add: jest.fn() };
-  const mockAutoAttendanceEngine = {
-    handleNewConversation: jest.fn().mockResolvedValue(undefined),
-    handleReply: jest.fn().mockResolvedValue(false),
-  };
+  // B-78: o webhook só enfileira a reação do robô (kind greeting/reply/activity)
+  const mockAutoAttendanceEngine = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const enqueuedKinds = () => mockAutoAttendanceEngine.enqueue.mock.calls.map(([, job]) => job.kind);
 
   let service: WebhookService;
 
@@ -293,14 +292,15 @@ describe('WebhookService — processamento de eventos', () => {
         },
       });
 
-      expect(mockAutoAttendanceEngine.handleNewConversation).toHaveBeenCalledWith({
+      expect(mockAutoAttendanceEngine.enqueue).toHaveBeenCalledWith(expect.any(String), {
+        kind: 'greeting',
         companyId,
         conversationId: 'conv-novo',
         contactPhone: '5512988888888',
         sessionName: 'session-1',
         queueGreetingMsg: 'Bem-vindo à fila!',
       });
-      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+      expect(enqueuedKinds()).toEqual(['greeting']);
     });
 
     it('mensagem de texto numa conversa já existente é repassada como possível resposta de menu', async () => {
@@ -326,14 +326,15 @@ describe('WebhookService — processamento de eventos', () => {
         },
       });
 
-      expect(mockAutoAttendanceEngine.handleReply).toHaveBeenCalledWith({
+      expect(mockAutoAttendanceEngine.enqueue).toHaveBeenCalledWith('msg-1', {
+        kind: 'reply',
         companyId,
         conversationId: 'conv-1',
         contactPhone: '5512999999999',
         sessionName: 'session-1',
         text: '2',
       });
-      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
+      expect(enqueuedKinds()).toEqual(['reply']);
     });
 
     it('mensagem fromMe nunca aciona o auto-atendimento (só reação a mensagem de verdade do cliente)', async () => {
@@ -359,8 +360,7 @@ describe('WebhookService — processamento de eventos', () => {
         },
       });
 
-      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
-      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.enqueue).not.toHaveBeenCalled();
     });
 
     it('ignora mensagens de contato bloqueado (não cria conversa nem mensagem)', async () => {
@@ -416,8 +416,7 @@ describe('WebhookService — processamento de eventos', () => {
       });
 
       expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
-      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
-      expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.enqueue).not.toHaveBeenCalled();
       expect(mockEventsService.emitNewMessage).not.toHaveBeenCalled();
       expect(mockEventsService.emitConversationCreated).not.toHaveBeenCalled();
       expect(mockMediaQueue.add).not.toHaveBeenCalled();
@@ -460,10 +459,11 @@ describe('WebhookService — processamento de eventos', () => {
 
       // A prévia já tinha sido feita na 1ª tentativa (não conta não lida 2x)
       expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
-      expect(mockAutoAttendanceEngine.handleNewConversation).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationId: 'conv-1', queueGreetingMsg: 'Olá da fila!' }),
+      expect(mockAutoAttendanceEngine.enqueue).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ kind: 'greeting', conversationId: 'conv-1', queueGreetingMsg: 'Olá da fila!' }),
       );
-      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+      expect(enqueuedKinds()).toEqual(['greeting']);
       expect(mockEventsService.emitConversationCreated).toHaveBeenCalledTimes(1);
       expect(mockEventsService.emitNewMessage).toHaveBeenCalledTimes(1);
       expect(mockMessageService.completeWebhookStep.mock.calls.map(([, s]) => s)).toEqual([
@@ -492,7 +492,7 @@ describe('WebhookService — processamento de eventos', () => {
         sentAt: new Date(),
         isNew: true,
       });
-      mockAutoAttendanceEngine.handleReply.mockRejectedValueOnce(new Error('Evolution fora do ar'));
+      mockAutoAttendanceEngine.enqueue.mockRejectedValueOnce(new Error('Redis fora do ar'));
 
       await expect(
         service.handleEvent({
@@ -503,7 +503,7 @@ describe('WebhookService — processamento de eventos', () => {
             message: { conversation: '1' },
           },
         }),
-      ).rejects.toThrow('Evolution fora do ar');
+      ).rejects.toThrow('Redis fora do ar');
 
       const done = mockMessageService.completeWebhookStep.mock.calls.map(([, s]) => s);
       expect(done).toEqual(['preview']);
@@ -593,6 +593,25 @@ describe('WebhookService — processamento de eventos', () => {
         expect.objectContaining({ jobId: 'media:msg-media-1', attempts: expect.any(Number) }),
       );
       expect(mockMessageService.completeWebhookStep).toHaveBeenCalledWith('msg-media-1', 'media');
+    });
+
+    // B-78 (M-05): mídia com o menu aberto não é resposta, mas renova o prazo
+    it('mídia do cliente numa conversa existente enfileira atividade para o robô', async () => {
+      mockNewMediaMessage('msg-media-2');
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-media-2' },
+          message: { audioMessage: { mimetype: 'audio/ogg', url: 'https://x/a.enc' } },
+        },
+      });
+
+      expect(mockAutoAttendanceEngine.enqueue).toHaveBeenCalledWith(
+        'msg-media-2',
+        expect.objectContaining({ kind: 'activity', conversationId: 'conv-1' }),
+      );
     });
 
     it('texto não enfileira download de mídia', async () => {
