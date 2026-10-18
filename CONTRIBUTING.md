@@ -69,25 +69,44 @@ Siga o [`README.md`](README.md#como-executar). Se algo não funcionar seguindo a
         ▼
 5. Abra o PR usando o template
         ▼
-6. CI verde + 1 aprovação
+6. CI verde (checks obrigatórios no master: api, web, api-e2e)
+   + 1 aprovação quando houver um segundo mantenedor
         ▼
-7. Merge + atualize o roadmap com evidência
+7. Merge (merge commit) + atualize o roadmap com evidência
 ```
 
 ### Validação local antes do PR
 
 ```bash
 # Frontend (na raiz)
-npm test                          # 302 testes devem passar
+npm test                          # todos devem passar
 npm run build                     # deve concluir
 
 # Backend
 cd apps/api
 npm run lint:check                # sem erros
 npx tsc --noEmit                  # sem erros
-npm test                          # 265 testes devem passar
+npm test                          # todos devem passar (com o piso de cobertura)
+npm run test:e2e                  # Postgres, Redis e MinIO de pé (docker compose up -d)
 npm run build                     # deve concluir
 ```
+
+A contagem de testes não fica fixada aqui: ela muda a cada item e o número
+velho só confundia (M-24). A evidência vai no PR e no changelog do roadmap.
+
+### Como o processo funciona hoje (B-87 / M-23)
+
+- **Proteção do `master`:** ninguém envia direto. Todo item entra por PR, e os
+  checks `api`, `web` e `api-e2e` precisam passar. Ramos apagados
+  automaticamente depois do merge.
+- **Mantenedor único:** a proteção não exige aprovação nem code owners. Com uma
+  pessoa só, isso travaria todo PR. O `CODEOWNERS` volta a valer quando houver
+  um segundo mantenedor.
+- **Versões:** ao fechar um conjunto de itens, a seção `[Não lançado]` do
+  `CHANGELOG.md` vira `[X.Y.Z] - data` e o `master` recebe a tag anotada
+  `vX.Y.Z`. A primeira foi a `v0.1.0`, no fim da Fase 2 da auditoria de 2026-10-16.
+- **Dependências:** os PRs do Dependabot de minor/patch são mesclados com CI
+  verde. Versão major vira item próprio no roadmap, com migração e testes.
 
 **PR com suíte vermelha não é revisado.**
 
