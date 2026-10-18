@@ -601,9 +601,9 @@ Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
 Item: `{ id, name, phone, profileName, profilePicture, status, platform, isActive, lastSeenAt, createdAt, department: {id,name,color} | null, _count: { conversations } }`
 
 ### `GET /whatsapp/:id` — + `sessionName`, `battery`, `updatedAt`
-### `POST /whatsapp` — `{ name (≤60), departmentId? }` → cria a instância na Evolution (sem webhook próprio: os eventos chegam pelo webhook global da Evolution, B-82). `400` passado o limite de conexões do plano (`maxChannels`)
+### `POST /whatsapp` — `{ name (≤60), departmentId? }` → cria a instância na Evolution (sem webhook próprio: os eventos chegam pelo webhook global da Evolution, B-82). `400` passado o limite de conexões do plano (`maxChannels`). `departmentId` de outra empresa responde `400` (B-100), também no `PATCH`
 ### `GET /whatsapp/:id/qrcode` → `{ qrCode: "data:image/png;base64,..." | "<base64>", code? }`
-### `GET /whatsapp/:id/status` → sincroniza com a Evolution e retorna `{ status, ... }`
+### `POST /whatsapp/:id/status` — requer `ADMIN` → sincroniza com a Evolution e retorna `{ status, ... }` (era `GET` até o B-100: grava no banco)
 ### `POST /whatsapp/:id/disconnect` · `PATCH /whatsapp/:id` · `DELETE /whatsapp/:id`
 
 ---

@@ -71,8 +71,22 @@ export class WhatsappService {
     return conn;
   }
 
+  // B-100 (L-12): o departamento da conexão precisa ser da própria empresa —
+  // antes, qualquer id era gravado, e as conversas novas nasciam num
+  // departamento de outra empresa.
+  private async assertDepartmentOfCompany(companyId: string, departmentId?: string | null) {
+    if (!departmentId) return;
+    const dept = await this.prisma.department.findFirst({
+      where: { id: departmentId, companyId },
+      select: { id: true },
+    });
+    if (!dept) throw new BadRequestException('Departamento não encontrado');
+  }
+
   // ── Criar conexão e instância na Evolution API ────────────────────────────
   async create(companyId: string, dto: CreateConnectionDto) {
+    await this.assertDepartmentOfCompany(companyId, dto.departmentId);
+
     // Verifica limite do plano
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
@@ -216,6 +230,7 @@ export class WhatsappService {
   // ── Atualizar dados da conexão ────────────────────────────────────────────
   async update(companyId: string, id: string, dto: UpdateConnectionDto) {
     await this.findOne(companyId, id);
+    await this.assertDepartmentOfCompany(companyId, dto.departmentId);
 
     return this.prisma.whatsAppConnection.update({
       where: { id },
