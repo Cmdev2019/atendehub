@@ -50,6 +50,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   (continua proprietária), `SECURITY.md` sem detalhes de falhas não corrigidas e README atualizado
 
 ### Removido
+- **B-75 (2026-10-18, M-11):** envio de mídia por URL em `POST /conversations/:id/messages` — a rota
+  passa a aceitar só texto. Mídia continua por upload (`POST .../messages/media`), que é o que o painel
+  usa. Motivo: o servidor buscava a URL informada (risco de SSRF). Impacto: integração que mandava
+  `mediaUrl` recebe 400 e precisa usar o upload.
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança

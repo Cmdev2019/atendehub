@@ -354,7 +354,8 @@ empresa do usuário logado.
 ```jsonc
 // Request (SendMessageDto — campos extras = 400):
 { "type": "TEXT", "content": "até 4096 chars" }
-// Mídia por URL também é aceita: { type: IMAGE|VIDEO|AUDIO|DOCUMENT, mediaUrl, caption?, fileName? }
+// Só texto (B-75): `type` diferente de TEXT, ou `mediaUrl`/`caption`/`fileName`, responde 400.
+// Mídia vai por upload em POST .../messages/media.
 // Response 201: a mensagem persistida (mesmo shape acima, sem attachments)
 ```
 Regras: conversa não pode estar `CLOSED`; contato não pode estar bloqueado; só o agente atribuído ou `SUPERVISOR+` envia; conexão precisa estar `CONNECTED`. Envio é **síncrono** (Evolution → banco → evento). Se a conversa estava `WAITING`, vira `OPEN` e o remetente assume (`agentId`).
