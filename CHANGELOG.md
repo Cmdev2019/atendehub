@@ -27,6 +27,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-87 (2026-10-18, M-23):** processo de Git. Ramos mesclados são apagados automaticamente, os PRs do
+  Dependabot passam a agrupar só atualizações minor/patch (majors no B-86) e o `CONTRIBUTING.md` descreve o
+  fluxo que de fato vale (checks obrigatórios, mantenedor único, tags de versão).
 - **B-84 (2026-10-18, M-10):** o painel faz bem menos requisições com muitos atendentes conectados. Uma
   sequência de eventos em tempo real atualiza as métricas e as notificações uma vez só, e o sino de
   notificações só recarrega quando a conversa é atribuída ao próprio atendente.
