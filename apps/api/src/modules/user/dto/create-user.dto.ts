@@ -9,6 +9,7 @@ import {
   Matches,
 } from 'class-validator';
 import { Role } from '@prisma/client';
+import { BCRYPT_MAX_BYTES, MaxBytes } from '../../../shared/validators/max-bytes.validator';
 
 // Exige ao menos 1 letra maiúscula, 1 minúscula e 1 número.
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
@@ -27,6 +28,7 @@ export class CreateUserDto {
     message:
       'Senha deve conter ao menos uma letra maiúscula, uma minúscula e um número',
   })
+  @MaxBytes(BCRYPT_MAX_BYTES)
   password: string;
 
   @IsOptional()

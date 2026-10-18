@@ -1,4 +1,5 @@
 import { IsEmail, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { BCRYPT_MAX_BYTES, MaxBytes } from '../../../shared/validators/max-bytes.validator';
 
 // Mesma regra de senha do CreateUserDto (user/dto/create-user.dto.ts) — ao
 // menos 1 maiúscula, 1 minúscula e 1 número.
@@ -24,5 +25,6 @@ export class RegisterCompanyDto {
     message:
       'Senha deve conter ao menos uma letra maiúscula, uma minúscula e um número',
   })
+  @MaxBytes(BCRYPT_MAX_BYTES)
   password: string;
 }

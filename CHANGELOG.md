@@ -21,6 +21,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-94 (2026-10-18, L-05):** o `x-request-id` enviado pelo cliente só é aproveitado se for um id curto e simples; senão a API gera um novo.
 - **B-93 (2026-10-18, L-04):** `CORS_ORIGINS` aceita espaço depois da vírgula, e o WebSocket só aceita o token no campo `auth` — não mais na URL, onde ia parar em logs de proxy.
 
+### Corrigido
+- **B-96 (2026-10-18, L-07):** login com e-mail ou senha em formato inválido responde 400 em vez de erro 500; senhas novas têm no máximo 72 bytes (o bcrypt ignorava o resto).
+
 ## [0.1.0] - 2026-10-18
 
 Primeira versão marcada (tag `v0.1.0`). Fecha as Fases 0, 1 e 2 do plano da auditoria de
