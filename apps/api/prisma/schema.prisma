@@ -165,6 +165,10 @@ model User {
   avatarUrl    String?
   phone        String?
   lastSeenAt   DateTime?
+  // B-72 (M-08): access tokens emitidos antes deste instante são recusados —
+  // troca/reset de senha encerra as sessões abertas sem precisar listar cada
+  // token na blacklist.
+  sessionsRevokedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

@@ -6,6 +6,7 @@ import { UserService } from './user.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { StorageService } from '../../shared/storage/storage.service';
+import { AuthService } from '../auth/auth.service';
 
 jest.mock('bcrypt');
 
@@ -28,6 +29,7 @@ const mockPrisma = {
 
 const mockAuditLog = { record: jest.fn() };
 const mockStorage = { upload: jest.fn() };
+const mockAuth = { revokeAllSessions: jest.fn(), issueTokens: jest.fn() };
 
 describe('UserService — isolamento multi-tenant', () => {
   let service: UserService;
@@ -44,6 +46,7 @@ describe('UserService — isolamento multi-tenant', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: StorageService, useValue: mockStorage },
+        { provide: AuthService, useValue: mockAuth },
       ],
     }).compile();
 
@@ -313,18 +316,35 @@ describe('UserService — isolamento multi-tenant', () => {
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
-    it('troca a própria senha, grava o novo hash e registra auditoria', async () => {
-      mockPrisma.user.findFirst.mockResolvedValueOnce({ passwordHash: 'hash-antigo' });
+    it('troca a própria senha, encerra as sessões, devolve tokens novos e registra auditoria', async () => {
+      const authUser = {
+        id: requesterId,
+        companyId: companyA,
+        name: 'Ana',
+        email: 'ana@empresa.com',
+        role: Role.AGENT,
+        avatarUrl: null,
+      };
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ ...authUser, passwordHash: 'hash-antigo' });
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
       (bcrypt.hash as jest.Mock).mockResolvedValueOnce('hash-novo');
+      mockAuth.issueTokens.mockResolvedValueOnce({ accessToken: 'a2', refreshToken: 'r2' });
 
-      await service.changePassword(companyA, requesterId, dto, requesterId);
+      const result = await service.changePassword(companyA, requesterId, dto, requesterId);
 
       expect(bcrypt.compare).toHaveBeenCalledWith('SenhaAtual1', 'hash-antigo');
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: requesterId },
-        data: { passwordHash: 'hash-novo' },
+      // B-72 (M-08): hash novo e fim das sessões no mesmo update.
+      expect(mockAuth.revokeAllSessions).toHaveBeenCalledWith(requesterId, {
+        passwordHash: 'hash-novo',
       });
+      // O par novo é emitido depois da revogação, sem o hash da senha.
+      expect(mockAuth.issueTokens).toHaveBeenCalledWith(authUser);
+      expect(mockAuth.revokeAllSessions.mock.invocationCallOrder[0]).toBeLessThan(
+        mockAuth.issueTokens.mock.invocationCallOrder[0],
+      );
+      expect(result).toEqual(
+        expect.objectContaining({ accessToken: 'a2', refreshToken: 'r2' }),
+      );
       expect(mockAuditLog.record).toHaveBeenCalledWith({
         companyId: companyA,
         userId: requesterId,
@@ -342,6 +362,7 @@ describe('UserService — isolamento multi-tenant', () => {
         service.changePassword(companyA, requesterId, dto, requesterId),
       ).rejects.toThrow(BadRequestException);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuth.revokeAllSessions).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
@@ -362,9 +383,10 @@ describe('UserService — isolamento multi-tenant', () => {
         service.resetPassword(companyA, userOfCompanyB, requesterId),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuth.revokeAllSessions).not.toHaveBeenCalled();
     });
 
-    it('gera senha temporária que satisfaz a política, hasheia e registra auditoria', async () => {
+    it('gera senha temporária que satisfaz a política, hasheia, encerra as sessões e registra auditoria', async () => {
       (bcrypt.hash as jest.Mock).mockResolvedValue('hash-fake');
       mockPrisma.user.findFirst.mockResolvedValueOnce({
         id: 'user-1',
@@ -372,15 +394,13 @@ describe('UserService — isolamento multi-tenant', () => {
         role: Role.AGENT,
         departments: [],
       });
-      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
 
       const result = await service.resetPassword(companyA, 'user-1', requesterId);
 
       expect(result.temporaryPassword).toMatch(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/);
       expect(bcrypt.hash).toHaveBeenCalledWith(result.temporaryPassword, 12);
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'user-1' },
-        data: { passwordHash: 'hash-fake' },
+      expect(mockAuth.revokeAllSessions).toHaveBeenCalledWith('user-1', {
+        passwordHash: 'hash-fake',
       });
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({

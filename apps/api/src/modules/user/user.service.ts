@@ -16,6 +16,7 @@ import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuthService } from '../auth/auth.service';
 
 // Gera senha temporária que já satisfaz a política de senha do produto
 // (ChangePasswordDto: mín. 8, 1 maiúscula, 1 minúscula, 1 número) — sem
@@ -59,6 +60,7 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly storage: StorageService,
+    private readonly auth: AuthService,
   ) {}
 
   // ── Listar com paginação e filtros ────────────────────────────────────────
@@ -258,7 +260,15 @@ export class UserService {
 
     const user = await this.prisma.user.findFirst({
       where: { id, companyId },
-      select: { passwordHash: true },
+      select: {
+        id: true,
+        companyId: true,
+        name: true,
+        email: true,
+        role: true,
+        avatarUrl: true,
+        passwordHash: true,
+      },
     });
 
     if (!user) throw new NotFoundException('Usuário não encontrado');
@@ -268,10 +278,10 @@ export class UserService {
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { passwordHash },
-    });
+    // B-72 (M-08): a senha nova encerra todas as sessões — quem tinha a
+    // antiga (outro aparelho, token vazado) sai. Este aparelho recebe um par
+    // de tokens novo para continuar logado.
+    await this.auth.revokeAllSessions(id, { passwordHash });
 
     await this.auditLog.record({
       companyId,
@@ -281,7 +291,10 @@ export class UserService {
       entityId: id,
     });
 
-    return { message: 'Senha atualizada com sucesso' };
+    const { passwordHash: _hash, ...authUser } = user;
+    const tokens = await this.auth.issueTokens(authUser);
+
+    return { message: 'Senha atualizada com sucesso', ...tokens };
   }
 
   // ── Reset administrativo de senha (B-26, paliativo sem SMTP) ──────────────
@@ -303,10 +316,8 @@ export class UserService {
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { passwordHash },
-    });
+    // B-72 (M-08): as sessões abertas com a senha antiga caem junto.
+    await this.auth.revokeAllSessions(id, { passwordHash });
 
     await this.auditLog.record({
       companyId,

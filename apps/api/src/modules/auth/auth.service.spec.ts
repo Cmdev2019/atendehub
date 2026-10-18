@@ -15,6 +15,7 @@ const mockPrisma: any = {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   company: {
     create: jest.fn(),
@@ -28,11 +29,15 @@ const mockPrisma: any = {
   },
 };
 // A callback de $transaction roda contra o mesmo mock (tx compartilha a
-// mesma "forma" do client fora da transação — suficiente pra unit test).
-mockPrisma.$transaction = jest.fn((callback: (tx: any) => unknown) => callback(mockPrisma));
+// mesma "forma" do client fora da transação — suficiente pra unit test). A
+// forma em lista (revokeAllSessions) só espera as operações.
+mockPrisma.$transaction = jest.fn((arg: any) =>
+  Array.isArray(arg) ? Promise.all(arg) : arg(mockPrisma),
+);
 
 const mockJwtService = {
   signAsync: jest.fn(),
+  verifyAsync: jest.fn(),
   decode: jest.fn(),
 };
 
@@ -63,6 +68,7 @@ describe('AuthService', () => {
     jest.clearAllMocks();
     mockConfig.get.mockReturnValue(undefined); // usa os defaults do código (15m/7d etc.)
     mockJwtService.signAsync.mockResolvedValue('token-assinado');
+    mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', typ: 'refresh' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -248,6 +254,7 @@ describe('AuthService', () => {
   describe('refresh', () => {
     const storedToken = {
       id: 'rt-1',
+      userId: 'user-1',
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
       user: { ...dbUser, company: { isActive: true } },
@@ -261,7 +268,22 @@ describe('AuthService', () => {
       );
     });
 
-    it('rejeita quando o refresh token já foi revogado', async () => {
+    // B-72 (M-08): sem `typ: refresh`, nem chega a consultar o banco.
+    it('rejeita um access token usado como refresh token', async () => {
+      mockJwtService.verifyAsync.mockResolvedValueOnce({ sub: 'user-1', typ: 'access' });
+
+      await expect(service.refresh('access-token')).rejects.toThrow(UnauthorizedException);
+      expect(mockPrisma.refreshToken.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejeita token com assinatura inválida sem consultar o banco', async () => {
+      mockJwtService.verifyAsync.mockRejectedValueOnce(new Error('invalid signature'));
+
+      await expect(service.refresh('forjado')).rejects.toThrow(UnauthorizedException);
+      expect(mockPrisma.refreshToken.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejeita quando o refresh token acabou de ser rotacionado (corrida entre abas), sem encerrar as sessões', async () => {
       mockPrisma.refreshToken.findUnique.mockResolvedValueOnce({
         ...storedToken,
         revokedAt: new Date(),
@@ -270,6 +292,29 @@ describe('AuthService', () => {
       await expect(service.refresh('token-revogado')).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // B-72 (M-08): reuso fora da janela de corrida = cópia roubada.
+    it('reuso de refresh token revogado há mais tempo encerra todas as sessões do usuário', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValueOnce({
+        ...storedToken,
+        revokedAt: new Date(Date.now() - 5 * 60_000),
+      });
+      mockPrisma.user.update.mockResolvedValueOnce({});
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 2 });
+
+      await expect(service.refresh('token-roubado')).rejects.toThrow(UnauthorizedException);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { sessionsRevokedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
     });
 
     it('rejeita quando o refresh token expirou', async () => {
@@ -294,18 +339,41 @@ describe('AuthService', () => {
       );
     });
 
-    it('revoga o token atual e emite um novo par ao suceder', async () => {
+    it('revoga o token atual de forma atômica e emite um novo par ao suceder', async () => {
       mockPrisma.refreshToken.findUnique.mockResolvedValueOnce(storedToken);
-      mockPrisma.refreshToken.update.mockResolvedValueOnce({});
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
       mockPrisma.refreshToken.create.mockResolvedValueOnce({});
 
       const result = await service.refresh('token-valido');
 
-      expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith({
-        where: { id: storedToken.id },
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: storedToken.id, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(result.accessToken).toBe('token-assinado');
+      // Sem isActive/company/passwordHash no usuário devolvido.
+      expect(result.user).not.toHaveProperty('isActive');
+    });
+
+    // B-72 (M-08): duas renovações simultâneas com o mesmo token — só a que
+    // revogou primeiro ganha o par novo.
+    it('perde a corrida da rotação: 401 e nenhum token novo', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValueOnce(storedToken);
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.refresh('token-valido')).rejects.toThrow(UnauthorizedException);
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('assina access e refresh com typ distintos', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValueOnce(storedToken);
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.refreshToken.create.mockResolvedValueOnce({});
+
+      await service.refresh('token-valido');
+
+      const typs = mockJwtService.signAsync.mock.calls.map(([payload]) => payload.typ);
+      expect(typs).toEqual(['access', 'refresh']);
     });
   });
 

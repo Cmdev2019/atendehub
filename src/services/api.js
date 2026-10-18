@@ -740,11 +740,20 @@ class ApiClient {
     });
   }
 
+  // B-72 (M-08): a troca encerra todas as sessões, inclusive os tokens
+  // desta aba — a resposta traz um par novo para continuar logado aqui.
   async changePassword(id, data) {
-    return this.request(`/users/${id}/password`, {
+    const response = await this.request(`/users/${id}/password`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+
+    if (response?.accessToken) {
+      this.setToken(response.accessToken);
+      localStorage.setItem('refreshToken', response.refreshToken);
+    }
+
+    return response;
   }
 
   // Reset administrativo de senha (B-26) — ADMIN gera senha temporária pra

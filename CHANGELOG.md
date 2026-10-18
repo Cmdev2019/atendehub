@@ -53,6 +53,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-72 (2026-10-18, M-08):** trocar ou resetar a senha encerra todas as sessões abertas do usuário, em
+  qualquer aparelho. Quem troca a própria senha continua logado na aba atual (a resposta traz tokens
+  novos). A renovação de sessão passou a ser atômica e reconhece reuso de um token já trocado. A API não
+  sobe em produção/staging com `JWT_SECRET` igual a `JWT_REFRESH_SECRET`. Também corrige o erro 500 em
+  dois logins do mesmo usuário no mesmo segundo. Impacto: tokens emitidos antes desta versão deixam de
+  valer — é preciso entrar de novo uma vez.
 - **B-71 (2026-10-18, M-13):** a exportação de relatório em CSV neutraliza células que começam como
   fórmula (`=`, `+`, `-`, `@`): o nome do contato, escolhido pelo próprio cliente no WhatsApp, não é
   mais executado como fórmula ao abrir o arquivo no Excel. Impacto: valores assim aparecem com um `'`
