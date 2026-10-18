@@ -74,7 +74,11 @@ A rotação revoga o refresh token enviado: o cliente **precisa substituir** o
 refresh token salvo pelo que vem na resposta — reenviar o antigo responde `401`.
 Cada refresh token vale uma única vez, então renovações simultâneas com o mesmo
 token devem ser evitadas (o frontend usa uma renovação por vez, ver
-`src/services/sessionRefresh.js`, B-53).
+`src/services/sessionRefresh.js`, B-53). A rotação é atômica: de duas renovações
+simultâneas com o mesmo token, só uma recebe o par novo. Reenviar um refresh token
+já trocado, passada uma janela curta de tolerância (corrida entre abas), encerra
+todas as sessões do usuário (B-72). Access token não é aceito aqui, nem refresh
+token nas rotas protegidas.
 
 ### `POST /auth/register-company` (público, B-9)
 Auto-cadastro de empresa nova — quem se cadastra vira `ADMIN` dessa empresa. Limite: **3 req/60s por IP** (mais apertado que login, pois cria linhas no banco).
@@ -410,6 +414,9 @@ Wrapper: `{ data, meta }`.
 consultar o banco (B-51). Senha atual errada responde `400`. Limite próprio de
 5 tentativas por minuto. Registra `user.password_changed` em auditoria. Para a
 senha de outro usuário, use `POST /users/:id/reset-password` (ADMIN).
+Encerra **todas** as sessões do usuário, inclusive a do token usado na chamada
+(B-72): responde `200 { message, accessToken, refreshToken, expiresIn, user }`
+— o cliente precisa trocar os tokens salvos pelos da resposta para continuar logado.
 
 ### `DELETE /users/:id`
 
@@ -422,6 +429,7 @@ existe nesta resposta, nunca é logada nem persistida fora do hash; quem
 chamou precisa repassá-la ao usuário por fora (verbal, chat interno, etc).
 `400` se `id` for o próprio requisitante (use `PATCH /users/:id/password`
 pra trocar a própria senha). Registra `user.password_reset` em auditoria.
+Encerra todas as sessões abertas do usuário resetado (B-72).
 **Limitação conhecida:** não resolve o caso do único `ADMIN` da empresa se
 trancar sozinho fora dela — ele precisaria estar autenticado para chamar
 isto. Cobre o caso mais comum: `AGENT`/`SUPERVISOR` esqueceu a senha e há

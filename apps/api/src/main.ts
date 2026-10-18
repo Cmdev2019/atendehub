@@ -145,6 +145,17 @@ function validateSecrets(config: ConfigService): void {
     }
   }
 
+  // B-72 (M-08): com o mesmo segredo, a assinatura não separa access de
+  // refresh token — sobra só o `typ`. Segredos distintos são obrigatórios.
+  if (jwtSecret && jwtSecret === jwtRefreshSecret) {
+    const msg = 'JWT_SECRET e JWT_REFRESH_SECRET precisam ser diferentes.';
+    if (isProduction || isStaging) {
+      logger.error(`❌ FALHA CRÍTICA - ${msg}`);
+      process.exit(1);
+    }
+    logger.warn(`⚠️  ${msg} (ignorado em desenvolvimento)`);
+  }
+
   if (isProduction || isStaging) {
     logger.log('✅ Secrets JWT validados com sucesso');
   }

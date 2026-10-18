@@ -6,14 +6,20 @@ import {
 } from '@nestjs/common';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+
+// B-72 (M-08): reuso de um refresh token já rotacionado é sinal de roubo — a
+// sessão inteira é encerrada. Só que duas abas do painel dividem o mesmo
+// localStorage e podem renovar ao mesmo tempo; dentro desta janela o reuso é
+// tratado como corrida e só a requisição atrasada é recusada.
+const REFRESH_REUSE_GRACE_MS = 30_000;
 
 @Injectable()
 export class AuthService {
@@ -61,21 +67,7 @@ export class AuthService {
 
   // ── Login — gera access + refresh token ───────────────────────────────────
   async login(user: AuthUserDto): Promise<AuthResponseDto> {
-    const tokens = await this.generateTokens(user);
-
-    // Salva o refresh token no banco para permitir revogação
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 dias
-
-    // Armazena apenas o hash do token — nunca o valor em texto puro.
-    // Se o banco vazar, os refresh tokens não podem ser reutilizados.
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: this.hashToken(tokens.refreshToken),
-        expiresAt,
-      },
-    });
+    const tokens = await this.issueTokens(user);
 
     // Nunca logar o e-mail (PII) — id já é suficiente para correlacionar
     // com o banco se necessário investigar.
@@ -159,6 +151,17 @@ export class AuthService {
 
   // ── Refresh — troca o refresh token por um novo par de tokens ─────────────
   async refresh(refreshToken: string): Promise<AuthResponseDto> {
+    // B-72 (M-08): assinatura e tipo antes do banco — um access token (outro
+    // segredo, typ "access") não serve como refresh token.
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
+        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+      });
+      if (payload.typ !== 'refresh') throw new Error('typ');
+    } catch {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
+    }
+
     // Verifica se o token existe e não foi revogado
     const stored = await this.prisma.refreshToken.findUnique({
       where: { token: this.hashToken(refreshToken) },
@@ -178,7 +181,12 @@ export class AuthService {
       },
     });
 
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    if (!stored || stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
+    }
+
+    if (stored.revokedAt) {
+      await this.handleRefreshReuse(stored.userId, stored.revokedAt);
       throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
 
@@ -186,30 +194,49 @@ export class AuthService {
       throw new UnauthorizedException('Usuário ou empresa inativa');
     }
 
-    // Revoga o token atual (rotação de tokens)
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
+    // Rotação atômica (B-72): só quem efetivamente revogar o token ganha o
+    // par novo. Antes, duas requisições simultâneas com o mesmo token liam
+    // `revokedAt: null` e as duas saíam com sessões válidas.
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { id: stored.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (count === 0) {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
+    }
 
-    const { company: _c, ...safeUser } = stored.user;
+    const { company: _c, isActive: _a, ...safeUser } = stored.user;
+    return this.issueTokens(safeUser);
+  }
 
-    // Gera novo par
-    const tokens = await this.generateTokens(safeUser);
+  // Refresh token revogado apresentado de novo. Fora da janela de corrida
+  // entre abas, alguém guardou uma cópia: encerra todas as sessões do usuário.
+  private async handleRefreshReuse(userId: string, revokedAt: Date): Promise<void> {
+    if (Date.now() - revokedAt.getTime() < REFRESH_REUSE_GRACE_MS) return;
+    this.logger.warn(`Reuso de refresh token revogado: user=${userId} — sessões encerradas`);
+    await this.revokeAllSessions(userId);
+  }
 
-    // Salva novo refresh token (hasheado)
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: safeUser.id,
-        token: this.hashToken(tokens.refreshToken),
-        expiresAt,
-      },
-    });
-
-    return tokens;
+  // ── Encerra todas as sessões do usuário (B-72 / M-08) ─────────────────────
+  // Refresh tokens são revogados no banco; access tokens ainda dentro da
+  // validade caem pela marca `sessionsRevokedAt`, conferida no JwtStrategy.
+  // `userData` vai no mesmo update — a troca de senha e o fim das sessões
+  // acontecem juntos ou não acontecem.
+  async revokeAllSessions(
+    userId: string,
+    userData: Prisma.UserUpdateInput = {},
+  ): Promise<void> {
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { ...userData, sessionsRevokedAt: now },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
   }
 
   // ── Logout — revoga o refresh token e opcionalmente o access token ────────
@@ -285,9 +312,31 @@ export class AuthService {
     return user;
   }
 
+  // ── Emite um par de tokens e registra o refresh token ─────────────────────
+  // Usado no login, na renovação e depois da troca da própria senha (B-72),
+  // que encerra as outras sessões mas mantém o usuário logado neste aparelho.
+  async issueTokens(user: AuthUserDto): Promise<AuthResponseDto> {
+    const tokens = await this.generateTokens(user);
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 dias
+
+    // Armazena apenas o hash do token — nunca o valor em texto puro.
+    // Se o banco vazar, os refresh tokens não podem ser reutilizados.
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: this.hashToken(tokens.refreshToken),
+        expiresAt,
+      },
+    });
+
+    return tokens;
+  }
+
   // ── Geração dos tokens ────────────────────────────────────────────────────
   private async generateTokens(user: AuthUserDto): Promise<AuthResponseDto> {
-    const payload: JwtPayload = {
+    const payload: Omit<JwtPayload, 'typ' | 'jti'> = {
       sub: user.id,
       companyId: user.companyId,
       email: user.email,
@@ -307,11 +356,15 @@ export class AuthService {
     // esse formato (validado por `parseExpiry` logo abaixo), o cast só
     // relaxa a checagem estática, sem mudar o valor passado em runtime.
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
+      // `typ` (B-72 / M-08) separa os dois tokens mesmo que os segredos
+      // acabem iguais por erro de configuração. `jti` deixa cada token único:
+      // sem ele, dois logins do mesmo usuário no mesmo segundo geravam o
+      // mesmo refresh token e o segundo batia no índice único (500).
+      this.jwtService.signAsync({ ...payload, typ: 'access', jti: randomUUID() }, {
         secret: jwtSecret,
         expiresIn: jwtExpiresIn as JwtSignOptions['expiresIn'],
       }),
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync({ ...payload, typ: 'refresh', jti: randomUUID() }, {
         secret: jwtRefreshSecret,
         expiresIn: jwtRefreshExpires as JwtSignOptions['expiresIn'],
       }),

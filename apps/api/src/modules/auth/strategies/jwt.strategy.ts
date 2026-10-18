@@ -11,6 +11,8 @@ export interface JwtPayload {
   companyId: string;
   email: string;
   role: string;
+  typ?: 'access' | 'refresh'; // B-72 (M-08)
+  jti?: string;      // id único do token (B-72)
   iat?: number;      // issued at (adicionado automaticamente pelo JWT)
   exp?: number;      // expiration (adicionado automaticamente pelo JWT)
 }
@@ -39,6 +41,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token não informado');
     }
 
+    // B-72 (M-08): só access token abre rota — um refresh token assinado com
+    // o mesmo segredo (configuração errada) não passa daqui.
+    if (payload.typ !== 'access') {
+      throw new UnauthorizedException('Tipo de token inválido');
+    }
+
     // ── Verifica blacklist ANTES de validar o usuário ────────────────────────
     const isBlacklisted = await this.tokenBlacklist.isBlacklisted(token);
 
@@ -57,6 +65,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: true,
         avatarUrl: true,
         isActive: true,
+        sessionsRevokedAt: true,
       },
     });
 
@@ -64,6 +73,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuário não encontrado ou inativo');
     }
 
-    return user;
+    // B-72 (M-08): sessões encerradas por troca/reset de senha. `iat` é em
+    // segundos — a comparação também, para o token emitido logo depois da
+    // troca (no mesmo segundo) continuar valendo.
+    if (
+      user.sessionsRevokedAt &&
+      (payload.iat ?? 0) < Math.floor(user.sessionsRevokedAt.getTime() / 1000)
+    ) {
+      throw new UnauthorizedException('Sessão encerrada');
+    }
+
+    const { sessionsRevokedAt: _r, ...authUser } = user;
+    return authUser;
   }
 }
