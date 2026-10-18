@@ -111,7 +111,12 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+// B-96 (L-07): falha no boot (banco fora, porta ocupada) sai com log e código
+// de erro, em vez de virar uma rejeição de promessa sem tratamento.
+bootstrap().catch((err: Error) => {
+  new Logger('Bootstrap').error(`Falha ao iniciar a API: ${err.message}`, err.stack);
+  process.exit(1);
+});
 
 // ── Validação de segredos ────────────────────────────────────────────────────
 function validateSecrets(config: ConfigService): void {

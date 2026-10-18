@@ -51,6 +51,8 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 ## Auth — `/auth`
 
 ### `POST /auth/login` (público)
+E-mail ou senha que não sejam texto (ou gigantes) respondem `400` (B-96). Senhas novas (cadastro, criação de
+usuário, troca) têm no máximo **72 bytes** — o limite do bcrypt.
 ```jsonc
 // Request
 { "email": "admin@demo.com", "password": "Admin@123" }

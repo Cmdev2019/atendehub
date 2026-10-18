@@ -1,4 +1,5 @@
 import { IsString, MinLength, Matches } from 'class-validator';
+import { BCRYPT_MAX_BYTES, MaxBytes } from '../../../shared/validators/max-bytes.validator';
 
 // Exige ao menos 1 letra maiúscula, 1 minúscula e 1 número.
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
@@ -13,5 +14,6 @@ export class ChangePasswordDto {
     message:
       'Nova senha deve conter ao menos uma letra maiúscula, uma minúscula e um número',
   })
+  @MaxBytes(BCRYPT_MAX_BYTES)
   newPassword: string;
 }
