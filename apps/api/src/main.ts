@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
@@ -10,6 +10,7 @@ import { createWinstonLogger } from './shared/logging/winston.logger';
 import { RequestIdMiddleware } from './shared/logging/request-id.middleware';
 import { initSentry, SentryExceptionFilter } from './shared/monitoring/sentry';
 import { resolveTrustProxy } from './shared/rate-limit/trust-proxy';
+import { applyHttpPipeline } from './shared/http/http-pipeline';
 
 // B-18: precisa rodar antes de qualquer outra coisa (padrão do SDK do
 // Sentry) — sem SENTRY_DSN configurado é um no-op seguro.
@@ -81,7 +82,8 @@ async function bootstrap() {
   });
 
   // ── Prefixo global da API ──────────────────────────────────────────────────
-  app.setGlobalPrefix('api/v1');
+  // Prefixo + ValidationPipe global (compartilhado com o e2e de autorização)
+  applyHttpPipeline(app);
 
   // ── Monitoramento de erros (B-18) ───────────────────────────────────────────
   // Estende o exception filter padrão do Nest — resposta HTTP ao cliente
@@ -95,17 +97,6 @@ async function bootstrap() {
   await redisIoAdapter.connectToRedis();
   app.useWebSocketAdapter(redisIoAdapter);
 
-  // ── Validação global de DTOs ───────────────────────────────────────────────
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,          // remove campos não declarados no DTO
-      forbidNonWhitelisted: true,
-      transform: true,          // transforma tipos automaticamente
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
 
   const port = process.env.APP_PORT ?? 3001;
   const nodeEnv = process.env.NODE_ENV || 'development';

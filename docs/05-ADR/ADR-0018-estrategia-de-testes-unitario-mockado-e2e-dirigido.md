@@ -1,11 +1,11 @@
 # ADR-0018 — Estratégia de testes: unitário mockado como base, e2e dirigido a fluxo crítico, sem gate de cobertura no CI
 
-- **Status:** Implementada (o que existe) — gate de cobertura sob Proposta
+- **Status:** Implementada — com piso de cobertura e e2e na CI desde o B-63 (2026-10-17)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-17
 - **Autor:** Engenharia
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `apps/api/src/**/*.spec.ts`, `apps/api/test/*.e2e-spec.ts`,
   `.github/workflows/api-ci.yml`
@@ -176,6 +176,7 @@ existiria para provar nada.
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-08-05 | Criação | 1.0 |
+| 2026-10-17 | Gate implementado (B-63, M-22 da auditoria de 2026-10-16): `coverageThreshold` no `jest.config.js` como catraca logo abaixo do medido (55% statements / 60% branches / 55% funções / 56% linhas; medido 56,6 / 61,2 / 56,1 / 57,2) e `npm run test:cov` no job `api`; job novo `api-e2e` com Postgres e Redis (services) e MinIO (`docker run`) rodando todos os e2e, inclusive `http-authz.e2e-spec.ts`, que sobe o AppModule inteiro e cobre papéis, dono do recurso, isolamento entre empresas e escopo por departamento pela API HTTP — a camada de controllers/guards que estava em 0%. O pipeline HTTP (prefixo + ValidationPipe) foi extraído para `shared/http/http-pipeline.ts`, usado pelo `main.ts` e pelo teste. | 1.1 |
 
 ## Referências
 
