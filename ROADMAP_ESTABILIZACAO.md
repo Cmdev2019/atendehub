@@ -175,6 +175,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-91 | L-02 | Raiz do repositório limpa: relatório de inclusão de padrões movido para docs/99-Arquivo (os PDFs já tinham saído no B-89) | ✅ 2026-10-18 |
 | B-92 | L-03 | Dependabot: prisma e @prisma/client agrupados, Node ímpar ignorado na imagem | ✅ 2026-10-18 |
 | B-93 | L-04 | CORS_ORIGINS tolera espaço depois da vírgula; WebSocket aceita o token só em auth | ✅ 2026-10-18 |
+| B-94 | L-05 | x-request-id do cliente só é aceito se for curto e simples; senão a API gera um | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 
