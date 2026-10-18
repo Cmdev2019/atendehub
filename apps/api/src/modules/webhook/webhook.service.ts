@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { MessageType, MessageStatus, SenderType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ContactService } from '../contact/contact.service';
@@ -8,7 +10,13 @@ import { MessageService } from '../message/message.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
-import { MediaDownloadService } from './media-download.service';
+import {
+  MEDIA_DOWNLOAD_JOB_OPTIONS,
+  MediaDownloadJobData,
+  mediaDownloadJobId,
+} from './media-download.processor';
+import { WEBHOOK_STEP, WebhookStep, planWebhookSteps } from './webhook-steps';
+import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { AutoAttendanceEngineService } from '../auto-attendance/auto-attendance-engine.service';
 import { extractPhoneFromJid, isOpaqueLidJid } from '../../shared/whatsapp/jid.util';
 
@@ -65,8 +73,9 @@ export class WebhookService {
     private readonly whatsappService: WhatsappService,
     private readonly evolutionService: EvolutionService,
     private readonly eventsService: EventsService,
-    private readonly mediaDownloadService: MediaDownloadService,
     private readonly autoAttendanceEngine: AutoAttendanceEngineService,
+    @InjectQueue(QUEUE_NAMES.MEDIA_DOWNLOAD)
+    private readonly mediaQueue: Queue<MediaDownloadJobData>,
   ) {}
 
   // ── Entry point — roteia pelo tipo de evento ──────────────────────────────
@@ -202,6 +211,15 @@ export class WebhookService {
     // Determina se é mensagem do agente (fromMe) ou do cliente
     const senderType = key.fromMe ? SenderType.AGENT : SenderType.CLIENT;
 
+    // B-76 (M-01): o que esta mensagem dispara é decidido aqui, uma vez, e
+    // gravado junto com ela (ver webhook-steps.ts).
+    const plannedSteps = planWebhookSteps({
+      hasMedia: this.isMediaType(type),
+      fromMe: key.fromMe,
+      isNewConversation,
+      isTextReply: type === MessageType.TEXT && !!content,
+    });
+
     // Persiste a mensagem com dedup por externalId
     const savedMessage = await this.messageService.createFromWebhook({
       conversationId: conversation.id,
@@ -214,39 +232,48 @@ export class WebhookService {
         timestamp: messageTimestamp,
         remoteJid: key.remoteJid,
       },
+      pendingWebhookSteps: plannedSteps,
     });
 
-    // ── Idempotência (B-39) ──────────────────────────────────────────────────
+    // ── Idempotência (B-39, B-76) ────────────────────────────────────────────
     // `createFromWebhook` dedupe por externalId, mas isso só evita duplicar a
-    // MENSAGEM — sem este corte, um retry do Bull (agora que B-39 deixa o
-    // erro propagar de verdade) reprocessaria tudo que vem depois pra uma
-    // mensagem que já tinha sido tratada com sucesso: baixaria a mídia de
-    // novo (criando um 2º Attachment pra mesma mensagem), reemitiria os
-    // eventos de socket, e — o mais sério — acionaria o auto-atendimento de
-    // novo (`handleReply` respondendo a mesma mensagem do cliente duas
-    // vezes, `handleNewConversation` reenviando a saudação).
-    if (!savedMessage.isNew) {
-      this.logger.debug(
-        `Mensagem ${key.id} já tinha sido processada (retry idempotente) — pulando mídia/preview/auto-atendimento/eventos`,
-      );
+    // MENSAGEM. Num retry do Bull, refazer tudo que vem depois duplicaria
+    // eventos e — o mais sério — o auto-atendimento (saudação reenviada,
+    // resposta de menu dada duas vezes). Antes o retry pulava tudo e o que
+    // tinha falhado ficava sem acontecer (B-76); agora cada etapa sai da lista
+    // de pendências ao terminar e o retry roda só o que sobrou. O eco de uma
+    // mensagem enviada pelo painel ou pelo bot já existe com a lista vazia.
+    const pending = savedMessage.isNew ? plannedSteps : savedMessage.pendingWebhookSteps;
+    if (pending.length === 0) {
+      this.logger.debug(`Mensagem ${key.id} já tinha sido processada — nada pendente`);
       return;
     }
-
-    // ── Download de mídia e criação de Attachment ───────────────────────────
-    if (this.isMediaType(type)) {
-      this.downloadAndSaveMedia(
-        savedMessage.id,
-        conversation.id,
-        companyId,
-        sessionName,
-        key.id,
-        type,
-        mimeType,
-        fileName,
-      ).catch((err) => {
-        this.logger.error(`Falha ao salvar mídia da msg ${key.id}: ${err.message}`);
-      });
+    if (!savedMessage.isNew) {
+      this.logger.log(`Mensagem ${key.id}: retomando etapas pendentes (${pending.join(', ')})`);
     }
+
+    const step = async (name: WebhookStep, run: () => Promise<unknown>) => {
+      if (!pending.includes(name)) return;
+      await run();
+      await this.messageService.completeWebhookStep(savedMessage.id, name);
+    };
+
+    // ── Download de mídia (fila própria com retry, B-76) ────────────────────
+    // O id do job é o da mensagem: enfileirar de novo num retry não duplica.
+    await step(WEBHOOK_STEP.MEDIA, () =>
+      this.mediaQueue.add(
+        {
+          messageId: savedMessage.id,
+          conversationId: conversation.id,
+          companyId,
+          sessionName,
+          externalMessageId: key.id,
+          mimeType: mimeType ?? 'application/octet-stream',
+          fileName,
+        },
+        { ...MEDIA_DOWNLOAD_JOB_OPTIONS, jobId: mediaDownloadJobId(savedMessage.id) },
+      ),
+    );
 
     // Prévia, horário e não lidas (B-42/B-60). Antes só rodava para texto do
     // cliente: áudio ou imagem sem legenda (content vazio) não subia a
@@ -255,39 +282,43 @@ export class WebhookService {
     // atualiza; só a do cliente conta como não lida. O eco de mensagem
     // enviada pelo painel nem chega aqui (isNew=false acima) — quem atualiza
     // a prévia nesse caso é o SendMessageService.
-    await this.conversationService.updateLastMessage(
-      conversation.id,
-      buildMessagePreview(type, content),
-      { countAsUnread: !key.fromMe },
+    await step(WEBHOOK_STEP.PREVIEW, () =>
+      this.conversationService.updateLastMessage(
+        conversation.id,
+        buildMessagePreview(type, content),
+        { countAsUnread: !key.fromMe },
+      ),
     );
 
     // ── Auto-atendimento (B-35) ─────────────────────────────────────────────
     // Nunca reage a mensagens fromMe (o próprio negócio respondendo pelo
-    // celular) — só a mensagens de verdade do cliente.
-    if (!key.fromMe) {
-      if (isNewConversation) {
-        await this.autoAttendanceEngine.handleNewConversation({
-          companyId,
-          conversationId: conversation.id,
-          contactPhone: contact.phone,
-          sessionName,
-          queueGreetingMsg: queue?.greetingMsg ?? null,
-        });
-      } else if (type === MessageType.TEXT && content) {
-        // Só interpreta texto como resposta de menu — mídia/figurinha etc.
-        // enquanto o menu está aberto não é tratada como seleção inválida
-        await this.autoAttendanceEngine.handleReply({
-          companyId,
-          conversationId: conversation.id,
-          contactPhone: contact.phone,
-          sessionName,
-          text: content,
-        });
-      }
-    }
+    // celular) — só a mensagens de verdade do cliente (ver planWebhookSteps).
+    await step(WEBHOOK_STEP.AUTO_GREETING, async () =>
+      this.autoAttendanceEngine.handleNewConversation({
+        companyId,
+        conversationId: conversation.id,
+        contactPhone: contact.phone,
+        sessionName,
+        // No retry a conversa já existe e o upsert não devolve a fila — a
+        // saudação da fila vem do queueId gravado nela.
+        queueGreetingMsg:
+          queue?.greetingMsg ?? (await this.queueGreetingOf(conversation.queueId)),
+      }),
+    );
+    // Só texto conta como resposta de menu — mídia/figurinha etc. enquanto o
+    // menu está aberto não é tratada como seleção inválida
+    await step(WEBHOOK_STEP.AUTO_REPLY, () =>
+      this.autoAttendanceEngine.handleReply({
+        companyId,
+        conversationId: conversation.id,
+        contactPhone: contact.phone,
+        sessionName,
+        text: content,
+      }),
+    );
 
     // ── Emite evento em tempo real ─────────────────────────────────────────
-    if (isNewConversation) {
+    await step(WEBHOOK_STEP.EVENT_CONVERSATION_CREATED, () =>
       this.eventsService.emitConversationCreated({
         companyId,
         conversation: {
@@ -303,22 +334,24 @@ export class WebhookService {
           whatsappConnectionId,
           createdAt: conversation.createdAt,
         },
-      });
-    }
+      }),
+    );
 
-    this.eventsService.emitNewMessage({
-      companyId,
-      conversationId: conversation.id,
-      message: {
-        id: savedMessage.id,
-        senderType,
-        content,
-        type,
-        status: savedMessage.status,
-        sentAt: savedMessage.sentAt,
-        externalId: key.id,
-      },
-    });
+    await step(WEBHOOK_STEP.EVENT_MESSAGE_NEW, async () =>
+      this.eventsService.emitNewMessage({
+        companyId,
+        conversationId: conversation.id,
+        message: {
+          id: savedMessage.id,
+          senderType,
+          content,
+          type,
+          status: savedMessage.status,
+          sentAt: savedMessage.sentAt,
+          externalId: key.id,
+        },
+      }),
+    );
 
     this.logger.debug(`Mensagem processada: ${key.id} | ${phone} | ${type}`);
   }
@@ -576,68 +609,15 @@ export class WebhookService {
     return mediaTypes.includes(type);
   }
 
-  // ── Baixa mídia e cria registro Attachment no banco ───────────────────────
-  private async downloadAndSaveMedia(
-    messageId: string,
-    conversationId: string,
-    companyId: string,
-    sessionName: string,
-    externalMessageId: string,
-    type: MessageType,
-    mimeType?: string,
-    fileName?: string,
-  ): Promise<void> {
-    const effectiveMimeType = mimeType ?? 'application/octet-stream';
-
-    // Única origem da mídia: getBase64FromMediaMessage da Evolution API, que
-    // devolve o arquivo DECRIPTADO (a URL do payload, mmg.whatsapp.net/...enc,
-    // é criptografada). B-50: não existe mais fallback que baixe a URL vinda
-    // no conteúdo da mensagem — ele enviava a EVOLUTION_API_KEY para um
-    // endereço externo. Se a Evolution não entregar a mídia, a mensagem fica
-    // sem anexo e o motivo é logado abaixo.
-    const result = await this.mediaDownloadService.downloadFromEvolution(
-      sessionName,
-      externalMessageId,
-      effectiveMimeType,
-      companyId,
-      fileName,
-    );
-
-    if (!result) {
-      this.logger.warn(
-        `Não foi possível baixar mídia para msg ${externalMessageId}`,
-      );
-      return;
-    }
-
-    // Cria o registro Attachment no banco
-    const attachment = await this.prisma.attachment.create({
-      data: {
-        messageId,
-        url: result.url,
-        mimeType: result.mimeType,
-        fileName: result.fileName ?? null,
-        size: result.size,
-      },
+  // Saudação da fila da conversa (B-76) — usada quando o retry retoma a
+  // saudação e o upsert, com a conversa já existente, não devolve a fila.
+  private async queueGreetingOf(queueId: string | null | undefined): Promise<string | null> {
+    if (!queueId) return null;
+    const queue = await this.prisma.queue.findUnique({
+      where: { id: queueId },
+      select: { greetingMsg: true },
     });
-
-    // O message.new foi emitido antes do download terminar — avisa a UI que
-    // o anexo ficou pronto (troca o placeholder pela mídia real, sem F5)
-    this.eventsService.emitMessageUpdated({
-      companyId,
-      conversationId,
-      messageId,
-      attachment: {
-        id: attachment.id,
-        url: attachment.url,
-        mimeType: attachment.mimeType,
-        fileName: attachment.fileName,
-      },
-    });
-
-    this.logger.debug(
-      `Attachment criado para msg ${externalMessageId}: ${result.url}`,
-    );
+    return queue?.greetingMsg ?? null;
   }
 
   // ── Busca a foto de perfil do contato na Evolution (com throttle) ─────────

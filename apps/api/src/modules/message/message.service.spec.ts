@@ -72,7 +72,7 @@ describe('MessageService#createFromWebhook — idempotência (B-48/B-39)', () =>
     // números cadastrados conversam entre si.
     expect(mockPrisma.message.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { whatsappConnectionId_externalId: { whatsappConnectionId: 'conn-1', externalId: 'wa-1' } },
-      select: { id: true, status: true, sentAt: true },
+      select: { id: true, status: true, sentAt: true, pendingWebhookSteps: true },
     });
     expect(result).toEqual({
       id: 'msg-1',

@@ -60,6 +60,13 @@ Justificativa objetiva: é a única alternativa que move a garantia de atomicida
 ### Positivas
 - Duplicação de `Message`/`Conversation` sob concorrência é estruturalmente impossível, não apenas improvável.
 - `isNew` continua disponível para o consumidor decidir se dispara efeito colateral.
+- **Atualização B-76 (2026-10-18, M-01 da auditoria de 2026-10-16):** `isNew` sozinho decidia os
+  efeitos do webhook em regime de "no máximo uma vez" — se algo falhasse depois de gravar a
+  mensagem, o retry via `isNew=false` e não fazia mais nada. Agora a mensagem do webhook guarda a
+  lista do que falta (`Message.pendingWebhookSteps`: prévia, auto-atendimento, eventos, mídia);
+  cada etapa sai da lista ao terminar e o retry roda só o que sobrou. Mensagens criadas fora do
+  webhook nascem com a lista vazia, então o eco delas continua sem efeito. O download da mídia
+  virou fila própria com retry (`media-download`), com o id da mensagem como id do job.
 - Sem infraestrutura nova (Redis lock, biblioteca de coordenação).
 - Padrão replicável: qualquer 3º caso futuro de "criar-ou-reaproveitar sob concorrência" segue a mesma receita (ver `docs/06-Backend/README.md`, seção de idempotência).
 

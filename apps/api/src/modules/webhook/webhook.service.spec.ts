@@ -1,5 +1,4 @@
 import { WebhookService } from './webhook.service';
-import { MediaDownloadService } from './media-download.service';
 
 // B4-4: extractPhoneFromJid já causou 2 incidentes em produção (F0-11 sufixo
 // de dispositivo duplicando contatos, F0-13 @lid não normalizado criando
@@ -58,14 +57,18 @@ describe('WebhookService — processamento de eventos', () => {
     whatsAppConnection: { findUnique: jest.fn() },
     message: { findFirst: jest.fn(), updateMany: jest.fn() },
     contact: { update: jest.fn() },
-    attachment: { create: jest.fn() },
+    queue: { findUnique: jest.fn() },
   };
   const mockContactService = { upsertFromWebhook: jest.fn() };
   const mockConversationService = {
     upsertFromWebhook: jest.fn(),
     updateLastMessage: jest.fn(),
   };
-  const mockMessageService = { createFromWebhook: jest.fn(), updateStatus: jest.fn() };
+  const mockMessageService = {
+    createFromWebhook: jest.fn(),
+    updateStatus: jest.fn(),
+    completeWebhookStep: jest.fn(),
+  };
   const mockWhatsappService = { handleConnectionUpdate: jest.fn(), handleQrCodeUpdate: jest.fn() };
   const mockEvolutionService = { fetchProfilePictureUrl: jest.fn() };
   const mockEventsService = {
@@ -75,7 +78,7 @@ describe('WebhookService — processamento de eventos', () => {
     emitConnectionStatus: jest.fn(),
     emitMessageUpdated: jest.fn(),
   };
-  const mockMediaDownloadService = { downloadFromEvolution: jest.fn() };
+  const mockMediaQueue = { add: jest.fn() };
   const mockAutoAttendanceEngine = {
     handleNewConversation: jest.fn().mockResolvedValue(undefined),
     handleReply: jest.fn().mockResolvedValue(false),
@@ -96,8 +99,8 @@ describe('WebhookService — processamento de eventos', () => {
       mockWhatsappService as any,
       mockEvolutionService as any,
       mockEventsService as any,
-      mockMediaDownloadService as any,
       mockAutoAttendanceEngine as any,
+      mockMediaQueue as any,
     );
     mockPrisma.whatsAppConnection.findUnique.mockResolvedValue(connection);
   });
@@ -383,7 +386,7 @@ describe('WebhookService — processamento de eventos', () => {
     // B-39: sem este corte, um retry do Bull pra uma mensagem que já tinha
     // sido processada com sucesso reemitiria eventos e reacionaria o
     // auto-atendimento uma 2ª vez pra cliente nenhum pedir.
-    it('idempotência (B-39): quando createFromWebhook diz isNew=false (retry), pula mídia/preview/auto-atendimento/eventos', async () => {
+    it('idempotência (B-39): mensagem que já existe sem etapas pendentes (retry ou eco) não refaz nada', async () => {
       mockContactService.upsertFromWebhook.mockResolvedValueOnce({
         id: 'contact-1',
         name: 'Cliente Teste',
@@ -399,6 +402,7 @@ describe('WebhookService — processamento de eventos', () => {
         id: 'msg-1',
         status: 'SENT',
         sentAt: new Date(),
+        pendingWebhookSteps: [],
         isNew: false, // já existia — Bull reprocessou o mesmo job
       });
 
@@ -416,12 +420,131 @@ describe('WebhookService — processamento de eventos', () => {
       expect(mockAutoAttendanceEngine.handleNewConversation).not.toHaveBeenCalled();
       expect(mockEventsService.emitNewMessage).not.toHaveBeenCalled();
       expect(mockEventsService.emitConversationCreated).not.toHaveBeenCalled();
-      expect(mockMediaDownloadService.downloadFromEvolution).not.toHaveBeenCalled();
+      expect(mockMediaQueue.add).not.toHaveBeenCalled();
     });
 
-    // Mídia é baixada fora do fluxo principal (fire-and-forget) — os testes
-    // abaixo esperam uma volta do event loop antes de conferir o resultado.
-    const flushBackgroundWork = () => new Promise((resolve) => setImmediate(resolve));
+    // B-76 (M-01): antes, o retry via isNew=false e pulava TUDO — a saudação
+    // que tinha falhado nunca mais era enviada. Agora roda só o que ficou na
+    // lista, inclusive o que dependia de a conversa ser nova (no retry o
+    // upsert já não diz isNew).
+    it('retry retoma só as etapas pendentes, inclusive a saudação de conversa nova', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+        avatarUrl: 'https://avatar.exemplo/foto.jpg',
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: { ...oldConversation, queueId: 'queue-1' },
+        isNew: false, // no retry a conversa já existe
+        queue: null,
+      });
+      mockPrisma.queue.findUnique.mockResolvedValueOnce({ greetingMsg: 'Olá da fila!' });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({
+        id: 'msg-1',
+        status: 'DELIVERED',
+        sentAt: new Date(),
+        pendingWebhookSteps: ['auto_greeting', 'event_conversation_created', 'event_message_new'],
+        isNew: false,
+      });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+          message: { conversation: 'Oi' },
+        },
+      });
+
+      // A prévia já tinha sido feita na 1ª tentativa (não conta não lida 2x)
+      expect(mockConversationService.updateLastMessage).not.toHaveBeenCalled();
+      expect(mockAutoAttendanceEngine.handleNewConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv-1', queueGreetingMsg: 'Olá da fila!' }),
+      );
+      expect(mockAutoAttendanceEngine.handleReply).not.toHaveBeenCalled();
+      expect(mockEventsService.emitConversationCreated).toHaveBeenCalledTimes(1);
+      expect(mockEventsService.emitNewMessage).toHaveBeenCalledTimes(1);
+      expect(mockMessageService.completeWebhookStep.mock.calls.map(([, s]) => s)).toEqual([
+        'auto_greeting',
+        'event_conversation_created',
+        'event_message_new',
+      ]);
+    });
+
+    it('etapa que falha propaga o erro e fica pendente; as anteriores saem da lista', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+        avatarUrl: 'https://avatar.exemplo/foto.jpg',
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: false,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({
+        id: 'msg-1',
+        status: 'DELIVERED',
+        sentAt: new Date(),
+        isNew: true,
+      });
+      mockAutoAttendanceEngine.handleReply.mockRejectedValueOnce(new Error('Evolution fora do ar'));
+
+      await expect(
+        service.handleEvent({
+          event: 'MESSAGES_UPSERT',
+          instance: 'session-1',
+          data: {
+            key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+            message: { conversation: '1' },
+          },
+        }),
+      ).rejects.toThrow('Evolution fora do ar');
+
+      const done = mockMessageService.completeWebhookStep.mock.calls.map(([, s]) => s);
+      expect(done).toEqual(['preview']);
+      expect(mockEventsService.emitNewMessage).not.toHaveBeenCalled();
+    });
+
+    it('grava as etapas planejadas junto com a mensagem nova', async () => {
+      mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+        id: 'contact-1',
+        name: 'Cliente Teste',
+        phone: '5512999999999',
+        isBlocked: false,
+        avatarUrl: 'https://avatar.exemplo/foto.jpg',
+      });
+      mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+        conversation: oldConversation,
+        isNew: true,
+        queue: null,
+      });
+      mockMessageService.createFromWebhook.mockResolvedValueOnce({
+        id: 'msg-1',
+        status: 'DELIVERED',
+        sentAt: new Date(),
+        isNew: true,
+      });
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-1' },
+          message: { conversation: 'Oi' },
+        },
+      });
+
+      expect(mockMessageService.createFromWebhook).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pendingWebhookSteps: ['preview', 'auto_greeting', 'event_conversation_created', 'event_message_new'],
+        }),
+      );
+    });
 
     const mockNewMediaMessage = (messageId: string) => {
       mockContactService.upsertFromWebhook.mockResolvedValueOnce({
@@ -444,19 +567,11 @@ describe('WebhookService — processamento de eventos', () => {
       });
     };
 
-    it('mídia entregue pela Evolution vira Attachment e emite message.updated', async () => {
+    // B-76 (M-01): o download sai do fluxo principal para uma fila própria com
+    // retry; o id do job é o da mensagem, então um retry do webhook não
+    // duplica. O download em si é testado em media-download.processor.spec.ts.
+    it('mídia recebida vira job na fila de download, com o id da mensagem como id do job', async () => {
       mockNewMediaMessage('msg-media-1');
-      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce({
-        url: 'http://localhost:9000/atendehub-media/company-1/images/a.jpg',
-        mimeType: 'image/jpeg',
-        size: 1234,
-      });
-      mockPrisma.attachment.create.mockResolvedValueOnce({
-        id: 'att-1',
-        url: 'http://localhost:9000/atendehub-media/company-1/images/a.jpg',
-        mimeType: 'image/jpeg',
-        fileName: null,
-      });
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -466,19 +581,33 @@ describe('WebhookService — processamento de eventos', () => {
           message: { imageMessage: { mimetype: 'image/jpeg', url: 'https://mmg.whatsapp.net/a.enc' } },
         },
       });
-      await flushBackgroundWork();
 
-      expect(mockMediaDownloadService.downloadFromEvolution).toHaveBeenCalledWith(
-        'session-1',
-        'wa-media-1',
-        'image/jpeg',
-        companyId,
-        undefined,
+      expect(mockMediaQueue.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageId: 'msg-media-1',
+          sessionName: 'session-1',
+          externalMessageId: 'wa-media-1',
+          mimeType: 'image/jpeg',
+          companyId,
+        }),
+        expect.objectContaining({ jobId: 'media:msg-media-1', attempts: expect.any(Number) }),
       );
-      expect(mockPrisma.attachment.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ messageId: 'msg-media-1', mimeType: 'image/jpeg' }),
+      expect(mockMessageService.completeWebhookStep).toHaveBeenCalledWith('msg-media-1', 'media');
+    });
+
+    it('texto não enfileira download de mídia', async () => {
+      mockNewMediaMessage('msg-texto');
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-texto' },
+          message: { conversation: 'Oi' },
+        },
       });
-      expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledTimes(1);
+
+      expect(mockMediaQueue.add).not.toHaveBeenCalled();
     });
 
     // B-42/B-60: mídia sem legenda (content vazio) não atualizava a conversa
@@ -491,7 +620,6 @@ describe('WebhookService — processamento de eventos', () => {
       ['figurinha', { stickerMessage: { url: 'https://x/s.webp.enc' } }, 'Figurinha'],
     ])('%s sem legenda do cliente atualiza a conversa com o rótulo e conta como não lida', async (_nome, message, rotulo) => {
       mockNewMediaMessage('msg-sem-legenda');
-      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce(null);
 
       await service.handleEvent({
         event: 'MESSAGES_UPSERT',
@@ -501,36 +629,10 @@ describe('WebhookService — processamento de eventos', () => {
           message,
         },
       });
-      await flushBackgroundWork();
 
       expect(mockConversationService.updateLastMessage).toHaveBeenCalledWith('conv-1', rotulo, {
         countAsUnread: true,
       });
-    });
-
-    // B-50: o fallback antigo baixava a URL vinda no conteúdo da mensagem
-    // enviando a EVOLUTION_API_KEY no cabeçalho. Sem a Evolution entregando a
-    // mídia, nada mais pode ser buscado — a mensagem só fica sem anexo.
-    it('B-50: mídia que a Evolution não entrega não é buscada de nenhuma outra origem', async () => {
-      mockNewMediaMessage('msg-media-2');
-      mockMediaDownloadService.downloadFromEvolution.mockResolvedValueOnce(null);
-
-      await service.handleEvent({
-        event: 'MESSAGES_UPSERT',
-        instance: 'session-1',
-        data: {
-          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-media-2' },
-          // URL sem ".enc" — exatamente o caso que o fallback removido baixava
-          message: { imageMessage: { mimetype: 'image/jpeg', url: 'https://externo.exemplo/foto.jpg' } },
-        },
-      });
-      await flushBackgroundWork();
-
-      expect(mockMediaDownloadService.downloadFromEvolution).toHaveBeenCalledTimes(1);
-      // Trava contra a volta do caminho removido na classe real
-      expect((MediaDownloadService.prototype as any).downloadAndStore).toBeUndefined();
-      expect(mockPrisma.attachment.create).not.toHaveBeenCalled();
-      expect(mockEventsService.emitMessageUpdated).not.toHaveBeenCalled();
     });
   });
 

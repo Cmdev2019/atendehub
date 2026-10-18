@@ -253,7 +253,14 @@ export class MessageService {
     externalId: string;
     senderId?: string;
     metadata?: Record<string, any>;
-  }): Promise<{ id: string; status: MessageStatus; sentAt: Date; isNew: boolean }> {
+    pendingWebhookSteps?: string[];
+  }): Promise<{
+    id: string;
+    status: MessageStatus;
+    sentAt: Date;
+    pendingWebhookSteps: string[];
+    isNew: boolean;
+  }> {
     const { message, isNew } = await this.createUnique(
       {
         conversationId: data.conversationId,
@@ -265,11 +272,21 @@ export class MessageService {
         externalId: data.externalId,
         status: MessageStatus.DELIVERED,
         metadata: data.metadata,
+        pendingWebhookSteps: data.pendingWebhookSteps ?? [],
       },
-      { id: true, status: true, sentAt: true },
+      { id: true, status: true, sentAt: true, pendingWebhookSteps: true },
     );
 
     return { ...message, isNew };
+  }
+
+  // B-76 (M-01): tira uma etapa concluída da lista de pendências do webhook.
+  // array_remove é atômico no Postgres — o Prisma não tem "pull" de lista.
+  async completeWebhookStep(messageId: string, step: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE "messages"
+      SET "pendingWebhookSteps" = array_remove("pendingWebhookSteps", ${step})
+      WHERE "id" = ${messageId}`;
   }
 
   // ── Atualizar status da mensagem (ex: lida) ───────────────────────────────

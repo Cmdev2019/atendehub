@@ -439,6 +439,11 @@ model Message {
   isEdited       Boolean       @default(false)
   quotedMessageId String?      // mensagem citada
   metadata       Json?         // reaction, forwarded, etc.
+  // B-76 (M-01): efeitos do webhook que ainda faltam para esta mensagem
+  // (prévia, auto-atendimento, eventos, mídia). Cada etapa sai da lista ao
+  // terminar; um retry roda só o que sobrou. Mensagem criada fora do webhook
+  // (painel, bot) nasce com a lista vazia — o eco dela não refaz nada.
+  pendingWebhookSteps String[] @default([])
   sentAt         DateTime      @default(now())
   deliveredAt    DateTime?
   readAt         DateTime?

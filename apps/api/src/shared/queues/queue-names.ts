@@ -10,6 +10,8 @@ export const QUEUE_NAMES = {
   // consome automaticamente (sem @Process nesta queue); só sai por
   // reprocessamento manual via WebhookDlqService.
   WEBHOOK_DLQ: 'webhook-dlq',
+  // B-76: download da mídia recebida, com retry próprio (MediaDownloadProcessor)
+  MEDIA_DOWNLOAD: 'media-download',
   SLA_CHECK: 'sla-check',
   AUTO_ATTENDANCE_INACTIVITY: 'auto-attendance-inactivity',
 } as const;
