@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  Ip,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -48,8 +49,10 @@ export class AuthController {
   @Public()
   @Post('register-company')
   @HttpCode(HttpStatus.CREATED)
-  async registerCompany(@Body() dto: RegisterCompanyDto): Promise<AuthResponseDto> {
-    return this.authService.registerCompany(dto);
+  async registerCompany(@Body() dto: RegisterCompanyDto, @Ip() ip: string): Promise<AuthResponseDto> {
+    // B-85: IP do cliente (atrás do nginx, via trust proxy — B-56) para o
+    // teto diário de cadastros
+    return this.authService.registerCompany(dto, ip);
   }
 
   // POST /api/v1/auth/refresh

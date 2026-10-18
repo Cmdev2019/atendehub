@@ -54,6 +54,7 @@ cair silenciosamente num valor de desenvolvimento:
 | `MEDIA_STORAGE_HOST` | `docker-compose.prod.yml` e boot do `nginx` (`infra/nginx/entrypoint/15-media-storage-host.sh`) | ausente, ou com esquema/porta — é só o host S3 do R2, ex. `<conta>.r2.cloudflarestorage.com` (B-64). Vira o `MINIO_ENDPOINT` da API e o upstream do nginx |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `apps/api/src/shared/storage/storage.service.ts` (boot) | ausente — em produção são o **Access Key ID** e o **Secret Access Key** do token do R2 (o prefixo `MINIO_` é histórico) |
 | `EVOLUTION_API_KEY`, `EVOLUTION_SERVER_URL`, `EVOLUTION_WEBHOOK_URL` | `docker-compose.prod.yml` | ausente — `EVOLUTION_WEBHOOK_URL` deve usar a rede interna (`http://api:3001/api/v1/webhooks/evolution`), já que a porta 3001 não é publicada |
+| `SIGNUP_ENABLED`, `SIGNUP_DAILY_LIMIT_PER_IP` (B-85) | `docker-compose.prod.yml` | opcional — `SIGNUP_ENABLED=false` desliga o cadastro público de empresas; o teto diário por IP tem padrão 5 |
 | `VITE_API_URL`, `VITE_WS_URL` | `docker-compose.prod.yml` (build args do `nginx`) | ausente — reflete no **build**, não dá pra trocar depois sem rebuildar a imagem |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | `apps/api/src/main.ts` (`validateSecrets`) | ausente, < 32 chars, ou contém placeholder inseguro conhecido |
 | `CORS_ORIGINS` | `apps/api/src/main.ts` (`validateCorsOrigins`) | ausente ou `*` |

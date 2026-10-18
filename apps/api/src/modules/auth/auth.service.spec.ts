@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException, ConflictException } from '@nestjs/common';
+import { UnauthorizedException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { EventsService } from '../events/events.service';
+import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { Role } from '@prisma/client';
 
 jest.mock('bcrypt');
@@ -55,6 +56,19 @@ const mockEvents = {
   disconnectSession: jest.fn(),
 };
 
+// B-85: contador diário de cadastros por IP (MULTI INCR + EXPIRE)
+let signupCount = 0;
+const mockRedis = {
+  multi: jest.fn(() => {
+    const chain: any = {
+      incr: jest.fn(() => chain),
+      expire: jest.fn(() => chain),
+      exec: jest.fn(async () => [[null, ++signupCount], [null, 1]]),
+    };
+    return chain;
+  }),
+};
+
 describe('AuthService', () => {
   let service: AuthService;
 
@@ -84,6 +98,7 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: TokenBlacklistService, useValue: mockTokenBlacklist },
         { provide: EventsService, useValue: mockEvents },
+        { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
 
@@ -113,7 +128,23 @@ describe('AuthService', () => {
       const result = await service.validateUser(dbUser.email, 'senha-certa');
 
       expect(result).toBeNull();
-      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    // B-85 (M-20): sem o bcrypt, a resposta para e-mail inexistente saía bem
+    // mais rápida e o tempo revelava quem tem conta
+    it('compara a senha mesmo quando o e-mail não existe (tempo de resposta igual)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+      await expect(service.validateUser('ninguem@empresa.com', 'qualquer')).resolves.toBeNull();
+      expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+    });
+
+    it('usuário de empresa inativa não entra mesmo com a senha certa', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ ...dbUser, company: { isActive: false } });
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+
+      await expect(service.validateUser(dbUser.email, 'senha-certa')).resolves.toBeNull();
     });
 
     it('retorna null quando a senha está errada', async () => {
@@ -178,6 +209,27 @@ describe('AuthService', () => {
     beforeEach(() => {
       (bcrypt.hash as jest.Mock).mockResolvedValue('hash-da-senha-nova');
       mockPrisma.refreshToken.create.mockResolvedValue({});
+      signupCount = 0;
+    });
+
+    // B-85 (M-20): cadastro público pode ser desligado e tem teto diário por IP
+    it('SIGNUP_ENABLED=false recusa o cadastro (403) sem tocar no banco', async () => {
+      mockConfig.get.mockImplementation((key: string, fallback?: unknown) =>
+        key === 'SIGNUP_ENABLED' ? 'false' : fallback,
+      );
+
+      await expect(service.registerCompany(dto, '10.0.0.1')).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('passado o teto diário do IP, responde 429 sem criar nada', async () => {
+      mockConfig.get.mockImplementation((key: string, fallback?: unknown) =>
+        key === 'SIGNUP_DAILY_LIMIT_PER_IP' ? '2' : fallback,
+      );
+      signupCount = 2; // já houve 2 cadastros hoje desta rede
+
+      await expect(service.registerCompany(dto, '10.0.0.1')).rejects.toMatchObject({ status: 429 });
+      expect(mockPrisma.company.create).not.toHaveBeenCalled();
     });
 
     it('rejeita com ConflictException quando o e-mail já existe (busca global, não por empresa)', async () => {

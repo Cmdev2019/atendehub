@@ -63,6 +63,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-85 (2026-10-18, M-20):** o login não revela mais, pelo tempo de resposta, se um e-mail está
+  cadastrado. O cadastro público de empresas ganhou um limite diário por rede (padrão 5) e pode ser
+  desligado com `SIGNUP_ENABLED=false`. A verificação de e-mail e o CAPTCHA ficam para quando houver produção.
 - **B-83 (2026-10-18, M-19 / B-41):** o banco passa a impedir, sozinho, que uma requisição de uma empresa
   leia ou altere dados de outra, mesmo que alguma consulta da API esqueça o filtro por empresa
   (Row-Level Security do Postgres). O script de inicialização do banco também deixa de exigir que o
