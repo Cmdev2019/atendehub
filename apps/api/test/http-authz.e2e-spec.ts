@@ -88,6 +88,9 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     await mkConv('juridico', A, jur.id);
     await mkConv('financeiro', A, fin.id);
     await mkConv('daEmpresaB', B, null);
+    conv.conexaoA = (
+      await prisma.whatsAppConnection.create({ data: { companyId: A, name: 'Conn A', sessionName: `e2e-b63-conn-${run}` } })
+    ).id;
 
     // B-73 (M-07): contato com uma conversa RESOLVED e outra já ativa, e uma
     // conversa encerrada — o índice único parcial de conversa ativa só existe
@@ -113,6 +116,7 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     await prisma.refreshToken.deleteMany({ where: { user: { companyId: { in: companyIds } } } });
     await prisma.conversation.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.contact.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.whatsAppConnection.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.user.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.department.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.company.deleteMany({ where: { id: { in: companyIds } } });
@@ -179,6 +183,13 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     expect(await call('GET', `/conversations/${conv.juridico}`, 'agentJur')).toBe(200);
     expect(spy).toHaveBeenCalledTimes(2);
     spy.mockRestore();
+  });
+
+  // B-100 (L-12): sincronizar o status grava no banco — POST e só ADMIN
+  it('sincronizar status da conexão é POST e só ADMIN; o GET antigo não existe mais', async () => {
+    expect(await call('POST', `/whatsapp/${conv.conexaoA}/status`, 'agentJur')).toBe(403);
+    expect(await call('POST', `/whatsapp/${conv.conexaoA}/status`, 'supervisorA')).toBe(403);
+    expect(await call('GET', `/whatsapp/${conv.conexaoA}/status`, 'adminA')).toBe(404);
   });
 
   it('validação global: campo fora do DTO responde 400', async () => {

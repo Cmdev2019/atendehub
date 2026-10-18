@@ -931,8 +931,8 @@ class ApiClient {
   }
 
   async getWhatsappStatus(id) {
-    // Sincroniza o status com a Evolution API
-    return this.request(`/whatsapp/${id}/status`, { method: 'GET' });
+    // Sincroniza o status com a Evolution API (POST desde o B-100: grava no banco)
+    return this.request(`/whatsapp/${id}/status`, { method: 'POST' });
   }
 
   async disconnectWhatsapp(id) {

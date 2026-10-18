@@ -48,6 +48,33 @@ describe('Webhook da Evolution (B-82)', () => {
     });
   });
 
+  // B-100 (L-12): departamento da conexão precisa ser da própria empresa
+  describe('WhatsappService — departamento da conexão', () => {
+    const prisma = { department: { findFirst: jest.fn() }, whatsAppConnection: { findFirst: jest.fn(), update: jest.fn() } };
+    const service = new WhatsappService(prisma as any, {} as any, {} as any);
+
+    it('update recusa departmentId de outra empresa sem gravar', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({ id: 'c1' } as any);
+      prisma.department.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.update('company-1', 'c1', { departmentId: 'dept-alheio' } as any)).rejects.toThrow(
+        'Departamento não encontrado',
+      );
+      expect(prisma.department.findFirst).toHaveBeenCalledWith({
+        where: { id: 'dept-alheio', companyId: 'company-1' },
+        select: { id: true },
+      });
+      expect(prisma.whatsAppConnection.update).not.toHaveBeenCalled();
+    });
+
+    it('create recusa departmentId de outra empresa antes de falar com a Evolution', async () => {
+      prisma.department.findFirst.mockResolvedValueOnce(null);
+      await expect(service.create('company-1', { name: 'Conn', departmentId: 'dept-alheio' } as any)).rejects.toThrow(
+        'Departamento não encontrado',
+      );
+    });
+  });
+
   describe('WhatsappService.getQrCode', () => {
     const prisma = {
       whatsAppConnection: { findFirst: jest.fn(), update: jest.fn() },

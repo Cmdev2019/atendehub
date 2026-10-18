@@ -49,9 +49,12 @@ export class WhatsappController {
     return this.whatsappService.getQrCode(user.companyId, id);
   }
 
-  // GET /api/v1/whatsapp/:id/status
-  // Sincroniza o status com a Evolution API
-  @Get(':id/status')
+  // POST /api/v1/whatsapp/:id/status
+  // Sincroniza o status com a Evolution API. B-100 (L-12): grava no banco,
+  // então é POST (era GET) e só ADMIN — mesmo papel de quem gera o QR code.
+  @Post(':id/status')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.ADMIN)
   syncStatus(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
     return this.whatsappService.syncStatus(user.companyId, id);
   }
