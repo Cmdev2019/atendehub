@@ -8,6 +8,7 @@ import * as http from 'http';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/modules/auth/auth.service';
+import { EventsGateway } from '../src/modules/events/events.gateway';
 import { applyHttpPipeline } from '../src/shared/http/http-pipeline';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
 
@@ -109,6 +110,8 @@ describe('Sessão no WebSocket (E2E)', () => {
     const session = await auth.login(user);
 
     expect((await connect(session.accessToken)).outcome).toEqual({ connected: true });
+    // B-80: contagem pelo adapter (todas as réplicas), não por Map do processo
+    expect(await app.get(EventsGateway).getConnectedCount()).toBeGreaterThanOrEqual(1);
 
     const withRefresh = (await connect(session.refreshToken)).outcome;
     expect(withRefresh).toEqual(expect.objectContaining({ connected: false, code: 'UNAUTHORIZED' }));

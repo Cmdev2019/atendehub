@@ -1,16 +1,25 @@
 # ADR-0014 — Clientes Redis especializados por serviço, sem provider compartilhado (relacionada a B-46)
 
-- **Status:** Implementada — consolidação futura sob avaliação (B-46)
+- **Status:** Implementada — consolidação parcial feita na v1.1 (B-80)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-08-05
+- **Última revisão:** 2026-10-18
 - **Autor:** Engenharia (formalização retroativa do racional já registrado na ACR de 2026-08-01)
 - **Revisores:** —
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `token-blacklist.service.ts`, `auto-attendance-session.service.ts`,
   `health.service.ts`, `redis-io.adapter.ts`, `BullModule.forRootAsync` (`app.module.ts:46-56`)
 
 > Ciclo de vida conforme `README.md` desta pasta.
+
+> **v1.1 (2026-10-18, B-80 / M-27 da auditoria de 2026-10-16):** a consolidação prevista aqui foi feita
+> junto do B-46, como esta ADR recomendava. O `RedisModule` (global) fornece um cliente compartilhado
+> (`REDIS_CLIENT`) para estado simples por chave com TTL: `TokenBlacklistService`,
+> `AutoAttendanceSessionService` e o throttle novo de foto de perfil (que era um `Map` do processo),
+> com testes de regressão dos três. Continuam com cliente próprio, por terem necessidades diferentes:
+> Bull, `RedisIoAdapter` (pub/sub), `RedisThrottlerStorage` (sem fila offline) e `HealthService`.
+> A contagem de sockets passou a ser a do cluster (`fetchSockets` pelo adapter). As seções abaixo
+> registram o estado de 2026-08-05.
 
 ## Contexto
 

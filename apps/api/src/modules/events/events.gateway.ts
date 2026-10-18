@@ -58,10 +58,6 @@ export class EventsGateway
 
   private readonly logger = new Logger(EventsGateway.name);
 
-  private readonly connectedClients = new Map<
-    string,
-    { userId: string; companyId: string; connectedAt: Date }
-  >();
 
   // B-74 (M-09): o socket cai quando o access token do handshake expira — o
   // cliente reconecta com o token atual (renovado via REST se preciso), e a
@@ -149,12 +145,6 @@ export class EventsGateway
     const scopeRooms = scopeRoomsForUser(socket.user, departmentIds);
     await socket.join(scopeRooms);
 
-    this.connectedClients.set(socket.id, {
-      userId,
-      companyId,
-      connectedAt: new Date(),
-    });
-
     this.logger.log(
       `Cliente conectado: ${socket.id} | user: ${userId} | company: ${companyId}`,
     );
@@ -176,12 +166,9 @@ export class EventsGateway
       this.expiryTimers.delete(socket.id);
     }
 
-    const client = this.connectedClients.get(socket.id);
-    if (client) {
-      this.logger.log(
-        `Cliente desconectado: ${socket.id} | user: ${client.userId}`,
-      );
-      this.connectedClients.delete(socket.id);
+    // socket.user só existe se o handshake passou
+    if (socket.user) {
+      this.logger.log(`Cliente desconectado: ${socket.id} | user: ${socket.user.id}`);
     }
   }
 
@@ -250,7 +237,10 @@ export class EventsGateway
   }
 
   // ── Utilitário: total de clientes conectados ──────────────────────────────
-  getConnectedCount(): number {
-    return this.connectedClients.size;
+  // B-80 (M-27 / B-46): soma de todas as réplicas, pelo adapter do Redis —
+  // antes era um Map do processo e cada réplica contava só os seus sockets.
+  async getConnectedCount(): Promise<number> {
+    const sockets = await this.server.fetchSockets();
+    return sockets.length;
   }
 }

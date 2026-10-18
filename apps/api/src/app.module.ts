@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/prisma/prisma.module';
+import { RedisModule } from './shared/redis/redis.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { RateLimitModule } from './shared/rate-limit/rate-limit.module';
 import { ConversationScopeModule } from './shared/conversation-scope/conversation-scope.module';
@@ -68,6 +69,7 @@ import { AutoAttendanceModule } from './modules/auto-attendance/auto-attendance.
       }),
     }),
     PrismaModule,
+    RedisModule,
     StorageModule,
     ConversationScopeModule,
     // ── Infra ────────────────────────────────────────────────────────────────
