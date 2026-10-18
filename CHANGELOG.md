@@ -28,6 +28,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-98 (2026-10-18, L-10):** o SLA volta a alertar numa 2ª espera da mesma conversa, a métrica de SLA estourado só conta quem ainda espera, e conversas abertas pela empresa ou fora do expediente não geram mais alerta.
 - **B-96 (2026-10-18, L-07):** login com e-mail ou senha em formato inválido responde 400 em vez de erro 500; senhas novas têm no máximo 72 bytes (o bcrypt ignorava o resto).
 
+### Adicionado
+- **B-101 (2026-10-18, L-15):** notificações já lidas são apagadas depois de 90 dias (`NOTIFICATION_RETENTION_DAYS`); a purga da auditoria existe mas fica desligada até a decisão de LGPD (`AUDIT_LOG_RETENTION_DAYS`).
+
 ## [0.1.0] - 2026-10-18
 
 Primeira versão marcada (tag `v0.1.0`). Fecha as Fases 0, 1 e 2 do plano da auditoria de
