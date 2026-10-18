@@ -66,6 +66,16 @@ describe('toUiMessage', () => {
     expect(toUiMessage({ ...base, metadata: { remoteJid: 'x' } }).mediaError).toBeNull();
     expect(toUiMessage(base).mediaError).toBeNull();
   });
+
+  // B-81: reação e edição recebidas pelo WhatsApp
+  it('expõe a reação (metadata.reaction.text) e se a mensagem foi editada', () => {
+    const base = { senderType: 'CLIENT', content: 'oi', type: 'TEXT', sentAt: new Date().toISOString() };
+    const ui = toUiMessage({ ...base, isEdited: true, metadata: { reaction: { text: '👍', fromMe: false } } });
+    expect(ui.reaction).toBe('👍');
+    expect(ui.isEdited).toBe(true);
+    expect(toUiMessage(base).reaction).toBeNull();
+    expect(toUiMessage(base).isEdited).toBe(false);
+  });
 });
 
 describe('toUiConversation', () => {

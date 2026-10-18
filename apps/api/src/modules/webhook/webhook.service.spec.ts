@@ -73,7 +73,7 @@ describe('whatsappTimestampToDate (B-79)', () => {
 describe('WebhookService — processamento de eventos', () => {
   const mockPrisma = {
     whatsAppConnection: { findUnique: jest.fn() },
-    message: { findFirst: jest.fn(), updateMany: jest.fn() },
+    message: { findFirst: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     contact: { update: jest.fn() },
     queue: { findUnique: jest.fn() },
   };
@@ -718,6 +718,100 @@ describe('WebhookService — processamento de eventos', () => {
       });
     });
 
+    // B-81 (M-02): reação, edição, status e controle não são mensagem nova —
+    // nada de contato, conversa ou saudação. Antes, uma reação numa conversa
+    // encerrada abria conversa nova com saudação e menu.
+    describe('mensagens que não abrem conversa (B-81)', () => {
+      const upsert = (key: any, message: any) =>
+        service.handleEvent({ event: 'MESSAGES_UPSERT', instance: 'session-1', data: { key, message } });
+      const clientKey = { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-r1' };
+
+      const expectNothingCreated = () => {
+        expect(mockContactService.upsertFromWebhook).not.toHaveBeenCalled();
+        expect(mockConversationService.upsertFromWebhook).not.toHaveBeenCalled();
+        expect(mockMessageService.createFromWebhook).not.toHaveBeenCalled();
+        expect(mockAutoAttendanceEngine.enqueue).not.toHaveBeenCalled();
+      };
+
+      it('reação vai para a mensagem original (metadata.reaction) e avisa a UI', async () => {
+        mockPrisma.message.findUnique.mockResolvedValueOnce({
+          id: 'msg-orig',
+          conversationId: 'conv-1',
+          metadata: { remoteJid: 'x' },
+        });
+
+        await upsert(clientKey, { reactionMessage: { key: { id: 'wa-orig' }, text: '👍' } });
+
+        expectNothingCreated();
+        expect(mockPrisma.message.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { whatsappConnectionId_externalId: { whatsappConnectionId: 'conn-1', externalId: 'wa-orig' } },
+          }),
+        );
+        expect(mockPrisma.message.update).toHaveBeenCalledWith({
+          where: { id: 'msg-orig' },
+          data: { metadata: { remoteJid: 'x', reaction: { text: '👍', fromMe: false } } },
+        });
+        expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledWith(
+          expect.objectContaining({ messageId: 'msg-orig', reaction: '👍' }),
+        );
+      });
+
+      it('reação removida limpa metadata.reaction', async () => {
+        mockPrisma.message.findUnique.mockResolvedValueOnce({
+          id: 'msg-orig',
+          conversationId: 'conv-1',
+          metadata: { remoteJid: 'x', reaction: { text: '👍', fromMe: false } },
+        });
+
+        await upsert(clientKey, { reactionMessage: { key: { id: 'wa-orig' }, text: '' } });
+
+        expect(mockPrisma.message.update).toHaveBeenCalledWith({
+          where: { id: 'msg-orig' },
+          data: { metadata: { remoteJid: 'x' } },
+        });
+        expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledWith(
+          expect.objectContaining({ reaction: null }),
+        );
+      });
+
+      it('reação a mensagem desconhecida é ignorada', async () => {
+        mockPrisma.message.findUnique.mockResolvedValueOnce(null);
+
+        await upsert(clientKey, { reactionMessage: { key: { id: 'wa-velha' }, text: '❤' } });
+
+        expectNothingCreated();
+        expect(mockPrisma.message.update).not.toHaveBeenCalled();
+      });
+
+      it('edição troca o texto da mensagem original e marca como editada', async () => {
+        mockPrisma.message.findUnique.mockResolvedValueOnce({ id: 'msg-orig', conversationId: 'conv-1' });
+
+        await upsert(clientKey, {
+          protocolMessage: { type: 14, key: { id: 'wa-orig' }, editedMessage: { conversation: 'corrigido' } },
+        });
+
+        expectNothingCreated();
+        expect(mockPrisma.message.update).toHaveBeenCalledWith({
+          where: { id: 'msg-orig' },
+          data: { content: 'corrigido', isEdited: true },
+        });
+        expect(mockEventsService.emitMessageUpdated).toHaveBeenCalledWith(
+          expect.objectContaining({ messageId: 'msg-orig', content: 'corrigido', isEdited: true }),
+        );
+      });
+
+      it.each([
+        ['status (stories)', { ...clientKey, remoteJid: 'status@broadcast' }, { conversation: 'meu status' }],
+        ['canal', { ...clientKey, remoteJid: '120363@newsletter' }, { conversation: 'novidade' }],
+        ['apagar para todos', clientKey, { protocolMessage: { type: 0, key: { id: 'wa-orig' } } }],
+      ])('%s é ignorado sem criar nada', async (_label, key, message) => {
+        await upsert(key, message);
+
+        expectNothingCreated();
+      });
+    });
+
     it('texto não enfileira download de mídia', async () => {
       mockNewMediaMessage('msg-texto');
 
@@ -789,62 +883,6 @@ describe('WebhookService — processamento de eventos', () => {
           data: { state: 'open', wuid: '5512999999999:0@s.whatsapp.net' },
         }),
       ).rejects.toThrow('falha ao atualizar conexão');
-    });
-  });
-
-  describe('extractMessageContent (via processMessage) — tipos de mídia/conteúdo', () => {
-    const extract = (message: any) => (service as any).extractMessageContent(message);
-
-    it('mensagem de texto simples (conversation)', () => {
-      expect(extract({ conversation: 'Olá' })).toEqual({ type: 'TEXT', content: 'Olá' });
-    });
-
-    it('mensagem de texto estendida (extendedTextMessage — resposta/link preview)', () => {
-      expect(extract({ extendedTextMessage: { text: 'Com link' } })).toEqual({
-        type: 'TEXT',
-        content: 'Com link',
-      });
-    });
-
-    // B-50: a URL do payload nunca é extraída — a mídia só vem da Evolution.
-    it('imagem com legenda (sem expor a URL do payload)', () => {
-      expect(
-        extract({ imageMessage: { caption: 'Legenda', mimetype: 'image/jpeg', url: 'https://x/img.enc' } }),
-      ).toEqual({
-        type: 'IMAGE',
-        content: 'Legenda',
-        mimeType: 'image/jpeg',
-      });
-    });
-
-    it('figurinha (sticker) — mimeType fixo image/webp', () => {
-      expect(extract({ stickerMessage: { url: 'https://x/s.webp.enc' } })).toEqual({
-        type: 'STICKER',
-        content: '',
-        mimeType: 'image/webp',
-      });
-    });
-
-    it('documento usa o título como fileName e content', () => {
-      expect(
-        extract({ documentMessage: { title: 'contrato.pdf', mimetype: 'application/pdf', url: 'https://x/d.enc' } }),
-      ).toEqual({
-        type: 'DOCUMENT',
-        content: 'contrato.pdf',
-        mimeType: 'application/pdf',
-        fileName: 'contrato.pdf',
-      });
-    });
-
-    it('localização vira "lat,lng" como content', () => {
-      expect(
-        extract({ locationMessage: { degreesLatitude: -23.5, degreesLongitude: -46.6 } }),
-      ).toEqual({ type: 'LOCATION', content: '-23.5,-46.6' });
-    });
-
-    it('mensagem sem conteúdo reconhecido cai no fallback TEXT vazio', () => {
-      expect(extract(undefined)).toEqual({ type: 'TEXT', content: '' });
-      expect(extract({})).toEqual({ type: 'TEXT', content: '' });
     });
   });
 

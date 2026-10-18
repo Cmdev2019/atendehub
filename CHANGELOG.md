@@ -173,6 +173,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-81 (2026-10-18, M-02):** mensagens do WhatsApp que chegavam vazias passam a aparecer: temporárias,
+  de visualização única, documento com legenda, enquetes e respostas de botão ou lista. Quando o cliente
+  edita uma mensagem, o texto é atualizado e o balão ganha a marca "editada". A reação aparece no balão
+  da mensagem original e não abre mais uma conversa nova (com saudação e menu) quando a conversa já foi
+  encerrada. Status, listas de transmissão e canais deixam de virar conversa.
 - **B-80 (2026-10-18, M-27 / B-46):** a busca de foto de perfil dos contatos deixa de acumular memória a
   cada contato novo e passa a valer para todas as réplicas da API. A contagem de conexões em tempo real
   passa a somar todas as réplicas. Internamente, um só cliente Redis atende os três usos de estado simples.

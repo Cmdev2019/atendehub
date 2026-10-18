@@ -259,7 +259,16 @@ export function ChatPanel({
           'div',
           { key: msg.id, className: `message ${msg.type}` },
           h('div', { className: 'message-bubble' }, renderBubbleContent(msg)),
-          h('div', { className: 'message-time' }, msg.time),
+          // B-81: reação recebida pelo WhatsApp fica na mensagem original
+          msg.reaction &&
+            h('div', { className: 'message-reaction', 'aria-label': `Reação: ${msg.reaction}` }, msg.reaction),
+          h(
+            'div',
+            { className: 'message-time' },
+            msg.time,
+            // B-81: mensagem editada pelo cliente no WhatsApp
+            msg.isEdited && h('span', { className: 'message-edited' }, ' · editada'),
+          ),
         ),
       ),
     ),

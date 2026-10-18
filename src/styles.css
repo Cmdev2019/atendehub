@@ -1143,6 +1143,22 @@ button {
   margin-top: 4px;
 }
 
+/* B-81: reação recebida (fica presa ao balão original) */
+.message-reaction {
+  display: inline-block;
+  margin-top: -6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.message-edited {
+  font-style: italic;
+}
+
 /* Attachments Preview */
 .attachments-preview {
   display: flex;

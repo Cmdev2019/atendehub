@@ -40,7 +40,7 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 | `Channel` | `WHATSAPP` · `INSTAGRAM` · `EMAIL` · `CHAT` |
 | `ConversationStatus` | `WAITING` · `OPEN` · `RESOLVED` · `CLOSED` |
 | `SenderType` | `AGENT` · `CLIENT` · `BOT` · `SYSTEM` |
-| `MessageType` | `TEXT` · `IMAGE` · `VIDEO` · `AUDIO` · `DOCUMENT` · `STICKER` · `LOCATION` · `CONTACT_CARD` · `TEMPLATE` · `REACTION` · `DELETED` |
+| `MessageType` | `TEXT` · `IMAGE` · `VIDEO` · `AUDIO` · `DOCUMENT` · `STICKER` · `LOCATION` · `CONTACT_CARD` · `TEMPLATE` · `REACTION` · `DELETED` — desde o B-81 a reação não vira mensagem (fica na original, em `metadata.reaction`); `REACTION` só aparece em mensagens antigas |
 | `MessageStatus` | `PENDING` · `SENT` · `DELIVERED` · `READ` · `FAILED` |
 | `QueueStrategy` | `ROUND_ROBIN` · `MANUAL` · `LEAST_BUSY` |
 | `AutoAttendanceAction` | `ROUTE_TO_DEPARTMENT` · `ROUTE_TO_QUEUE` · `END_CONVERSATION` |
@@ -669,7 +669,7 @@ errada, 403. Body até **25mb** (mídia base64). Limite: **1.200 eventos/60s por
 |---|---|
 | `connected` | confirmação pós-handshake |
 | `message.new` | `{ conversationId, companyId, message: { id, senderType, content, type, status, sentAt, externalId } }` — **sem attachments** (download é assíncrono) |
-| `message.updated` | `{ companyId, conversationId, messageId, attachment: { id, url, mimeType, fileName } }` — anexo pronto. Ou, sem `attachment`, `{ companyId, conversationId, messageId, mediaError }` quando o anexo recebido não pôde ser salvo (B-77): `"unsupported_type"` (tipo não aceito) ou `"download_failed"` (tentativas esgotadas). O mesmo motivo fica em `message.metadata.mediaError` na listagem |
+| `message.updated` | `{ companyId, conversationId, messageId, attachment: { id, url, mimeType, fileName } }` — anexo pronto. Ou, sem `attachment`, `{ companyId, conversationId, messageId, mediaError }` quando o anexo recebido não pôde ser salvo (B-77): `"unsupported_type"` (tipo não aceito) ou `"download_failed"` (tentativas esgotadas). O mesmo motivo fica em `message.metadata.mediaError` na listagem. B-81: também `{ ..., content, isEdited: true }` quando o cliente edita a mensagem no WhatsApp, e `{ ..., reaction }` quando reage (`null` = reação removida; na listagem, `message.metadata.reaction.text`) |
 | `message.status` | `{ conversationId, companyId, externalId, status }` |
 | `conversation.created` | `{ companyId, conversation: { id, status, channel, contact: {id,name,phone,avatarUrl}, whatsappConnectionId, createdAt } }` |
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |
