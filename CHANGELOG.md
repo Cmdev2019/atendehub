@@ -27,6 +27,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-88 (2026-10-18, M-25):** o contrato da API documenta a fila de falhas do webhook (listar, reprocessar,
+  descartar), as métricas do webhook e a autenticação como o código a faz; a lista de divergências foi revisada.
 - **B-87 (2026-10-18, M-23):** processo de Git. Ramos mesclados são apagados automaticamente, os PRs do
   Dependabot passam a agrupar só atualizações minor/patch (majors no B-86) e o `CONTRIBUTING.md` descreve o
   fluxo que de fato vale (checks obrigatórios, mantenedor único, tags de versão).
