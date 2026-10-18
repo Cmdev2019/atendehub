@@ -178,6 +178,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-94 | L-05 | x-request-id do cliente só é aceito se for curto e simples; senão a API gera um | ✅ 2026-10-18 |
 | B-95 | L-06 | JwtAuthGuard e RolesGuard deixam de rodar duas vezes por requisição | ✅ 2026-10-18 |
 | B-96 | L-07 | Login com e-mail que não é texto responde 400, não 500; senha nova limitada a 72 bytes; boot com tratamento de erro | ✅ 2026-10-18 |
+| B-97 | L-08 | Blacklist de tokens guarda o SHA-256 do token, não o JWT inteiro; sai o count() com KEYS | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 

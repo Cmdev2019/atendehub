@@ -52,11 +52,14 @@ describe('TokenBlacklistService', () => {
     expect(await service.isBlacklisted('token-xyz')).toBe(false);
   });
 
-  it('count() reflete o número de tokens atualmente blacklisted', async () => {
-    await service.add('token-1', 300);
-    await service.add('token-2', 300);
+  // B-97 (L-08): a chave é o hash, não o JWT inteiro
+  it('guarda o SHA-256 do token como chave, nunca o token', async () => {
+    const redisClient = (service as any).redis;
+    await service.add('header.payload.assinatura', 300);
 
-    expect(await service.count()).toBe(2);
+    const [key] = redisClient.setex.mock.calls.at(-1);
+    expect(key).toMatch(/^blacklist:token:[0-9a-f]{64}$/);
+    expect(key).not.toContain('payload');
   });
 
   it('isBlacklisted() falha aberto (retorna false) se o Redis estiver indisponível', async () => {

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Redis } from 'ioredis';
+import { createHash } from 'crypto';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 
 /**
@@ -22,6 +23,12 @@ export class TokenBlacklistService {
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
+  // B-97 (L-08): a chave é o SHA-256 do token, não o JWT inteiro — chave
+  // curta e de tamanho fixo, e o token não fica legível no Redis.
+  private key(token: string): string {
+    return this.keyPrefix + createHash('sha256').update(token).digest('hex');
+  }
+
   /**
    * Adiciona um access token à blacklist.
    *
@@ -32,7 +39,7 @@ export class TokenBlacklistService {
    * Quando o token expirar naturalmente, o Redis o remove automaticamente.
    */
   async add(token: string, expiresInSeconds: number): Promise<void> {
-    const key = this.keyPrefix + token;
+    const key = this.key(token);
 
     try {
       // Armazena "1" como valor (o valor não importa, só a existência da key)
@@ -57,7 +64,7 @@ export class TokenBlacklistService {
    * @returns true se o token está revogado, false caso contrário
    */
   async isBlacklisted(token: string): Promise<boolean> {
-    const key = this.keyPrefix + token;
+    const key = this.key(token);
 
     try {
       const exists = await this.redis.exists(key);
@@ -76,25 +83,12 @@ export class TokenBlacklistService {
    * Remove um token da blacklist manualmente (raro, usado em testes).
    */
   async remove(token: string): Promise<void> {
-    const key = this.keyPrefix + token;
+    const key = this.key(token);
 
     try {
       await this.redis.del(key);
     } catch (err: any) {
       this.logger.error(`Falha ao remover token da blacklist: ${err.message}`);
-    }
-  }
-
-  /**
-   * Retorna o número de tokens atualmente na blacklist (para monitoramento).
-   */
-  async count(): Promise<number> {
-    try {
-      const keys = await this.redis.keys(this.keyPrefix + '*');
-      return keys.length;
-    } catch (err: any) {
-      this.logger.error(`Falha ao contar tokens na blacklist: ${err.message}`);
-      return 0;
     }
   }
 }
