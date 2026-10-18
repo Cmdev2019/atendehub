@@ -2,12 +2,18 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement as h } from 'react';
 
 let mockState;
+const mockUseNotifications = jest.fn(() => mockState);
 
 jest.mock('../hooks/useNotifications', () => ({
-  useNotifications: () => mockState,
+  useNotifications: (...args) => mockUseNotifications(...args),
+}));
+// AuthContext real importa services/api (import.meta.env) — contexto simples aqui
+jest.mock('../context/AuthContext', () => ({
+  AuthContext: require('react').createContext(null),
 }));
 
 import { NotificationBell } from './NotificationBell';
+import { AuthContext } from '../context/AuthContext';
 
 function baseState(overrides = {}) {
   return {
@@ -25,6 +31,13 @@ function baseState(overrides = {}) {
 describe('NotificationBell (B-8)', () => {
   beforeEach(() => {
     mockState = baseState();
+  });
+
+  // B-84 (M-10): o id do usuário logado vai para o hook, que só recarrega
+  // em atribuições para ele
+  it('passa o id do usuário logado para useNotifications', () => {
+    render(h(AuthContext.Provider, { value: { user: { id: 'user-1' } } }, h(NotificationBell)));
+    expect(mockUseNotifications).toHaveBeenLastCalledWith('user-1');
   });
 
   it('não mostra o badge quando não há notificação não lida', () => {

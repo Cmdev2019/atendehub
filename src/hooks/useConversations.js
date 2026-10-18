@@ -3,6 +3,12 @@ import { initialConversations } from '../data/mockConversations';
 import { apiClient } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { messagePreview } from '../utils/messagePreview';
+import { debounce } from '../utils/debounce';
+
+// B-84 (M-10): eventos de socket chegam em rajada (mensagem + atualização +
+// atribuição) e cada um fazia todo navegador aberto buscar as métricas (9
+// consultas no servidor). Agora a rajada vira uma busca só, no fim dela.
+export const STATS_REFRESH_DEBOUNCE_MS = 500;
 
 let _msgCounter = 0;
 function newMsgId() {
@@ -166,6 +172,15 @@ export function useConversations(currentUserId) {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  // Usado só pelos eventos de socket; ações do próprio usuário (atender,
+  // encerrar, abrir conversa) seguem buscando na hora
+  const scheduleStatsRefreshRef = useRef(null);
+  if (!scheduleStatsRefreshRef.current) {
+    scheduleStatsRefreshRef.current = debounce(() => fetchStats(), STATS_REFRESH_DEBOUNCE_MS);
+  }
+  const scheduleStatsRefresh = scheduleStatsRefreshRef.current;
+  useEffect(() => () => scheduleStatsRefreshRef.current?.cancel(), []);
 
   // Catálogo de tags da empresa (B-27) — carregado uma vez, usado tanto pra
   // exibir quanto pra popular o seletor de "adicionar tag" na conversa ativa.
@@ -372,7 +387,7 @@ export function useConversations(currentUserId) {
       setConversations((prev) =>
         prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
       );
-      fetchStats();
+      scheduleStatsRefresh();
     };
 
     // Payload: { conversationId, companyId, message }
@@ -413,7 +428,7 @@ export function useConversations(currentUserId) {
         }),
       );
       // Mensagem de cliente pode incrementar unreadCount no backend
-      fetchStats();
+      scheduleStatsRefresh();
     };
 
     // Payload: { conversationId, messageId, attachment } — o download da mídia
@@ -507,7 +522,7 @@ export function useConversations(currentUserId) {
           prev.some((c) => c.id === closedElsewhere.id) ? prev : [closedElsewhere, ...prev],
         );
       }
-      fetchStats();
+      scheduleStatsRefresh();
     };
 
     // Payload: { companyId, conversationId, agentId, departmentId, agent }
@@ -532,7 +547,7 @@ export function useConversations(currentUserId) {
             : conv,
         ),
       );
-      fetchStats();
+      scheduleStatsRefresh();
     };
 
     // Payload: { companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }

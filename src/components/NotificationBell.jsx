@@ -1,6 +1,7 @@
-import { createElement as h, useEffect, useRef, useState } from 'react';
+import { createElement as h, useContext, useEffect, useRef, useState } from 'react';
 import { Icon } from './icons';
 import { useNotifications } from '../hooks/useNotifications';
+import { AuthContext } from '../context/AuthContext';
 
 const TYPE_ICON = {
   sla_breach: 'warning',
@@ -25,8 +26,10 @@ function formatRelativeTime(isoDate) {
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
+  // B-84: o id do usuário filtra quais atribuições recarregam o sino
+  const currentUserId = useContext(AuthContext)?.user?.id;
   const { notifications, unreadCount, loading, error, fetchNotifications, markAsRead, markAllAsRead } =
-    useNotifications();
+    useNotifications(currentUserId);
 
   // Fecha ao clicar fora do sino/painel
   useEffect(() => {

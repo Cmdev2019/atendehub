@@ -110,4 +110,45 @@ describe('useNotifications (B-8)', () => {
     expect(mockWsClient.off).toHaveBeenCalledWith('sla.breached', slaCall[1]);
     expect(mockWsClient.off).toHaveBeenCalledWith('conversation.assigned', assignedCall[1]);
   });
+
+  // B-84 (M-10): antes, toda atribuição fazia todo navegador recarregar
+  describe('recarga a partir de eventos (B-84)', () => {
+    const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
+
+    beforeEach(async () => {
+      jest.useFakeTimers();
+      mockApiClient.getNotifications.mockResolvedValue({ data: [], meta: {} });
+    });
+    afterEach(() => jest.useRealTimers());
+
+    const mount = async () => {
+      renderHook(() => useNotifications('user-1'));
+      await act(async () => {});
+      mockApiClient.getNotifications.mockClear();
+    };
+
+    it('atribuição para outro atendente não recarrega; para o próprio usuário, recarrega', async () => {
+      await mount();
+
+      act(() => handlerOf('conversation.assigned')({ agentId: 'outra-pessoa' }));
+      act(() => jest.advanceTimersByTime(1000));
+      expect(mockApiClient.getNotifications).not.toHaveBeenCalled();
+
+      act(() => handlerOf('conversation.assigned')({ agentId: 'user-1' }));
+      act(() => jest.advanceTimersByTime(1000));
+      expect(mockApiClient.getNotifications).toHaveBeenCalledTimes(1);
+    });
+
+    it('rajada de sla.breached vira uma busca só', async () => {
+      await mount();
+
+      act(() => {
+        handlerOf('sla.breached')({});
+        handlerOf('sla.breached')({});
+        handlerOf('sla.breached')({});
+      });
+      act(() => jest.advanceTimersByTime(1000));
+      expect(mockApiClient.getNotifications).toHaveBeenCalledTimes(1);
+    });
+  });
 });
