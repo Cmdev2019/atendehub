@@ -122,32 +122,10 @@ export class SendMessageService {
     // ── 3. Envia para a Evolution API ──────────────────────────────────────
     let externalId: string | undefined;
 
+    // Só texto (B-75 / M-11): mídia vai por sendMedia, com upload.
     try {
-      if (dto.type === MessageType.TEXT) {
-        const result = await this.evolution.sendTextMessage(
-          sessionName,
-          phone,
-          dto.content!,
-        );
-        externalId = result.key?.id;
-      } else {
-        const mediaTypeMap: Record<string, 'image' | 'video' | 'document' | 'audio'> = {
-          IMAGE: 'image',
-          VIDEO: 'video',
-          DOCUMENT: 'document',
-          AUDIO: 'audio',
-        };
-
-        const result = await this.evolution.sendMediaMessage(
-          sessionName,
-          phone,
-          dto.mediaUrl!,
-          mediaTypeMap[dto.type],
-          dto.caption,
-          dto.fileName,
-        );
-        externalId = result.key?.id;
-      }
+      const result = await this.evolution.sendTextMessage(sessionName, phone, dto.content);
+      externalId = result.key?.id;
     } catch (err: any) {
       this.logger.error(`Falha ao enviar mensagem: ${err.message}`);
       throw new BadRequestException(
@@ -167,8 +145,8 @@ export class SendMessageService {
         whatsappConnectionId: conversation.whatsapp!.id,
         senderId,
         senderType: SenderType.AGENT,
-        content: dto.type === MessageType.TEXT ? dto.content : (dto.caption ?? null),
-        type: dto.type,
+        content: dto.content,
+        type: MessageType.TEXT,
         status: MessageStatus.SENT,
         externalId,
         quotedMessageId: dto.quotedMessageId ?? null,
@@ -186,24 +164,9 @@ export class SendMessageService {
       },
     );
 
-    // ── 5. Cria registro Attachment para mensagens de mídia ───────────────
-    if (dto.type !== MessageType.TEXT && dto.mediaUrl) {
-      await this.prisma.attachment.create({
-        data: {
-          messageId: message.id,
-          url: dto.mediaUrl,
-          mimeType: this.getMimeTypeFromMessageType(dto.type),
-          fileName: dto.fileName ?? null,
-        },
-      });
-    }
-
-    // ── 6. Atualiza preview da conversa ────────────────────────────────────
+    // ── 5. Atualiza preview da conversa ────────────────────────────────────
     // B-60: mesmo rótulo usado para mensagem recebida ("Áudio", "Imagem"...)
-    const preview = buildMessagePreview(
-      dto.type,
-      dto.type === MessageType.TEXT ? dto.content : dto.caption,
-    );
+    const preview = buildMessagePreview(MessageType.TEXT, dto.content);
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -218,7 +181,7 @@ export class SendMessageService {
       },
     });
 
-    // ── 7. Emite evento em tempo real ──────────────────────────────────────
+    // ── 6. Emite evento em tempo real ──────────────────────────────────────
     this.eventsService.emitNewMessage({
       companyId,
       conversationId,
@@ -393,16 +356,5 @@ export class SendMessageService {
     if (mimeType.startsWith('video/')) return MessageType.VIDEO;
     if (mimeType.startsWith('audio/')) return MessageType.AUDIO;
     return MessageType.DOCUMENT;
-  }
-
-  // ── Helper: mapeia MessageType para MIME type genérico ─────────────────────
-  private getMimeTypeFromMessageType(type: MessageType): string {
-    const map: Partial<Record<MessageType, string>> = {
-      [MessageType.IMAGE]: 'image/jpeg',
-      [MessageType.VIDEO]: 'video/mp4',
-      [MessageType.AUDIO]: 'audio/mpeg',
-      [MessageType.DOCUMENT]: 'application/octet-stream',
-    };
-    return map[type] ?? 'application/octet-stream';
   }
 }

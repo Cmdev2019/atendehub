@@ -312,12 +312,13 @@ globais já registrados.
   ativamente qualquer policy herdada a cada boot (não só evita criar uma nova — lição do hardening do
   B-38, ver seção 6). Acesso só via URL assinada, TTL configurável.
 - Validação de entrada: `ValidationPipe` global (`forbidNonWhitelisted`) + validadores customizados
-  quando necessário (ex.: `shared/validators/safe-media-url.validator.ts`, proteção SSRF).
+  quando necessário. O servidor não busca URL informada pelo usuário: mídia só entra por upload
+  (B-75 — o envio por URL, filtrado por lista de bloqueio, foi retirado por SSRF).
 - Rate limiting: `@Throttle` por rota sensível (login, registro, refresh, webhook), dimensionado ao risco
   de cada uma — nunca um único limite global para todas.
 
 **Exemplos existentes no projeto:** `apps/api/src/shared/storage/storage.service.ts`,
-`apps/api/src/modules/auth/guards/`, `apps/api/src/shared/validators/safe-media-url.validator.ts`.
+`apps/api/src/modules/auth/guards/`, `apps/api/src/modules/message/dto/send-message.dto.ts`.
 
 **Relação com correções recentes:** B-38 (ver seção "Relação com B-38/B-39/B-48/B-49" abaixo). Ver também
 `docs/19-Seguranca/` (estrutura existe, conteúdo detalhado ainda não escrito).

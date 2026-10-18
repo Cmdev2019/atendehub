@@ -1,57 +1,30 @@
 import {
   IsString,
   IsOptional,
-  IsEnum,
+  IsIn,
   MaxLength,
   MinLength,
-  ValidateIf,
   IsNotEmpty,
 } from 'class-validator';
 import { MessageType } from '@prisma/client';
-import { IsSafeMediaUrl } from '../../../shared/validators/safe-media-url.validator';
 
-// Tipos permitidos para envio pelo agente
-const ALLOWED_TYPES = [
-  MessageType.TEXT,
-  MessageType.IMAGE,
-  MessageType.VIDEO,
-  MessageType.AUDIO,
-  MessageType.DOCUMENT,
-] as const;
-
-type AllowedMessageType = typeof ALLOWED_TYPES[number];
-
+// B-75 (M-11): esta rota é só para texto. Mídia vai por upload
+// (`POST .../messages/media`), que é o que o painel usa. O envio de mídia por
+// URL foi retirado: a URL informada era buscada pela Evolution dentro da rede
+// do servidor (SSRF), e nenhuma lista de bloqueio cobre IPv6, nomes internos
+// do Docker e nomes que resolvem para IP privado — nem a troca de DNS entre a
+// validação e a busca. Sem URL vinda do usuário, não há o que filtrar.
 export class SendMessageDto {
-  @IsEnum(ALLOWED_TYPES, {
-    message: 'Tipo inválido. Use: TEXT, IMAGE, VIDEO, AUDIO ou DOCUMENT',
+  @IsIn([MessageType.TEXT], {
+    message: 'Esta rota envia só texto. Para mídia, use POST .../messages/media (upload)',
   })
-  type: AllowedMessageType = MessageType.TEXT;
+  type: typeof MessageType.TEXT = MessageType.TEXT;
 
-  // Obrigatório para TEXT, opcional para mídia (caption)
-  @ValidateIf((o) => o.type === MessageType.TEXT)
   @IsNotEmpty({ message: 'Conteúdo é obrigatório para mensagens de texto' })
   @IsString()
   @MinLength(1)
   @MaxLength(4096)
-  content?: string;
-
-  // Obrigatório para mensagens de mídia
-  @ValidateIf((o) => o.type !== MessageType.TEXT)
-  @IsNotEmpty({ message: 'URL da mídia é obrigatória para este tipo de mensagem' })
-  @IsSafeMediaUrl()
-  mediaUrl?: string;
-
-  // Caption para imagem/vídeo/documento (opcional)
-  @IsOptional()
-  @IsString()
-  @MaxLength(1024)
-  caption?: string;
-
-  // Nome do arquivo para documentos
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  fileName?: string;
+  content: string;
 
   // ID da mensagem que está sendo respondida (quote)
   @IsOptional()
