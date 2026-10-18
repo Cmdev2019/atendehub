@@ -1,9 +1,15 @@
 import {
+  Inject,
   Injectable,
   UnauthorizedException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, Role } from '@prisma/client';
@@ -22,6 +28,14 @@ import { JwtPayload } from './strategies/jwt.strategy';
 // tratado como corrida e só a requisição atrasada é recusada.
 const REFRESH_REUSE_GRACE_MS = 30_000;
 
+// B-85 (M-20): hash de uma senha qualquer, com o mesmo custo dos reais. Quando
+// o e-mail não existe, o login compara contra ele — sem isso a resposta saía
+// bem mais rápida e o tempo revelava se o e-mail estava cadastrado.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('atendehub-sem-usuario', 12);
+
+// B-85 (M-20): teto diário de cadastros públicos por IP (além do 3/min da rota)
+const SIGNUP_DAILY_LIMIT_DEFAULT = 5;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -32,6 +46,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly events: EventsService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   // ── Valida email + senha (usado pelo LocalStrategy) ───────────────────────
@@ -56,11 +71,10 @@ export class AuthService {
       },
     });
 
-    if (!user) return null;
-    if (!user.company.isActive) return null;
-
-    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatch) return null;
+    // B-85 (M-20): o bcrypt roda sempre, exista o usuário ou não — o tempo
+    // de resposta não diz mais se o e-mail está cadastrado.
+    const passwordMatch = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    if (!user || !user.company.isActive || !passwordMatch) return null;
 
     // Remove o hash antes de retornar
     const { passwordHash: _hash, company: _company, ...safeUser } = user;
@@ -83,7 +97,16 @@ export class AuthService {
   // Company.plan @default(FREE) no schema — sem fluxo de billing/upgrade
   // ainda). Pré-requisito B-20 (e-mail único globalmente, não só por
   // empresa) já aplicado via migration antes deste método existir.
-  async registerCompany(dto: RegisterCompanyDto): Promise<AuthResponseDto> {
+  async registerCompany(dto: RegisterCompanyDto, ip?: string): Promise<AuthResponseDto> {
+    // B-85 (M-20): o cadastro público pode ser desligado (SIGNUP_ENABLED=false)
+    // e tem teto diário por IP — cada empresa nova ganha conexões de WhatsApp
+    // gratuitas. Verificação de e-mail e CAPTCHA dependem de SMTP e de chave
+    // de serviço externo: em espera (projeto sem produção).
+    if (this.config.get<string>('SIGNUP_ENABLED', 'true') === 'false') {
+      throw new ForbiddenException('O cadastro de novas empresas está desativado');
+    }
+    await this.consumeSignupQuota(ip);
+
     const email = dto.email.toLowerCase().trim();
 
     // Checagem prévia (mesmo padrão de user.service.ts#create — findFirst
@@ -127,6 +150,27 @@ export class AuthService {
     // Auto-login: quem acabou de criar a empresa já entra logado, sem
     // precisar de uma 2ª ida à tela de login.
     return this.login(authUser);
+  }
+
+  // Contador por IP e dia no Redis. Redis fora do ar não bloqueia o cadastro
+  // (o limite por minuto da rota continua valendo).
+  private async consumeSignupQuota(ip?: string): Promise<void> {
+    if (!ip) return;
+    const limit = Number(this.config.get('SIGNUP_DAILY_LIMIT_PER_IP')) || SIGNUP_DAILY_LIMIT_DEFAULT;
+    const key = `signup:ip:${ip}:${new Date().toISOString().slice(0, 10)}`;
+    const count = await this.redis
+      .multi()
+      .incr(key)
+      .expire(key, 24 * 60 * 60)
+      .exec()
+      .then((res) => Number(res?.[0]?.[1] ?? 0))
+      .catch(() => 0);
+    if (count > limit) {
+      throw new HttpException(
+        'Limite diário de cadastros atingido para esta rede. Tente amanhã.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   // Gera um slug único a partir do nome da empresa (usado como subdomínio —

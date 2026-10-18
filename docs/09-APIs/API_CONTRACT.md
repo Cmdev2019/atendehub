@@ -82,6 +82,10 @@ token nas rotas protegidas.
 
 ### `POST /auth/register-company` (público, B-9)
 Auto-cadastro de empresa nova — quem se cadastra vira `ADMIN` dessa empresa. Limite: **3 req/60s por IP** (mais apertado que login, pois cria linhas no banco).
+B-85: além disso, no máximo `SIGNUP_DAILY_LIMIT_PER_IP` (padrão 5) cadastros por IP por dia (`429` passado o teto) e
+`403` quando `SIGNUP_ENABLED=false`. O `409` de e-mail já cadastrado continua (revela que o e-mail existe —
+aceito enquanto não houver verificação de e-mail). No login, e-mail inexistente e senha errada respondem igual,
+também no tempo de resposta.
 ```jsonc
 // Request
 {
