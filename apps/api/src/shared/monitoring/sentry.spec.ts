@@ -1,4 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { BaseExceptionFilter } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
 import { SentryExceptionFilter } from './sentry';
@@ -45,5 +46,21 @@ describe('SentryExceptionFilter', () => {
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
     expect(BaseExceptionFilter.prototype.catch).toHaveBeenCalledWith(error, mockHost);
+  });
+
+  // B-73 (M-07): P2002 não tratado respondia 500 e ia para o Sentry.
+  it('converte violação de índice único (P2002) em 409, sem capturar no Sentry', () => {
+    const filter = new SentryExceptionFilter();
+    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    filter.catch(p2002, mockHost);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(BaseExceptionFilter.prototype.catch).toHaveBeenCalledWith(
+      expect.any(ConflictException),
+      mockHost,
+    );
   });
 });

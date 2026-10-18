@@ -88,6 +88,15 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     await mkConv('financeiro', A, fin.id);
     await mkConv('daEmpresaB', B, null);
 
+    // B-73 (M-07): contato com uma conversa RESOLVED e outra já ativa, e uma
+    // conversa encerrada — o índice único parcial de conversa ativa só existe
+    // no Postgres, então o 409 só se prova aqui.
+    const repeat = await prisma.contact.create({ data: { companyId: A, phone: `55${Math.floor(Math.random() * 1e11)}`, name: 'repete' } });
+    conv.resolvida = (await prisma.conversation.create({ data: { companyId: A, contactId: repeat.id, status: 'RESOLVED' } })).id;
+    await prisma.conversation.create({ data: { companyId: A, contactId: repeat.id, status: 'WAITING' } });
+    const closed = await prisma.contact.create({ data: { companyId: A, phone: `55${Math.floor(Math.random() * 1e11)}`, name: 'encerrada' } });
+    conv.encerrada = (await prisma.conversation.create({ data: { companyId: A, contactId: closed.id, status: 'CLOSED' } })).id;
+
     for (const key of Object.keys(users)) {
       const res = await axios.post(
         `${base}/api/v1/auth/login`,
@@ -152,6 +161,13 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     expect(await call('GET', `/conversations/${conv.financeiro}/messages`, 'agentJur')).toBe(404);
     expect(await call('POST', `/conversations/${conv.financeiro}/notes`, 'agentJur', { content: 'x' })).toBe(404);
     expect(await call('GET', `/conversations/${conv.financeiro}`, 'supervisorA')).toBe(200);
+  });
+
+  it('B-73 (M-07): atribuir conversa encerrada é 400; reativar com outra ativa do contato é 409', async () => {
+    const body = { agentId: users.supervisorA.id };
+    expect(await call('PATCH', `/conversations/${conv.encerrada}/assign`, 'adminA', body)).toBe(400);
+    expect(await call('PATCH', `/conversations/${conv.resolvida}/assign`, 'adminA', body)).toBe(409);
+    expect(await call('PATCH', `/conversations/${conv.resolvida}/status`, 'adminA', { status: 'OPEN' })).toBe(409);
   });
 
   it('validação global: campo fora do DTO responde 400', async () => {

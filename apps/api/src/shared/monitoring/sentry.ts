@@ -1,6 +1,7 @@
-import { ArgumentsHost, Catch, HttpException } from '@nestjs/common';
+import { ArgumentsHost, Catch, ConflictException, HttpException } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
+import { isUniqueConstraintViolation } from '../prisma/prisma-errors.util';
 
 // ── Inicialização (B-18) ─────────────────────────────────────────────────────
 // Sem tracing de performance (tracesSampleRate: 0) — o pedido era só captura/
@@ -35,6 +36,12 @@ export function initSentry() {
 @Catch()
 export class SentryExceptionFilter extends BaseExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
+    // B-73 (M-07): violação de índice único que nenhum serviço tratou é
+    // conflito com dado existente (409), não erro do servidor (500).
+    if (isUniqueConstraintViolation(exception)) {
+      return super.catch(new ConflictException('Conflito com um registro já existente'), host);
+    }
+
     const isExpectedHttpError =
       exception instanceof HttpException && exception.getStatus() < 500;
 

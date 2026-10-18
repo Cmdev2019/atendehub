@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bull';
-import { ConversationStatus } from '@prisma/client';
+import { ConversationStatus, Prisma } from '@prisma/client';
 import { ConversationService } from './conversation.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
@@ -40,6 +40,14 @@ const mockSlaQueue = {
 };
 
 const mockAuditLog = { record: jest.fn() };
+
+// Erro que o Prisma lança ao bater no índice único parcial de conversa ativa
+// por contato (B-49).
+const p2002 = () =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+  });
 const mockNotificationService = { create: jest.fn() };
 
 describe('ConversationService — isolamento multi-tenant', () => {
@@ -271,6 +279,41 @@ describe('ConversationService — isolamento multi-tenant', () => {
         expect.objectContaining({ userId: 'agent-1', type: 'conversation_assigned' }),
       );
     });
+
+    // B-73 (M-07): atribuir punha em OPEN qualquer conversa, inclusive
+    // encerrada — contornava a regra de que CLOSED não reabre.
+    it('recusa (400) atribuir uma conversa encerrada, sem alterar nada', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.CLOSED,
+        contact: { name: 'Fulano' },
+        agent: null,
+        department: null,
+      });
+
+      await expect(
+        service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, requesterId),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('responde 409 quando reativar a conversa colide com outra conversa ativa do contato', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.RESOLVED,
+        contact: { name: 'Fulano' },
+        agent: null,
+        department: null,
+      });
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1' });
+      mockPrisma.conversation.update.mockRejectedValueOnce(p2002());
+
+      await expect(
+        service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, requesterId),
+      ).rejects.toThrow(ConflictException);
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateStatus', () => {
@@ -309,6 +352,18 @@ describe('ConversationService — isolamento multi-tenant', () => {
           data: expect.objectContaining({ status: ConversationStatus.CLOSED, resolution: 'RESOLVED' }),
         }),
       );
+    });
+
+    it('responde 409 ao reabrir uma RESOLVED quando o contato já tem outra conversa ativa (B-73)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'conv-1',
+        status: ConversationStatus.RESOLVED,
+      });
+      mockPrisma.conversation.update.mockRejectedValueOnce(p2002());
+
+      await expect(
+        service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.WAITING }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('não grava resolution em transições que não são para CLOSED', async () => {

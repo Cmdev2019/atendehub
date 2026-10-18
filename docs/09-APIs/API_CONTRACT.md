@@ -186,6 +186,9 @@ Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `res
 
 ### `PATCH /conversations/:id/assign`
 `{ "agentId": "..." | null, "departmentId"?: "..." }` — atribui/desatribui. Emite `conversation.assigned`.
+Atribuir agente põe a conversa em `OPEN`. Conversa `CLOSED` responde `400` (encerrada
+não reabre, B-73). `409` se a conversa voltaria a ficar ativa e o contato já tem
+outra conversa `WAITING`/`OPEN` (uma ativa por contato, B-49).
 
 ### `PATCH /conversations/:id/status`
 `{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING", "resolution"?: "RESOLVED" | "UNRESOLVED" | "CANCELLED", "resolutionNote"?: "até 500 caracteres" }`.
@@ -194,7 +197,8 @@ informa se o atendimento foi resolvido, não resolvido ou cancelado (B-36) ao
 encerrar; ignorado/não persistido em qualquer outra transição.
 `resolutionNote` é **obrigatório quando `resolution: "CANCELLED"`** (B-36) —
 justificativa do atendente pra cancelar em vez de atender; não existe pra
-`RESOLVED`/`UNRESOLVED`. Emite `conversation.updated`.
+`RESOLVED`/`UNRESOLVED`. Emite `conversation.updated`. `409` ao reativar
+(`WAITING`/`OPEN`) quando o contato já tem outra conversa ativa (B-73).
 
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`. O front chama ao abrir a conversa e quando chega mensagem
