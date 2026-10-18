@@ -70,6 +70,19 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      # A imagem oficial minio/minio saiu do Docker Hub (descontinuação do MinIO
+      # Community — M-16 da auditoria). bitnamilegacy/minio:2025.6.13 é o mesmo
+      # build da versão usada no projeto (RELEASE.2025-06-13T11-33-47Z) e já
+      # sobe o servidor sozinha.
+      minio:
+        image: bitnamilegacy/minio:2025.6.13
+        env:
+          MINIO_ROOT_USER: ci_minio
+          MINIO_ROOT_PASSWORD: ci_minio_secret
+        ports: ['9000:9000']
+        options: >-
+          --health-cmd "curl -sf http://localhost:9000/minio/health/live"
+          --health-interval 5s --health-timeout 5s --health-retries 20
 
     env:
       NODE_ENV: test
@@ -96,13 +109,6 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/api/package-lock.json
-
-      # MinIO precisa do comando `server /data`, que services não aceitam.
-      # Mesma versão do docker-compose.yml.
-      - name: MinIO
-        run: |
-          docker run -d --name minio -p 9000:9000             -e MINIO_ROOT_USER=$MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD             minio/minio:RELEASE.2025-06-13T11-33-47Z server /data
-          for i in $(seq 1 30); do curl -sf http://localhost:9000/minio/health/live && break; sleep 2; done
 
       - run: npm ci
 
