@@ -5,6 +5,13 @@
 - **Decisores:** Engenharia
 - **Contexto técnico:** `apps/api/src/app.module.ts` (`BullModule.forRootAsync`), `apps/api/src/modules/webhook/webhook-queue.config.ts`, `apps/api/src/modules/sla/`, `apps/api/src/modules/auto-attendance/`
 
+> **Atualização B-79 (2026-10-18, M-06 da auditoria de 2026-10-16):** a fila `webhook` virou 4 filas
+> (shards `webhook`, `webhook-1`..`webhook-3`), cada uma com concorrência 1. O webhook vai para o shard
+> do seu contato (hash de instância + JID): contatos diferentes são processados em paralelo e as
+> mensagens de um mesmo contato continuam em ordem. Um retry com backoff ainda pode ser gravado depois
+> de uma mensagem mais nova do mesmo contato; a conversa continua em ordem porque `sentAt` passou a ser
+> a hora da mensagem no WhatsApp. A política de retry abaixo vale igual para todos os shards.
+
 ## Contexto
 
 O projeto tem 4 filas Bull (`webhook`, `webhook-dlq`, `sla-check`, `auto-attendance-inactivity`). `webhook` processa eventos de um sistema externo (Evolution API) sujeitos a falha transitória de rede/timeout; `sla-check` e `auto-attendance-inactivity` processam jobs agendados sobre dado que já está no nosso Postgres. É a mesma política de retry (`attempts`/`backoff`) apropriada pras duas?

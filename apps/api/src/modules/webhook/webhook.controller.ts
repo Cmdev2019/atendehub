@@ -11,6 +11,7 @@ import {
   InternalServerErrorException,
   UseGuards,
   Header,
+  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -24,6 +25,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { WebhookJobData } from './webhook.processor';
+import { WEBHOOK_SHARD_QUEUES, pickWebhookQueue } from './webhook-shards';
 import { WebhookDlqEntry } from './webhook-dlq.types';
 import { buildWebhookJobOptions } from './webhook-queue.config';
 import { WebhookMetricsService } from './webhook-metrics.service';
@@ -34,7 +36,8 @@ export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
 
   constructor(
-    @InjectQueue(QUEUE_NAMES.WEBHOOK) private readonly webhookQueue: Queue<WebhookJobData>,
+    // B-79: filas por shard — cada webhook vai para a do seu contato
+    @Inject(WEBHOOK_SHARD_QUEUES) private readonly webhookQueues: Queue<WebhookJobData>[],
     @InjectQueue(QUEUE_NAMES.WEBHOOK_DLQ) private readonly dlqQueue: Queue<WebhookDlqEntry>,
     private readonly config: ConfigService,
     private readonly metricsService: WebhookMetricsService,
@@ -131,8 +134,11 @@ export class WebhookController {
     // A Evolution API espera um 200 rápido. Processamento acontece em background.
     // B-39: attempts/backoff/timeout/removeOnComplete/removeOnFail vêm de ENV
     // (WEBHOOK_ATTEMPTS/WEBHOOK_BACKOFF/WEBHOOK_TIMEOUT/...), não mais
-    // hardcoded — ver webhook-queue.config.ts.
-    await this.webhookQueue.add(normalizedPayload, buildWebhookJobOptions(this.config));
+    // hardcoded — ver webhook-queue.config.ts. B-79: fila (shard) do contato.
+    await pickWebhookQueue(this.webhookQueues, normalizedPayload).add(
+      normalizedPayload,
+      buildWebhookJobOptions(this.config),
+    );
 
     this.logger.debug(
       `Webhook ${normalizedPayload.event} da instância ${normalizedPayload.instance} adicionado à fila ` +
@@ -151,10 +157,20 @@ export class WebhookController {
   @Roles(Role.ADMIN)
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async metrics(): Promise<string> {
-    const [webhookCounts, dlqCounts] = await Promise.all([
-      this.webhookQueue.getJobCounts(),
+    const [shardCounts, dlqCounts] = await Promise.all([
+      Promise.all(this.webhookQueues.map((queue) => queue.getJobCounts())),
       this.dlqQueue.getJobCounts(),
     ]);
+    // Soma dos shards (B-79) — a métrica continua uma série por estado
+    const webhookCounts = shardCounts.reduce(
+      (acc, c) => ({
+        waiting: acc.waiting + c.waiting,
+        active: acc.active + c.active,
+        delayed: acc.delayed + c.delayed,
+        failed: acc.failed + c.failed,
+      }),
+      { waiting: 0, active: 0, delayed: 0, failed: 0 },
+    );
 
     return this.metricsService.toPrometheus({
       [`${QUEUE_NAMES.WEBHOOK}_waiting`]: webhookCounts.waiting,

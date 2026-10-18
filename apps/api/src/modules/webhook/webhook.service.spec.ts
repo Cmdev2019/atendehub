@@ -1,4 +1,4 @@
-import { WebhookService } from './webhook.service';
+import { WebhookService, whatsappTimestampToDate } from './webhook.service';
 
 // B4-4: extractPhoneFromJid já causou 2 incidentes em produção (F0-11 sufixo
 // de dispositivo duplicando contatos, F0-13 @lid não normalizado criando
@@ -52,6 +52,23 @@ describe('WebhookService — extractPhoneFromJid', () => {
 // — extractPhoneFromJid sozinho deixava o service em ~17%. Dependências
 // mockadas na mão (não via @nestjs/testing): WebhookService não tem nenhum
 // decorator própria além de @Injectable, então DI real não agrega nada aqui.
+// B-79 (M-06): com webhooks em paralelo e retries, a ordem da conversa vem da
+// hora da mensagem no WhatsApp, não da hora em que foi processada.
+describe('whatsappTimestampToDate (B-79)', () => {
+  it('converte segundos (número ou texto) em data', () => {
+    expect(whatsappTimestampToDate(1760000000)?.toISOString()).toBe('2025-10-09T08:53:20.000Z');
+    expect(whatsappTimestampToDate('1760000000')?.toISOString()).toBe('2025-10-09T08:53:20.000Z');
+  });
+
+  it.each([[undefined], [0], ['abc'], [-5]])('valor inválido (%p) cai no horário do servidor', (raw) => {
+    expect(whatsappTimestampToDate(raw)).toBeUndefined();
+  });
+
+  it('ignora horário no futuro (relógio do aparelho errado)', () => {
+    expect(whatsappTimestampToDate(Math.floor(Date.now() / 1000) + 3600)).toBeUndefined();
+  });
+});
+
 describe('WebhookService — processamento de eventos', () => {
   const mockPrisma = {
     whatsAppConnection: { findUnique: jest.fn() },
@@ -543,6 +560,24 @@ describe('WebhookService — processamento de eventos', () => {
         expect.objectContaining({
           pendingWebhookSteps: ['preview', 'auto_greeting', 'event_conversation_created', 'event_message_new'],
         }),
+      );
+    });
+
+    it('grava a hora da mensagem no WhatsApp como sentAt (B-79)', async () => {
+      mockNewMediaMessage('msg-ts');
+
+      await service.handleEvent({
+        event: 'MESSAGES_UPSERT',
+        instance: 'session-1',
+        data: {
+          key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-ts' },
+          message: { conversation: 'Oi' },
+          messageTimestamp: 1760000000,
+        },
+      });
+
+      expect(mockMessageService.createFromWebhook).toHaveBeenCalledWith(
+        expect.objectContaining({ sentAt: new Date(1760000000 * 1000) }),
       );
     });
 

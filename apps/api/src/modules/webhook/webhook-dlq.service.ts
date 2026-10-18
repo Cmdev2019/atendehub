@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bull';
 import { Job, Queue } from 'bull';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { WebhookJobData } from './webhook.processor';
+import { WEBHOOK_SHARD_QUEUES, pickWebhookQueue } from './webhook-shards';
 import { WebhookDlqEntry } from './webhook-dlq.types';
 import { buildWebhookJobOptions } from './webhook-queue.config';
 import { formatStructuredLog as formatWebhookLog } from '../../shared/logging/structured-log.util';
@@ -34,7 +35,7 @@ export class WebhookDlqService {
   private readonly logger = new Logger(WebhookDlqService.name);
 
   constructor(
-    @InjectQueue(QUEUE_NAMES.WEBHOOK) private readonly webhookQueue: Queue<WebhookJobData>,
+    @Inject(WEBHOOK_SHARD_QUEUES) private readonly webhookQueues: Queue<WebhookJobData>[],
     @InjectQueue(QUEUE_NAMES.WEBHOOK_DLQ) private readonly dlqQueue: Queue<WebhookDlqEntry>,
     private readonly config: ConfigService,
   ) {}
@@ -55,7 +56,8 @@ export class WebhookDlqService {
   async reprocess(companyId: string, jobId: string): Promise<{ requeued: boolean; newJobId: string | number }> {
     const job = await this.findOwnedJob(companyId, jobId);
 
-    const newJob = await this.webhookQueue.add(
+    // Volta para o shard do contato (B-79), como no recebimento original
+    const newJob = await pickWebhookQueue(this.webhookQueues, job.data.payload).add(
       { ...job.data.payload, requestId: job.data.requestId ?? undefined },
       buildWebhookJobOptions(this.config),
     );

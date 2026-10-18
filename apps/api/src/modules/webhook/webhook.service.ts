@@ -20,6 +20,15 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { AutoAttendanceEngineService } from '../auto-attendance/auto-attendance-engine.service';
 import { extractPhoneFromJid, isOpaqueLidJid } from '../../shared/whatsapp/jid.util';
 
+// messageTimestamp da Evolution vem em segundos (número ou texto). Valor
+// ausente, inválido ou no futuro (relógio torto) cai no horário do servidor.
+export function whatsappTimestampToDate(raw: unknown): Date | undefined {
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const date = new Date(seconds * 1000);
+  return date.getTime() > Date.now() + 60_000 ? undefined : date;
+}
+
 // ─── Tipos dos payloads da Evolution API v2 ───────────────────────────────────
 interface EvolutionMessageKey {
   remoteJid: string;   // ex: "5511999999999@s.whatsapp.net"
@@ -232,6 +241,11 @@ export class WebhookService {
         timestamp: messageTimestamp,
         remoteJid: key.remoteJid,
       },
+      // B-79 (M-06): hora real da mensagem no WhatsApp, não a do
+      // processamento — com webhooks em paralelo e retries com backoff, uma
+      // mensagem pode ser gravada depois de outra mais nova e a conversa,
+      // ordenada por sentAt, ficaria fora de ordem.
+      sentAt: whatsappTimestampToDate(messageTimestamp),
       pendingWebhookSteps: plannedSteps,
     });
 
