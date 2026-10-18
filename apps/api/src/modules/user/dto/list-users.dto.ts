@@ -1,5 +1,5 @@
-import { IsOptional, IsEnum, IsString, IsInt, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsEnum, IsString, IsInt, IsBoolean, Min, Max } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { Role } from '@prisma/client';
 
 export class ListUsersDto {
@@ -12,7 +12,8 @@ export class ListUsersDto {
   role?: Role;
 
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
   isActive?: boolean;
 
   @IsOptional()
