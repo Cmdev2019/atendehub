@@ -17,6 +17,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-91 (2026-10-18, L-02):** relatório de inclusão de padrões movido da raiz para `docs/99-Arquivo/`.
 
 ### Segurança
+- **B-94 (2026-10-18, L-05):** o `x-request-id` enviado pelo cliente só é aproveitado se for um id curto e simples; senão a API gera um novo.
 - **B-93 (2026-10-18, L-04):** `CORS_ORIGINS` aceita espaço depois da vírgula, e o WebSocket só aceita o token no campo `auth` — não mais na URL, onde ia parar em logs de proxy.
 
 ## [0.1.0] - 2026-10-18
