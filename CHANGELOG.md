@@ -27,6 +27,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-79 (2026-10-18, M-06):** as mensagens recebidas de contatos diferentes passam a ser processadas em
+  paralelo, sem que a conversa de um cliente espere a de outro, e as de um mesmo contato continuam em
+  ordem. A hora de cada mensagem recebida passa a ser a do WhatsApp, e não a do processamento.
 - **2026-10-18:** o check `api-e2e` (B-63) passa a ser obrigatório no `master`, junto com `api` e `web`.
   Filas de atendimento (B-65 a B-68) registradas no roadmap como evolução, depois da Fase 2.
 - **B-64 (2026-10-18):** mídia de produção no **Cloudflare R2**. A imagem do MinIO usada no projeto saiu

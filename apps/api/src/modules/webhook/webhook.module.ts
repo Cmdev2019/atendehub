@@ -7,7 +7,8 @@ import { WebhookDlqController } from './webhook-dlq.controller';
 import { WebhookDlqService } from './webhook-dlq.service';
 import { WebhookMetricsService } from './webhook-metrics.service';
 import { MediaDownloadService } from './media-download.service';
-import { WebhookProcessor } from './webhook.processor';
+import { WEBHOOK_SHARD_PROCESSORS } from './webhook.processor';
+import { WEBHOOK_SHARD_QUEUE_NAMES, webhookShardQueuesProvider } from './webhook-shards';
 import { MediaDownloadProcessor } from './media-download.processor';
 import { ContactModule } from '../contact/contact.module';
 import { ConversationModule } from '../conversation/conversation.module';
@@ -24,18 +25,22 @@ import { WEBHOOK_BACKOFF_STRATEGY, buildWebhookBackoffStrategy } from './webhook
     // precisa do ConfigService pra montar a estratégia de backoff customizada
     // (WEBHOOK_BACKOFF_INITIAL/WEBHOOK_BACKOFF_MULTIPLIER; o `exponential`
     // nativo do Bull tem multiplicador fixo em 2, não parametrizável).
-    BullModule.registerQueueAsync({
-      name: QUEUE_NAMES.WEBHOOK,
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        settings: {
-          backoffStrategies: {
-            [WEBHOOK_BACKOFF_STRATEGY]: buildWebhookBackoffStrategy(config),
+    // B-79: uma fila por shard (webhook-shards.ts), todas com a mesma
+    // estratégia de backoff.
+    BullModule.registerQueueAsync(
+      ...WEBHOOK_SHARD_QUEUE_NAMES.map((name) => ({
+        name,
+        imports: [ConfigModule],
+        inject: [ConfigService],
+        useFactory: (config: ConfigService) => ({
+          settings: {
+            backoffStrategies: {
+              [WEBHOOK_BACKOFF_STRATEGY]: buildWebhookBackoffStrategy(config),
+            },
           },
-        },
-      }),
-    }),
+        }),
+      })),
+    ),
     // DLQ — sem processor registrado (nada consome automaticamente).
     BullModule.registerQueue({ name: QUEUE_NAMES.WEBHOOK_DLQ }),
     BullModule.registerQueue({ name: QUEUE_NAMES.MEDIA_DOWNLOAD }),
@@ -50,7 +55,8 @@ import { WEBHOOK_BACKOFF_STRATEGY, buildWebhookBackoffStrategy } from './webhook
   providers: [
     WebhookService,
     MediaDownloadService,
-    WebhookProcessor,
+    ...WEBHOOK_SHARD_PROCESSORS,
+    webhookShardQueuesProvider,
     MediaDownloadProcessor,
     WebhookDlqService,
     WebhookMetricsService,

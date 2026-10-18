@@ -5,6 +5,7 @@ import { getQueueToken } from '@nestjs/bull';
 import { WebhookController } from './webhook.controller';
 import { WebhookMetricsService } from './webhook-metrics.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { WEBHOOK_SHARD_QUEUES } from './webhook-shards';
 
 // B4-4: o webhook é a única rota pública (sem login) de toda a API — a
 // Evolution chama de fora, então a validação da apikey é a última linha de
@@ -33,7 +34,8 @@ describe('WebhookController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WebhookController],
       providers: [
-        { provide: getQueueToken(QUEUE_NAMES.WEBHOOK), useValue: mockQueue },
+        // B-79: um shard só aqui — a distribuição é testada em webhook-shards.spec.ts
+        { provide: WEBHOOK_SHARD_QUEUES, useValue: [mockQueue] },
         { provide: getQueueToken(QUEUE_NAMES.WEBHOOK_DLQ), useValue: mockDlqQueue },
         { provide: ConfigService, useValue: mockConfig },
         WebhookMetricsService,

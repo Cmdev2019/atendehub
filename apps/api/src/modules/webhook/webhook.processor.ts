@@ -14,6 +14,7 @@ import { formatStructuredLog as formatWebhookLog, WORKER_ID } from '../../shared
 import { extractPhoneFromJid } from '../../shared/whatsapp/jid.util';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { WEBHOOK_SHARD_QUEUE_NAMES } from './webhook-shards';
 
 // ─── Job data structure ────────────────────────────────────────────────────────
 export interface WebhookJobData {
@@ -46,7 +47,9 @@ export interface WebhookJobData {
  * Falha definitiva (tentativas esgotadas ou erro permanente via
  * `job.discard()`) é capturada em `onFailed`, que move o job pra DLQ.
  */
-@Processor(QUEUE_NAMES.WEBHOOK)
+// B-79 (M-06): classe base — quem consome de fato são as subclasses de
+// WEBHOOK_SHARD_PROCESSORS (fim do arquivo), uma por fila/shard. Os
+// decorators @Process/@OnQueue* daqui valem para todas por herança.
 export class WebhookProcessor {
   private readonly logger = new Logger(WebhookProcessor.name);
 
@@ -65,7 +68,7 @@ export class WebhookProcessor {
     const startedAt = Date.now();
 
     const baseFields = {
-      queue: QUEUE_NAMES.WEBHOOK,
+      queue: job.queue?.name ?? QUEUE_NAMES.WEBHOOK,
       processor: WebhookProcessor.name,
       worker: WORKER_ID,
       job: job.id,
@@ -143,7 +146,7 @@ export class WebhookProcessor {
     const classification = classifyWebhookError(err);
 
     const baseFields = {
-      queue: QUEUE_NAMES.WEBHOOK,
+      queue: job.queue?.name ?? QUEUE_NAMES.WEBHOOK,
       processor: WebhookProcessor.name,
       worker: WORKER_ID,
       job: job.id,
@@ -165,7 +168,7 @@ export class WebhookProcessor {
       const reason = this.buildDlqReason(classification, job.attemptsMade, maxAttempts, err);
 
       const dlqEntry: WebhookDlqEntry = {
-        originalQueue: QUEUE_NAMES.WEBHOOK,
+        originalQueue: job.queue?.name ?? QUEUE_NAMES.WEBHOOK,
         originalJobId: String(job.id),
         payload: { event, instance, data },
         headers: receivedHeaders ?? {},
@@ -188,7 +191,7 @@ export class WebhookProcessor {
       await this.dlqQueue.add(dlqEntry, { removeOnFail: false, attempts: 1 });
 
       Sentry.captureException(err, {
-        tags: { queue: QUEUE_NAMES.WEBHOOK, event, instance, tenant: tenant ?? 'desconhecido' },
+        tags: { queue: job.queue?.name ?? QUEUE_NAMES.WEBHOOK, event, instance, tenant: tenant ?? 'desconhecido' },
         extra: { jobId: job.id, attempts: job.attemptsMade, requestId, messageId, conversationId },
       });
 
@@ -218,7 +221,7 @@ export class WebhookProcessor {
   onStalled(job: Job<WebhookJobData>): void {
     this.logger.warn(
       formatWebhookLog('WebhookStalled', {
-        queue: QUEUE_NAMES.WEBHOOK,
+        queue: job.queue?.name ?? QUEUE_NAMES.WEBHOOK,
         processor: WebhookProcessor.name,
         worker: WORKER_ID,
         job: job.id,
@@ -291,3 +294,15 @@ export class WebhookProcessor {
     return first?.key?.id ?? null;
   }
 }
+
+// ── Um consumidor por shard (B-79 / M-06) ────────────────────────────────────
+// Concorrência 1 em cada fila (padrão do @Process): mensagens do mesmo
+// contato em ordem, contatos diferentes em paralelo entre os shards.
+export const WEBHOOK_SHARD_PROCESSORS: Array<typeof WebhookProcessor> =
+  WEBHOOK_SHARD_QUEUE_NAMES.map((queueName, index) => {
+    @Processor(queueName)
+    class WebhookShardProcessor extends WebhookProcessor {}
+    // Nome único por shard (aparece em logs do Nest e evita colisão de nome)
+    Object.defineProperty(WebhookShardProcessor, 'name', { value: `WebhookShardProcessor${index}` });
+    return WebhookShardProcessor;
+  });

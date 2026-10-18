@@ -35,7 +35,7 @@ describe('WebhookDlqService (B-39)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new WebhookDlqService(mockWebhookQueue as any, mockDlqQueue as any, mockConfig as any);
+    service = new WebhookDlqService([mockWebhookQueue] as any, mockDlqQueue as any, mockConfig as any);
   });
 
   describe('list', () => {

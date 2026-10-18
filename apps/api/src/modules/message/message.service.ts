@@ -254,6 +254,7 @@ export class MessageService {
     senderId?: string;
     metadata?: Record<string, any>;
     pendingWebhookSteps?: string[];
+    sentAt?: Date;
   }): Promise<{
     id: string;
     status: MessageStatus;
@@ -273,6 +274,7 @@ export class MessageService {
         status: MessageStatus.DELIVERED,
         metadata: data.metadata,
         pendingWebhookSteps: data.pendingWebhookSteps ?? [],
+        ...(data.sentAt && { sentAt: data.sentAt }),
       },
       { id: true, status: true, sentAt: true, pendingWebhookSteps: true },
     );
