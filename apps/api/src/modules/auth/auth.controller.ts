@@ -12,7 +12,6 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AccessToken } from './decorators/access-token.decorator';
@@ -65,7 +64,6 @@ export class AuthController {
   }
 
   // POST /api/v1/auth/logout
-  @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
@@ -78,7 +76,6 @@ export class AuthController {
   // POST /api/v1/auth/revoke
   // Revoga o access token atual, tornando-o inválido imediatamente.
   // Útil para logout forçado, mudança de senha, ou revogação de sessão comprometida.
-  @UseGuards(JwtAuthGuard)
   @Post('revoke')
   @HttpCode(HttpStatus.NO_CONTENT)
   async revoke(@AccessToken() accessToken?: string): Promise<void> {
@@ -90,7 +87,6 @@ export class AuthController {
   }
 
   // GET /api/v1/auth/me
-  @UseGuards(JwtAuthGuard)
   @Get('me')
   async me(@CurrentUser() user: AuthUserDto): Promise<AuthUserDto> {
     return this.authService.me(user.id);

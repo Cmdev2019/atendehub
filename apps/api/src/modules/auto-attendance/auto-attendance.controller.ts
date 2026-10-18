@@ -8,16 +8,13 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
-} from '@nestjs/common';
+  } from '@nestjs/common';
 import { IsArray, IsString } from 'class-validator';
 import { Role } from '@prisma/client';
 import { AutoAttendanceService } from './auto-attendance.service';
 import { UpdateAutoAttendanceFlowDto } from './dto/update-auto-attendance-flow.dto';
 import { CreateMenuOptionDto } from './dto/create-menu-option.dto';
 import { UpdateMenuOptionDto } from './dto/update-menu-option.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
@@ -29,7 +26,6 @@ class ReorderMenuOptionsDto {
 }
 
 @Controller('auto-attendance')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class AutoAttendanceController {
   constructor(private readonly autoAttendanceService: AutoAttendanceService) {}
 

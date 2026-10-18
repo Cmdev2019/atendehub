@@ -12,14 +12,13 @@ import {
 } from '@nestjs/common';
 import { NoteService } from './note.service';
 import { CreateNoteDto } from './dto/create-note.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ConversationScopeGuard } from '../../shared/conversation-scope/conversation-scope.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 
 @Controller('conversations/:conversationId/notes')
 // C-10/B-40: conversa fora do escopo do usuário responde 404
-@UseGuards(JwtAuthGuard, ConversationScopeGuard)
+@UseGuards(ConversationScopeGuard)
 export class NoteController {
   constructor(private readonly noteService: NoteService) {}
 
