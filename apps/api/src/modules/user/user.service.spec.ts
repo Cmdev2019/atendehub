@@ -94,6 +94,7 @@ describe('UserService — isolamento multi-tenant', () => {
       // é único na base inteira, não só dentro da empresa (B-20).
       expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'novo@empresa.com' },
+        select: { id: true },
       });
       expect(mockPrisma.user.create).not.toHaveBeenCalled();
     });
