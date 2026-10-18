@@ -88,16 +88,18 @@ describe('Storage — E2E (MinIO real, bucket privado + URL assinada)', () => {
     expect(Buffer.from(response.data).subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff])); // magic bytes JPEG
   });
 
-  it('URL assinada com expiração de 1s deixa de funcionar depois de expirar', async () => {
-    const shortLived = await service.presignUrl(uploadedUrl, 1);
-    expect(shortLived).toBeTruthy();
-
-    // Confirma que funciona enquanto válida...
-    const ok = await axios.get(shortLived as string, { httpAgent, validateStatus: () => true });
+  it('URL assinada deixa de funcionar depois de expirar', async () => {
+    // B-70: o caso "ainda válida" usa uma janela folgada (30s) em vez de 1s —
+    // antes, sob latência da CI, o GET chegava depois do 1s e dava 403, o que
+    // deixava este e2e intermitente. O caso "expirada" usa uma URL própria de
+    // 1s e espera 2s, então não corre contra o relógio.
+    const valid = await service.presignUrl(uploadedUrl, 30);
+    const ok = await axios.get(valid as string, { httpAgent, validateStatus: () => true });
     expect(ok.status).toBe(200);
 
-    // ...e passa a negar depois de expirar (assinatura S3 tem o timestamp
-    // embutido — não tem como "esperar menos" nem reaproveitar).
+    const shortLived = await service.presignUrl(uploadedUrl, 1);
+    expect(shortLived).toBeTruthy();
+    // A assinatura S3 tem o timestamp embutido — não tem como reaproveitar.
     await new Promise((resolve) => setTimeout(resolve, 2000));
     const expired = await axios.get(shortLived as string, { httpAgent, validateStatus: () => true });
     expect(expired.status).not.toBe(200);
