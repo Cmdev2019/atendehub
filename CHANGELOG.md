@@ -151,6 +151,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-69 (2026-10-18, M-14):** filtros booleanos das listagens (`?isActive=`, `?isBlocked=`,
+  `?unreadOnly=`) deixam de inverter o resultado. A conversão implícita de tipos transformava o
+  texto `"false"` da query em `true`; agora ela fica desligada no ValidationPipe e cada campo
+  declara a própria conversão. Hoje nenhum efeito visível (o front não envia `=false`), mas
+  corrige integrações e a futura API pública.
 - **B-61 (2026-10-17):** datas e horários passam a seguir o fuso da empresa (novo campo
   `companies.timezone`, padrão `America/Sao_Paulo`, editável pelo ADMIN em `PATCH /company/me`). Antes
   tudo usava o fuso do servidor (UTC no Docker): o expediente do auto-atendimento ficava deslocado em 3
