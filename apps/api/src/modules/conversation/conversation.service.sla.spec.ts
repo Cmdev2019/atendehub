@@ -19,6 +19,8 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
   const mockPrisma = {
     conversation: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     queue: { findFirst: jest.fn(), findUnique: jest.fn() },
+    // B-98: expediente do auto-atendimento (sem fluxo = sempre dentro)
+    autoAttendanceFlow: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findFirst: jest.fn() },
     department: { findFirst: jest.fn() },
   };
@@ -87,6 +89,33 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
       await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1');
 
       expect(mockPrisma.queue.findFirst).not.toHaveBeenCalled();
+      expect(mockSlaQueue.add).not.toHaveBeenCalled();
+    });
+
+    // B-98 (L-10): sem "espera" de verdade, não há SLA a medir
+    it('NÃO agenda SLA para conversa aberta pela própria empresa (1ª mensagem fromMe)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+      mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 120 });
+      mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-empresa', companyId });
+
+      await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1', true);
+
+      expect(mockSlaQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('NÃO agenda SLA fora do expediente do auto-atendimento ativo', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+      mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 120 });
+      mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-noite', companyId });
+      // Expediente vazio em todos os dias = sempre fora
+      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+        isActive: true,
+        businessHours: {},
+        company: { timezone: 'America/Sao_Paulo' },
+      });
+
+      await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1');
+
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
     });
   });

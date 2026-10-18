@@ -197,6 +197,7 @@ describe('WebhookService — processamento de eventos', () => {
         connection.id,
         undefined,
         connection.departmentId,
+        false, // B-98: mensagem do cliente — conversa não foi aberta pela empresa
       );
       expect(mockMessageService.createFromWebhook).toHaveBeenCalledWith(
         expect.objectContaining({

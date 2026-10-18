@@ -12,7 +12,8 @@ import {
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ConversationService } from '../conversation/conversation.service';
-import { resolveTimeZone, zonedParts } from '../../shared/time/company-time';
+import { resolveTimeZone } from '../../shared/time/company-time';
+import { isWithinBusinessHours } from '../../shared/time/business-hours';
 import { EventsService } from '../events/events.service';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
@@ -132,7 +133,7 @@ export class AutoAttendanceEngineService {
 
       const now = new Date();
       const timeZone = resolveTimeZone(flow.company?.timezone);
-      if (!this.isWithinBusinessHours(flow.businessHours as any, now, timeZone)) {
+      if (!isWithinBusinessHours(flow.businessHours as any, now, timeZone)) {
         if (flow.outOfHoursMessage) {
           await this.sendBotMessage(conversationId, sessionName, contactPhone, companyId, flow.outOfHoursMessage);
         }
@@ -362,30 +363,5 @@ export class AutoAttendanceEngineService {
     }
     const lower = trimmed.toLowerCase();
     return options.find((o) => o.label.toLowerCase() === lower) ?? null;
-  }
-
-  // Horário de parede no fuso da EMPRESA (M-04/B-61) — antes usava o fuso do
-  // servidor (UTC no Docker) e o expediente ficava deslocado em 3 horas no
-  // Brasil. `businessHours` ausente = sempre "dentro do expediente" (não
-  // bloqueia quem nunca configurou horário nenhum).
-  private isWithinBusinessHours(
-    hours: Record<string, { start: string; end: string }[]> | null,
-    now: Date,
-    timeZone: string,
-  ): boolean {
-    if (!hours) return true;
-
-    const local = zonedParts(now, timeZone);
-    const ranges = hours[local.weekday];
-    if (!ranges || ranges.length === 0) return false;
-
-    const nowMinutes = local.hour * 60 + local.minute;
-    return ranges.some((range) => {
-      const [startH, startM] = range.start.split(':').map(Number);
-      const [endH, endM] = range.end.split(':').map(Number);
-      const startTotal = startH * 60 + startM;
-      const endTotal = endH * 60 + endM;
-      return nowMinutes >= startTotal && nowMinutes < endTotal;
-    });
   }
 }

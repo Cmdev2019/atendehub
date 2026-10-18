@@ -223,6 +223,7 @@ export class WebhookService {
         whatsappConnectionId,
         undefined,
         departmentId,
+        key.fromMe, // B-98: conversa aberta pela empresa não tem SLA
       );
 
     // Tipo e conteúdo, já desembrulhados (B-81)
