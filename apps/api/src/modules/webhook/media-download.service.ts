@@ -93,6 +93,7 @@ export class MediaDownloadService {
       companyId,
       fileName,
       buffer.length,
+      { inbound: true },
     );
 
     this.logger.debug(

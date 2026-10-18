@@ -37,6 +37,9 @@ export function toUiMessage(message) {
       mimeType: a.mimeType || '',
       fileName: a.fileName || null,
     })),
+    // B-77: motivo de o anexo recebido não ter sido salvo (tipo não aceito,
+    // download esgotado) — o balão mostra o aviso no lugar do arquivo
+    mediaError: message.metadata?.mediaError ?? null,
   };
 }
 
@@ -414,8 +417,24 @@ export function useConversations(currentUserId) {
     // termina DEPOIS do message.new; este evento troca o placeholder pela
     // mídia real sem precisar de refresh
     const handleMessageUpdated = (payload) => {
-      const { conversationId, messageId, attachment } = payload ?? {};
-      if (!conversationId || !messageId || !attachment?.url) return;
+      const { conversationId, messageId, attachment, mediaError } = payload ?? {};
+      if (!conversationId || !messageId) return;
+
+      // B-77: o anexo não pôde ser salvo — troca o placeholder pelo aviso
+      if (!attachment?.url) {
+        if (!mediaError) return;
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id !== conversationId
+              ? conv
+              : {
+                  ...conv,
+                  messages: conv.messages?.map((m) => (m.id === messageId ? { ...m, mediaError } : m)),
+                },
+          ),
+        );
+        return;
+      }
 
       setConversations((prev) =>
         prev.map((conv) => {

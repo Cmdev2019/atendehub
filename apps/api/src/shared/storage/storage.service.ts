@@ -11,6 +11,12 @@ export interface UploadResult {
   size: number;
 }
 
+export interface UploadOptions {
+  // B-77 (M-03): mídia RECEBIDA do cliente pelo WhatsApp. Aceita também os
+  // tipos de INBOUND_ONLY_EXTENSION_MAP, sempre com download forçado.
+  inbound?: boolean;
+}
+
 // ── Assinaturas de magic bytes para imagens (B-38) ──────────────────────────
 // Cross-check contra Content-Type declarado: um upload marcado como
 // `image/*` cujo conteúdo não bate com nenhuma assinatura conhecida é
@@ -26,6 +32,13 @@ const IMAGE_SIGNATURES: Array<(b: Buffer) => boolean> = [
     b.length >= 12 &&
     b.subarray(0, 4).toString('ascii') === 'RIFF' &&
     b.subarray(8, 12).toString('ascii') === 'WEBP', // WEBP
+  // HEIC/HEIF (foto do iPhone, B-77): caixa ISO-BMFF `ftyp` com marca HEIF
+  (b) =>
+    b.length >= 12 &&
+    b.subarray(4, 8).toString('ascii') === 'ftyp' &&
+    ['heic', 'heix', 'hevc', 'heim', 'heis', 'mif1', 'msf1', 'heif'].includes(
+      b.subarray(8, 12).toString('ascii'),
+    ),
 ];
 
 // ── Allowlist de MIME → extensão ────────────────────────────────────────────
@@ -56,6 +69,30 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   'application/zip': '.zip',
   'text/plain': '.txt',
   'text/csv': '.csv',
+};
+
+// ── Tipos aceitos só na mídia RECEBIDA (B-77 / M-03) ─────────────────────────
+// Anexos comuns que o cliente manda pelo WhatsApp e que a lista acima
+// descartava em silêncio (o atendente nem ficava sabendo). Não valem para
+// upload do painel (lá a lista continua curta) e o arquivo sai sempre com
+// `Content-Disposition: attachment` — o navegador baixa em vez de abrir, o
+// que neutraliza conteúdo ativo vindo de fora (ex.: octet-stream qualquer).
+const INBOUND_ONLY_EXTENSION_MAP: Record<string, string> = {
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'video/webm': '.webm',
+  'audio/webm': '.weba',
+  'audio/opus': '.opus',
+  'application/vnd.ms-powerpoint': '.ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  'application/vnd.oasis.opendocument.text': '.odt',
+  'application/vnd.oasis.opendocument.spreadsheet': '.ods',
+  'application/vnd.oasis.opendocument.presentation': '.odp',
+  'application/rtf': '.rtf',
+  'application/vnd.rar': '.rar',
+  'application/x-rar-compressed': '.rar',
+  'application/x-7z-compressed': '.7z',
+  'application/octet-stream': '.bin',
 };
 
 @Injectable()
@@ -213,9 +250,11 @@ export class StorageService implements OnModuleInit {
     companyId: string,
     originalName?: string,
     size?: number,
+    options: UploadOptions = {},
   ): Promise<UploadResult> {
     const normalizedMime = (mimeType || '').split(';')[0].trim().toLowerCase();
-    const ext = MIME_EXTENSION_MAP[normalizedMime];
+    const inboundOnlyExt = options.inbound ? INBOUND_ONLY_EXTENSION_MAP[normalizedMime] : undefined;
+    const ext = MIME_EXTENSION_MAP[normalizedMime] ?? inboundOnlyExt;
 
     if (!ext) {
       throw new BadRequestException(
@@ -236,6 +275,7 @@ export class StorageService implements OnModuleInit {
 
     const metaData = {
       'Content-Type': normalizedMime,
+      ...(inboundOnlyExt && { 'Content-Disposition': 'attachment' }),
       ...(originalName && { 'X-Original-Name': this.sanitizeMetadataValue(originalName) }),
     };
 

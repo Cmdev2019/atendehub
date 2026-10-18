@@ -169,3 +169,35 @@ describe('ChatPanel — encerrar conversa (B-31/B-32/B-36)', () => {
     expect(screen.queryByRole('button', { name: /Encerrar/ })).not.toBeInTheDocument();
   });
 });
+
+// B-77 (M-03): anexo recebido que o servidor não conseguiu salvar — antes o
+// balão ficava com o placeholder para sempre.
+describe('ChatPanel — anexo recebido não salvo (B-77)', () => {
+  it.each([
+    ['unsupported_type', 'tipo de arquivo não aceito'],
+    ['download_failed', 'não foi possível baixar'],
+  ])('mostra o motivo (%s) no lugar do placeholder', (mediaError, label) => {
+    renderChatPanel({
+      conversation: {
+        ...baseConversation,
+        messages: [
+          { id: 'm1', type: 'customer', text: '', time: '10:00', mediaType: 'DOCUMENT', attachments: [], mediaError },
+        ],
+      },
+    });
+
+    expect(screen.getByRole('note')).toHaveTextContent(`Documento recebido, mas não salvo: ${label}`);
+  });
+
+  it('sem erro, segue mostrando o placeholder enquanto o download não termina', () => {
+    renderChatPanel({
+      conversation: {
+        ...baseConversation,
+        messages: [{ id: 'm1', type: 'customer', text: '', time: '10:00', mediaType: 'DOCUMENT', attachments: [] }],
+      },
+    });
+
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.getByText(/Documento/)).toBeInTheDocument();
+  });
+});

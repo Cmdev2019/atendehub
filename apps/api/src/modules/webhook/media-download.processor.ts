@@ -1,4 +1,5 @@
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { OnQueueFailed, Process, Processor } from '@nestjs/bull';
 import { Job, JobOptions } from 'bull';
 import { PrismaService } from '../../shared/prisma/prisma.service';
@@ -29,6 +30,15 @@ export const MEDIA_DOWNLOAD_JOB_OPTIONS: JobOptions = {
 
 export const mediaDownloadJobId = (messageId: string) => `media:${messageId}`;
 
+// B-77 (M-03): por que a mensagem ficou sem anexo — gravado em
+// `Message.metadata.mediaError` e mostrado ao atendente no lugar do arquivo.
+// Antes o descarte era silencioso: o balão ficava com o placeholder para
+// sempre.
+export const MEDIA_ERROR = {
+  UNSUPPORTED_TYPE: 'unsupported_type', // tipo fora das listas do storage
+  DOWNLOAD_FAILED: 'download_failed', // tentativas esgotadas
+} as const;
+
 @Processor(QUEUE_NAMES.MEDIA_DOWNLOAD)
 export class MediaDownloadProcessor {
   private readonly logger = new Logger(MediaDownloadProcessor.name);
@@ -52,14 +62,25 @@ export class MediaDownloadProcessor {
     });
     if (existing) return;
 
-    // Lança em qualquer falha — o Bull agenda a próxima tentativa.
-    const result = await this.mediaDownloadService.downloadFromEvolution(
-      sessionName,
-      externalMessageId,
-      mimeType,
-      companyId,
-      fileName,
-    );
+    // Lança em qualquer falha — o Bull agenda a próxima tentativa. Tipo não
+    // aceito pelo storage é permanente: tentar de novo não muda nada.
+    let result;
+    try {
+      result = await this.mediaDownloadService.downloadFromEvolution(
+        sessionName,
+        externalMessageId,
+        mimeType,
+        companyId,
+        fileName,
+      );
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        this.logger.warn(`Mídia da msg ${externalMessageId} recusada pelo storage: ${err.message}`);
+        await this.markMediaError(job.data, MEDIA_ERROR.UNSUPPORTED_TYPE);
+        return;
+      }
+      throw err;
+    }
 
     const attachment = await this.prisma.attachment.create({
       data: {
@@ -89,7 +110,7 @@ export class MediaDownloadProcessor {
   }
 
   @OnQueueFailed()
-  onFailed(job: Job<MediaDownloadJobData>, err: Error) {
+  async onFailed(job: Job<MediaDownloadJobData>, err: Error) {
     const attempts = job.opts.attempts ?? 1;
     if (job.attemptsMade < attempts) {
       this.logger.warn(
@@ -100,5 +121,28 @@ export class MediaDownloadProcessor {
     this.logger.error(
       `Mídia da msg ${job.data.externalMessageId} não baixada após ${attempts} tentativas: ${err.message}`,
     );
+    await this.markMediaError(job.data, MEDIA_ERROR.DOWNLOAD_FAILED).catch((markErr: Error) =>
+      this.logger.error(`Falha ao registrar mídia perdida da msg ${job.data.externalMessageId}: ${markErr.message}`),
+    );
+  }
+
+  private async markMediaError(data: MediaDownloadJobData, mediaError: string): Promise<void> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: data.messageId },
+      select: { metadata: true },
+    });
+    if (!message) return;
+
+    const metadata = (message.metadata ?? {}) as Prisma.JsonObject;
+    await this.prisma.message.update({
+      where: { id: data.messageId },
+      data: { metadata: { ...metadata, mediaError } },
+    });
+    await this.eventsService.emitMessageUpdated({
+      companyId: data.companyId,
+      conversationId: data.conversationId,
+      messageId: data.messageId,
+      mediaError,
+    });
   }
 }

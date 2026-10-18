@@ -104,4 +104,26 @@ describe('Storage — E2E (MinIO real, bucket privado + URL assinada)', () => {
     const expired = await axios.get(shortLived as string, { httpAgent, validateStatus: () => true });
     expect(expired.status).not.toBe(200);
   });
+
+  // B-77 (M-03): tipo aceito só na mídia recebida sai com download forçado —
+  // o header gravado no objeto precisa voltar no GET pela URL assinada.
+  it('arquivo recebido de tipo genérico é servido como download (Content-Disposition: attachment)', async () => {
+    const result = await service.upload(
+      Buffer.from('conteudo-binario'),
+      'application/octet-stream',
+      companyId,
+      'arquivo.bin',
+      undefined,
+      { inbound: true },
+    );
+    try {
+      const signed = await service.presignUrl(result.url, 30);
+      const response = await axios.get(signed as string, { httpAgent, validateStatus: () => true });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-disposition']).toBe('attachment');
+    } finally {
+      await service.deleteByUrl(result.url).catch(() => undefined);
+    }
+  });
 });

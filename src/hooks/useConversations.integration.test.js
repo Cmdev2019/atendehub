@@ -406,6 +406,39 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  // B-77 (M-03): anexo recebido que o servidor não conseguiu salvar
+  it('message.updated com mediaError marca a mensagem (sem anexo)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+    const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
+    act(() => {
+      handlerOf('message.new')({
+        conversationId: '1',
+        companyId: 'company-1',
+        message: { id: 'msg-doc', senderType: 'CLIENT', content: '', type: 'DOCUMENT', sentAt: '2026-10-18T10:00:00.000Z' },
+      });
+    });
+    act(() => {
+      handlerOf('message.updated')({
+        conversationId: '1',
+        companyId: 'company-1',
+        messageId: 'msg-doc',
+        mediaError: 'unsupported_type',
+      });
+    });
+
+    await waitFor(() => {
+      const msg = result.current.activeConversation.messages.find((m) => m.id === 'msg-doc');
+      expect(msg.mediaError).toBe('unsupported_type');
+      expect(msg.attachments).toEqual([]);
+    });
+  });
+
   it('não duplica mensagem recebida via message.new (dedupe por id)', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [{ id: '1', contact: 'João', messages: [{ id: 'msg-1', type: 'customer', text: 'Oi', time: '10:00' }] }],

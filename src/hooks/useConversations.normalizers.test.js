@@ -58,6 +58,14 @@ describe('toUiMessage', () => {
   it('retorna null para mensagem ausente', () => {
     expect(toUiMessage(null)).toBeNull();
   });
+
+  // B-77: anexo recebido que não pôde ser salvo
+  it('expõe o motivo de anexo não salvo vindo do metadata (e null sem erro)', () => {
+    const base = { senderType: 'CLIENT', content: null, type: 'DOCUMENT', sentAt: new Date().toISOString() };
+    expect(toUiMessage({ ...base, metadata: { mediaError: 'unsupported_type' } }).mediaError).toBe('unsupported_type');
+    expect(toUiMessage({ ...base, metadata: { remoteJid: 'x' } }).mediaError).toBeNull();
+    expect(toUiMessage(base).mediaError).toBeNull();
+  });
 });
 
 describe('toUiConversation', () => {
