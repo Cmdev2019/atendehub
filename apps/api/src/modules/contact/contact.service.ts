@@ -201,22 +201,61 @@ export class ContactService {
     // anonimização, que é a parte legalmente obrigatória — fica registrada
     // na auditoria pra follow-up manual.
     const mediaResult = await this.purgeMedia(companyId, id);
+    const traces = await this.scrubContactTraces(companyId, id);
 
+    // M-12/B-62: a auditoria da anonimização registrava justamente o nome, o
+    // telefone e o e-mail que acabavam de ser apagados — a PII sobrevivia no
+    // audit_log. Agora registra só QUAIS campos foram anonimizados.
     await this.auditLog.record({
       companyId,
       userId: requesterId,
       action: 'contact.anonymized',
       entity: 'Contact',
       entityId: id,
-      before: { name: contact.name, phone: contact.phone, email: contact.email },
-      after: { mediaPurged: mediaResult.purged, mediaFailed: mediaResult.failed },
+      before: { anonymizedFields: ['name', 'phone', 'email', 'avatarUrl', 'metadata'] },
+      after: {
+        mediaPurged: mediaResult.purged,
+        mediaFailed: mediaResult.failed,
+        messagesScrubbed: traces.messages,
+        notificationsScrubbed: traces.notifications,
+      },
     });
 
     return {
       message: 'Contato anonimizado com sucesso — histórico de conversas preservado',
       anonymizedAt: anonymized.anonymizedAt,
       media: mediaResult,
+      traces,
     };
+  }
+
+  // ── Rastros da PII fora da tabela de contatos (M-12/B-62) ─────────────────
+  // A anonimização trocava nome/telefone do contato, mas o telefone continuava
+  // em `messages.metadata.remoteJid` (toda mensagem recebida guarda o JID de
+  // origem) e o nome no texto das notificações já entregues ("Fulano está
+  // esperando há..."). O conteúdo das mensagens é preservado de propósito
+  // (histórico do atendimento — decisão do B-17).
+  private async scrubContactTraces(companyId: string, contactId: string) {
+    const conversations = await this.prisma.conversation.findMany({
+      where: { companyId, contactId },
+      select: { id: true },
+    });
+    const conversationIds = conversations.map((c) => c.id);
+    if (conversationIds.length === 0) return { messages: 0, notifications: 0 };
+
+    const messages = await this.prisma.$executeRaw`
+      UPDATE "messages"
+      SET "metadata" = "metadata" - 'remoteJid'
+      WHERE "conversationId" = ANY(${conversationIds}::text[])
+        AND "metadata" ? 'remoteJid'`;
+
+    const notifications = await this.prisma.$executeRaw`
+      UPDATE "notifications"
+      SET "body" = 'Contato removido'
+      WHERE "companyId" = ${companyId}
+        AND "data"->>'conversationId' = ANY(${conversationIds}::text[])`;
+
+    return { messages, notifications };
   }
 
   // ── Purga mídia do MinIO ao anonimizar (B-29/LGPD) ────────────────────────

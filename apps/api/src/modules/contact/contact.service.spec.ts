@@ -24,12 +24,14 @@ const mockPrisma = {
     upsert: jest.fn(),
   },
   conversation: {
-    findMany: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   attachment: {
     findMany: jest.fn(),
     delete: jest.fn(),
   },
+  // M-12/B-62: limpeza de metadata das mensagens e das notificações
+  $executeRaw: jest.fn().mockResolvedValue(0),
 };
 
 const mockAuditLog = { record: jest.fn() };
@@ -201,12 +203,45 @@ describe('ContactService — isolamento multi-tenant', () => {
           action: 'contact.anonymized',
           entity: 'Contact',
           entityId: 'contact-1',
-          before: { name: 'Fulano', phone: '5511999999999', email: 'fulano@example.com' },
-          after: { mediaPurged: 0, mediaFailed: 0 },
+          // M-12/B-62: a auditoria não guarda mais a PII que acabou de ser apagada
+          before: { anonymizedFields: ['name', 'phone', 'email', 'avatarUrl', 'metadata'] },
+          after: { mediaPurged: 0, mediaFailed: 0, messagesScrubbed: 0, notificationsScrubbed: 0 },
         }),
       );
       expect(result.anonymizedAt).toEqual(new Date('2026-07-25'));
       expect(result.media).toEqual({ purged: 0, failed: 0 });
+    });
+
+    it('nenhum valor de PII vai para a auditoria (M-12/B-62)', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        name: 'Fulano', phone: '5511999999999', email: 'fulano@example.com', anonymizedAt: null,
+      });
+      mockPrisma.contact.update.mockResolvedValueOnce({ anonymizedAt: new Date() });
+
+      await service.remove(companyA, 'contact-1', requesterId);
+
+      const recorded = JSON.stringify(mockAuditLog.record.mock.calls[0][0]);
+      expect(recorded).not.toContain('Fulano');
+      expect(recorded).not.toContain('5511999999999');
+      expect(recorded).not.toContain('fulano@example.com');
+    });
+
+    it('limpa o telefone do metadata das mensagens e o nome das notificações das conversas do contato (M-12/B-62)', async () => {
+      mockPrisma.contact.findFirst.mockResolvedValueOnce({
+        name: 'Fulano', phone: '5511999999999', email: null, anonymizedAt: null,
+      });
+      mockPrisma.contact.update.mockResolvedValueOnce({ anonymizedAt: new Date() });
+      mockPrisma.conversation.findMany.mockResolvedValueOnce([{ id: 'conv-1' }, { id: 'conv-2' }]);
+      mockPrisma.$executeRaw.mockResolvedValueOnce(7).mockResolvedValueOnce(2);
+
+      const result = await service.remove(companyA, 'contact-1', requesterId);
+
+      expect(mockPrisma.conversation.findMany).toHaveBeenCalledWith({
+        where: { companyId: companyA, contactId: 'contact-1' },
+        select: { id: true },
+      });
+      expect(mockPrisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(result.traces).toEqual({ messages: 7, notifications: 2 });
     });
 
     // B-29/LGPD: a PII sozinha no Postgres não basta — a mídia (foto, áudio,

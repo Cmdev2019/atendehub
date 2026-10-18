@@ -240,6 +240,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d minio
 
 ## Retenção de dados e LGPD (B-17)
 
+> **Atualização 2026-10-17 (B-62):** a fonte atual é
+> [`docs/35-LGPD/MAPA-DE-DADOS-PESSOAIS.md`](../35-LGPD/MAPA-DE-DADOS-PESSOAIS.md) — onde
+> ficam os dados, o que a anonimização apaga e o **procedimento de purga da cópia na
+> Evolution** (`infra/postgres/lgpd-purga-evolution.sql`), que não é automática. Os gaps
+> B-29 e B-30 citados abaixo já foram fechados; esta seção fica como histórico do B-17.
+
 O produto processa PII de terceiros via WhatsApp (nome, telefone, mídia,
 conteúdo de conversa) sem nenhum consentimento explícito coletado — dados
 chegam via webhook da Evolution API a partir do próprio uso do WhatsApp

@@ -40,6 +40,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - PDFs de relatório do controle de versão (movidos para `docs/99-Arquivo/relatorios-pdf/`, ignorados)
 
 ### Segurança
+- **B-62 (2026-10-17):** anonimização de contato sem rastros de PII. Além do cadastro e da mídia, agora
+  remove o telefone de `messages.metadata.remoteJid`, troca o nome do contato no texto das notificações
+  e deixa de gravar nome/telefone/e-mail no próprio registro de auditoria da anonimização. Novo mapa
+  técnico dos dados pessoais (`docs/35-LGPD/MAPA-DE-DADOS-PESSOAIS.md`) e script de purga da cópia
+  que a Evolution guarda (`infra/postgres/lgpd-purga-evolution.sql`), que cobre conversas diretas,
+  grupos, identificadores `@lid` e conexões antigas. Base legal e prazos de retenção seguem pendentes de
+  decisão do encarregado/jurídico.
 - **B-40 (2026-10-17):** escopo de conversas por departamento. Antes, qualquer atendente lia, assumia,
   respondia, anotava e encerrava qualquer conversa da empresa, exportava relatórios e recebia em tempo
   real todas as mensagens. Agora ADMIN e SUPERVISOR veem tudo; AGENT vê as conversas atribuídas a ele,
