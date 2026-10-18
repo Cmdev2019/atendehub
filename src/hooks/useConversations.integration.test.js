@@ -136,6 +136,25 @@ describe('useConversations Integration Tests', () => {
     await waitFor(() => expect(result.current.stats.totalActive).toBe(5));
   });
 
+  // B-84 (M-10): rajada de eventos vira uma busca de métricas só
+  it('rajada de eventos de socket gera uma única busca de métricas', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data: [{ id: '1', contact: 'João', messages: [] }] });
+    mockApiClient.getConversationStats.mockResolvedValue({ totalActive: 1 });
+
+    renderHook(() => useConversations());
+    await waitFor(() => expect(mockApiClient.getConversationStats).toHaveBeenCalledTimes(1));
+
+    const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
+    act(() => {
+      handlerOf('conversation.updated')({ conversationId: '1', changes: { status: 'OPEN' } });
+      handlerOf('conversation.assigned')({ conversationId: '1', agentId: 'a1', agent: { id: 'a1', name: 'Ana' } });
+      handlerOf('conversation.updated')({ conversationId: '1', changes: { unreadCount: 0 } });
+    });
+
+    await new Promise((r) => setTimeout(r, 800));
+    expect(mockApiClient.getConversationStats).toHaveBeenCalledTimes(2); // inicial + 1 da rajada
+  });
+
   it('carrega conversas do API ao montar', async () => {
     const mockConversations = [
       {

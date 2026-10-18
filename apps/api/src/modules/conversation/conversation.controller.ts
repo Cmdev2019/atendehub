@@ -21,12 +21,17 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { ConversationScopeGuard } from '../../shared/conversation-scope/conversation-scope.guard';
 import { ConversationScopeService } from '../../shared/conversation-scope/conversation-scope.service';
+import { SingleFlight } from '../../shared/concurrency/single-flight';
 
 // C-10/B-40: ConversationScopeGuard barra (404) toda rota com :id fora do
 // escopo do usuário; listagem e stats filtram pelo mesmo escopo.
 @Controller('conversations')
 @UseGuards(JwtAuthGuard, ConversationScopeGuard)
 export class ConversationController {
+  // B-84 (M-10): GET /stats faz 9 consultas; vários pedidos simultâneos do
+  // mesmo usuário (abas, rajada de eventos) dividem uma só execução.
+  private readonly statsFlight = new SingleFlight<Awaited<ReturnType<ConversationService['getStats']>>>();
+
   constructor(
     private readonly conversationService: ConversationService,
     private readonly tagService: TagService,
@@ -44,7 +49,9 @@ export class ConversationController {
   // interpretado como o :id (rotas Express casam na ordem declarada).
   @Get('stats')
   async getStats(@CurrentUser() user: AuthUserDto) {
-    return this.conversationService.getStats(user.companyId, user.id, await this.scope.conversationWhere(user));
+    return this.statsFlight.run(`${user.companyId}:${user.id}`, async () =>
+      this.conversationService.getStats(user.companyId, user.id, await this.scope.conversationWhere(user)),
+    );
   }
 
   // GET /api/v1/conversations/:id

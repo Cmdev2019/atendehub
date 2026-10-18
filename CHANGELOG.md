@@ -27,6 +27,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-84 (2026-10-18, M-10):** o painel faz bem menos requisições com muitos atendentes conectados. Uma
+  sequência de eventos em tempo real atualiza as métricas e as notificações uma vez só, e o sino de
+  notificações só recarrega quando a conversa é atribuída ao próprio atendente.
 - **B-79 (2026-10-18, M-06):** as mensagens recebidas de contatos diferentes passam a ser processadas em
   paralelo, sem que a conversa de um cliente espere a de outro, e as de um mesmo contato continuam em
   ordem. A hora de cada mensagem recebida passa a ser a do WhatsApp, e não a do processamento.
