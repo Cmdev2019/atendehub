@@ -2,7 +2,7 @@
 
 > **Nome de arquivo:** este documento segue `docs/00-Governanca/CONVENCAO-DE-NOMENCLATURA.md` §2.3
 > (documento normativo dentro de `docs/` → `SCREAMING-KEBAB-CASE.md`, hífen — não underscore). Ver
-> `INCLUSAO_PADROES_ARQUITETURAIS_ATENDEHUB.md` (raiz do repo) para o registro completo dessa decisão.
+> `docs/99-Arquivo/INCLUSAO_PADROES_ARQUITETURAIS_ATENDEHUB.md` para o registro completo dessa decisão.
 
 ## Objetivo
 
