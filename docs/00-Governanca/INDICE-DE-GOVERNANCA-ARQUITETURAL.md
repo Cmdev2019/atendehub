@@ -305,9 +305,8 @@ sem marcação.
 - **Documentos relacionados:** todos — cada ADR nova (`0009`+) preenche um campo "Relação com
   Governança" citando ACR/ABR/AGR/AER/ASNF/ATM/Roadmap explicitamente (`ADR-0000-template.md`).
 - **Dependências:** varia por ADR.
-- **Status:** 10 Aprovadas/Implementadas (status maduro), 2 integralmente Propostas, 6 com status
-  composto (parte implementada, parte proposta) — números exatos em `docs/05-ADR/INDICE.md`
-  "Dashboard executivo".
+- **Status:** números atualizados em `docs/05-ADR/INDICE.md`, "Dashboard executivo" (o valor que
+  ficava aqui envelheceu — B-89).
 - **Localização:** `docs/05-ADR/`.
 
 ### ASM — Architecture Scorecard & Maturity (previsto)

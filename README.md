@@ -7,7 +7,6 @@ Conversas em tempo real · fila de atendimento · auto-atendimento · SLA · rel
 
 [![API CI](https://github.com/Cmdev2019/atendehub/actions/workflows/api-ci.yml/badge.svg)](https://github.com/Cmdev2019/atendehub/actions/workflows/api-ci.yml)
 [![Web CI](https://github.com/Cmdev2019/atendehub/actions/workflows/web-ci.yml/badge.svg)](https://github.com/Cmdev2019/atendehub/actions/workflows/web-ci.yml)
-[![Testes](https://img.shields.io/badge/testes-567%20verdes-success)](#testes)
 
 [Documentação](docs/) · [Roadmap](ROADMAP_ESTABILIZACAO.md) · [Contribuir](CONTRIBUTING.md) · [Segurança](SECURITY.md)
 
@@ -72,10 +71,11 @@ flowchart LR
 **Modelo:** Modular Monolith. Um único deployable com fronteiras internas por domínio, preparado para
 extrair serviços quando houver necessidade real — não antes.
 
-**Multi-tenancy:** toda query filtra por `companyId`. O reforço com Row-Level Security no PostgreSQL
-está registrado como item B-41.
+**Multi-tenancy:** as consultas filtram por `companyId`, e o Row-Level Security do PostgreSQL é a
+rede de proteção nas requisições autenticadas (B-83, [ADR-0010](docs/05-ADR/ADR-0010-row-level-security-como-rede-de-isolamento-multi-tenant.md)).
 
-Detalhamento completo, diagramas C4 e UML em [`docs/04-Arquitetura/`](docs/04-Arquitetura/).
+Padrões e decisões de arquitetura em [`docs/04-Arquitetura/`](docs/04-Arquitetura/) e nas
+[ADRs](docs/05-ADR/INDICE.md).
 
 ---
 
@@ -105,8 +105,8 @@ Detalhamento completo, diagramas C4 e UML em [`docs/04-Arquitetura/`](docs/04-Ar
 ```
 atendehub/
 ├── apps/
-│   └── api/                # Backend NestJS — 18 módulos, 85 rotas
-│       ├── prisma/         #   schema, 6 migrations, seed
+│   └── api/                # Backend NestJS (contagens: node scripts/project-stats.mjs)
+│       ├── prisma/         #   schema, migrations, seed
 │       └── src/
 │           ├── modules/    #   domínios: auth, conversation, message, webhook...
 │           └── shared/     #   logging, prisma, storage, queues, monitoring
@@ -200,7 +200,7 @@ Start-Process powershell -ArgumentList '-NoExit','-File','scripts\dev-front.ps1'
 
 | Serviço | URL | Credenciais |
 |---|---|---|
-| Frontend | http://localhost:3000 | `admin@demo.com` / `Admin@123` |
+| Frontend | http://localhost:3000 | com a API: o admin do seed — a senha é **aleatória** e fica em `apps/api/.seed-credentials-*.txt`. `admin@demo.com` / `Admin@123` só vale no modo demonstração (sem backend) |
 | API | http://localhost:3001/api/v1 | JWT via `/auth/login` |
 | PostgreSQL | `localhost:5432` | `atendehub` / `atendehub_secret` |
 | Redis | `localhost:6379` | senha `redis_secret` |
@@ -214,20 +214,20 @@ Start-Process powershell -ArgumentList '-NoExit','-File','scripts\dev-front.ps1'
 ## Testes
 
 ```bash
-npm test                        # front — 302 testes / 31 suítes
+npm test                        # front
 npm run test:coverage           # front com cobertura
-cd apps/api && npm test         # backend — 265 testes / 30 suítes
-cd apps/api && npm run test:e2e # backend e2e
+cd apps/api && npm test         # backend (com piso de cobertura)
+cd apps/api && npm run test:e2e # backend e2e — Postgres, Redis e MinIO de pé
 ```
 
-Ambas as suítes rodam no CI a cada push e a cada PR.
+Os três rodam na CI a cada push e a cada PR. As contagens não ficam fixadas aqui, porque
+envelheciam (M-24): saem de `node scripts/project-stats.mjs`, publicado no resumo do job `web`.
 
 | Natureza | Estado |
 |---|---|
-| Unitário | ✅ 567 testes verdes |
-| Integração | ⬜ planejado (Testcontainers) |
-| E2E | ⚠️ 1 arquivo — lacuna conhecida |
-| Carga, estresse, segurança | ⬜ planejado |
+| Unitário (front e API) | ✅ na CI, obrigatórios |
+| E2E da API (Postgres, Redis e MinIO reais) | ✅ na CI, obrigatório (`api-e2e`, B-63) |
+| E2E do navegador, carga, segurança | ⬜ planejado |
 
 Estratégia completa em [`docs/22-QA/`](docs/22-QA/) · artefatos em [`docs/23-Testes/`](docs/23-Testes/).
 
@@ -311,8 +311,9 @@ gitGraph
 
 | Etapa | Status check | Gatilho | O que roda | Bloqueia merge? |
 |---|---|---|---|---|
-| **API CI** | `api` | todo push em `master` e todo PR | lint · `tsc --noEmit` · 265 testes | ✅ |
-| **Web CI** | `web` | todo push em `master` e todo PR | 302 testes · `vite build` | ✅ |
+| **API CI** | `api` | todo push em `master` e todo PR | lint · `tsc --noEmit` · testes unitários com piso de cobertura | ✅ |
+| **API e2e** | `api-e2e` | todo push em `master` e todo PR | e2e com Postgres, Redis e MinIO reais | ✅ |
+| **Web CI** | `web` | todo push em `master` e todo PR | testes · `vite build` · números do projeto no resumo | ✅ |
 | **Dependency Audit** | `api-audit` · `web-audit` | todo push em `master`, todo PR e toda segunda-feira | `npm audit` das dependências de produção (falha em nível alto ou crítico) | — informativo |
 | Segurança | — | *planejado* | CodeQL · Trivy · gitleaks | ✅ |
 | E2E | — | *planejado* | Playwright contra staging | ✅ |
@@ -361,8 +362,8 @@ Versionamento semântico: **MAJOR** quebra contrato de API · **MINOR** funciona
 | **v3.0** | IA aplicada | 4 meses | ⬜ |
 | **v4.0** | Marketplace, SDK e mobile | 6 meses | ⬜ |
 
-**Prioridade imediata:** os itens críticos B-38 (bucket de mídia público) e B-39 (retry de webhook
-inoperante), antes de qualquer funcionalidade nova.
+**Estado atual:** o andamento item a item fica no [`ROADMAP_ESTABILIZACAO.md`](ROADMAP_ESTABILIZACAO.md)
+("Próxima ação", no topo).
 
 Roadmap completo com complexidade, dependências e criticidade em
 [`docs/03-Roadmap/PLANO-DE-EVOLUCAO-ENTERPRISE.md`](docs/03-Roadmap/PLANO-DE-EVOLUCAO-ENTERPRISE.md).
@@ -388,7 +389,7 @@ Roadmap completo com complexidade, dependências e criticidade em
 
 [NestJS](https://docs.nestjs.com) · [Prisma](https://www.prisma.io/docs) ·
 [Evolution API](https://doc.evolution-api.com) · [Socket.IO](https://socket.io/docs/v4/) ·
-[Vite](https://vitejs.dev) · [React](https://react.dev) · [Bull](https://docs.bullmq.io)
+[Vite](https://vitejs.dev) · [React](https://react.dev) · [Bull](https://github.com/OptimalBits/bull)
 
 ---
 

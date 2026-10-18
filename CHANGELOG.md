@@ -27,6 +27,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Itens B-38 a B-47 no roadmap, resultado da auditoria técnica de 2026-07-28
 
 ### Alterado
+- **B-89 (2026-10-18, M-24):** documentação revisada contra o código — números do projeto gerados por
+  `scripts/project-stats.mjs` em vez de fixados à mão, README, SECURITY, RUNBOOK e índice de ADRs atualizados.
 - **B-88 (2026-10-18, M-25):** o contrato da API documenta a fila de falhas do webhook (listar, reprocessar,
   descartar), as métricas do webhook e a autenticação como o código a faz; a lista de divergências foi revisada.
 - **B-87 (2026-10-18, M-23):** processo de Git. Ramos mesclados são apagados automaticamente, os PRs do
@@ -61,6 +63,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   (continua proprietária), `SECURITY.md` sem detalhes de falhas não corrigidas e README atualizado
 
 ### Removido
+- **B-89:** os 6 PDFs de relatório que ainda estavam versionados na raiz (ficam só com o responsável).
 - **B-75 (2026-10-18, M-11):** envio de mídia por URL em `POST /conversations/:id/messages` — a rota
   passa a aceitar só texto. Mídia continua por upload (`POST .../messages/media`), que é o que o painel
   usa. Motivo: o servidor buscava a URL informada (risco de SSRF). Impacto: integração que mandava

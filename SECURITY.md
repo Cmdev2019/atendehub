@@ -68,16 +68,23 @@ pendentes são pré-requisito de go-live.
 | ID | Área | Severidade | Corrigido em |
 |---|---|---|---|
 | B-38 | Armazenamento de mídia (bucket com leitura pública) | 🔴 Crítica | 2026-07-29, reforçado em 2026-08-01 |
+| B-50 a B-54 | Correções imediatas da auditoria de 2026-10-16 (Fase 0) | 🔴 Crítica | 2026-10-17 |
+| B-72 a B-75 | Sessões, WebSocket e envio de mídia (Fase 2, grupo 1) | 🟡 Média | 2026-10-18 |
+| B-83 | Rede de proteção do isolamento entre empresas no banco | 🟡 Média | 2026-10-18 |
+
+Detalhes técnicos de cada item ficam fora deste arquivo enquanto o repositório for público.
 
 ## Práticas de segurança do projeto
 
 - Segredos JWT validados no boot; a aplicação **não inicia** em produção com segredo fraco
 - `CORS_ORIGINS` validado no boot; a aplicação **não inicia** com CORS permissivo em produção
-- Refresh token armazenado como hash SHA-256, com rotação e revogação individual
+- Refresh token armazenado como hash SHA-256, com rotação atômica e detecção de reuso (B-72)
+- Troca e reset de senha, logout e desativação encerram as sessões, inclusive no WebSocket (B-72, B-74)
 - Access token revogável via blacklist em Redis
 - Webhook validado com comparação em tempo constante
-- Nível de log travado em código para nunca expor dado pessoal em produção
-- Isolamento multi-tenant aplicado na camada de serviço (filtro por `companyId`)
+- Logs sem dado pessoal por padrão (e-mail e telefone não são logados; ver C-02 no roadmap)
+- Isolamento multi-tenant: filtro por `companyId` na camada de serviço e Row-Level Security no
+  PostgreSQL como rede de proteção nas requisições autenticadas (B-83)
 
 ## Divulgação responsável
 
