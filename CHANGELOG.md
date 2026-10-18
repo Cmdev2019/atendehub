@@ -173,6 +173,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   repo) para o relatório completo.
 
 ### Corrigido
+- **B-80 (2026-10-18, M-27 / B-46):** a busca de foto de perfil dos contatos deixa de acumular memória a
+  cada contato novo e passa a valer para todas as réplicas da API. A contagem de conexões em tempo real
+  passa a somar todas as réplicas. Internamente, um só cliente Redis atende os três usos de estado simples.
 - **B-78 (2026-10-18, M-05):** auto-atendimento. A mensagem do robô não aparece mais duplicada como se
   fosse do atendente, e o texto do menu não substitui mais a prévia da conversa na lista. O cliente que
   manda áudio, foto ou uma resposta inválida com o menu aberto não tem mais a conversa encerrada "por

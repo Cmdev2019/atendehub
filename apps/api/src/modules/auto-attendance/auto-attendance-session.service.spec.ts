@@ -1,27 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
+import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 
-// Mesmo padrão do token-blacklist.service.spec.ts (auth) — o service abre seu
-// próprio cliente ioredis no construtor, então mockamos o módulo inteiro com
-// uma store em memória isolada por teste.
-jest.mock('ioredis', () => ({
-  Redis: jest.fn().mockImplementation(() => {
-    const store = new Map<string, string>();
-    return {
-      on: jest.fn(),
-      setex: jest.fn(async (key: string, _ttl: number, value: string) => {
-        store.set(key, value);
-        return 'OK';
-      }),
-      get: jest.fn(async (key: string) => store.get(key) ?? null),
-      del: jest.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
-      quit: jest.fn(async () => 'OK'),
-    };
-  }),
-}));
-
-const mockConfig = { get: jest.fn().mockReturnValue(undefined) };
+// B-80: o serviço recebe o cliente Redis compartilhado (REDIS_CLIENT) — aqui
+// uma store em memória isolada por teste no lugar dele.
+function createFakeRedis() {
+  const store = new Map<string, string>();
+  return {
+    setex: jest.fn(async (key: string, _ttl: number, value: string) => {
+      store.set(key, value);
+      return 'OK';
+    }),
+    get: jest.fn(async (key: string) => store.get(key) ?? null),
+    exists: jest.fn(async (key: string) => (store.has(key) ? 1 : 0)),
+    del: jest.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
+    keys: jest.fn(async (pattern: string) => {
+      const prefix = pattern.replace('*', '');
+      return [...store.keys()].filter((k) => k.startsWith(prefix));
+    }),
+  };
+}
 
 describe('AutoAttendanceSessionService', () => {
   let service: AutoAttendanceSessionService;
@@ -30,7 +28,7 @@ describe('AutoAttendanceSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutoAttendanceSessionService,
-        { provide: ConfigService, useValue: mockConfig },
+        { provide: REDIS_CLIENT, useFactory: createFakeRedis },
       ],
     }).compile();
 

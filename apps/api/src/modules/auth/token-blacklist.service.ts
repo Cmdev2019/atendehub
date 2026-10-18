@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 
 /**
  * Serviço de blacklist de access tokens usando Redis.
@@ -11,29 +11,16 @@ import { Redis } from 'ioredis';
  *
  * O Redis gerencia automaticamente a expiração usando TTL — tokens expirados
  * naturalmente são removidos da blacklist, economizando memória.
+ *
+ * B-80: usa o cliente Redis compartilhado (RedisModule) em vez de abrir o
+ * próprio.
  */
 @Injectable()
 export class TokenBlacklistService {
   private readonly logger = new Logger(TokenBlacklistService.name);
-  private readonly redis: Redis;
   private readonly keyPrefix = 'blacklist:token:';
 
-  constructor(private readonly config: ConfigService) {
-    this.redis = new Redis({
-      host: this.config.get<string>('REDIS_HOST', 'localhost'),
-      port: this.config.get<number>('REDIS_PORT', 6379),
-      password: this.config.get<string>('REDIS_PASSWORD'),
-      maxRetriesPerRequest: 3,
-    });
-
-    this.redis.on('error', (err) => {
-      this.logger.error(`Redis error: ${err.message}`);
-    });
-
-    this.redis.on('ready', () => {
-      this.logger.log('TokenBlacklistService conectado ao Redis');
-    });
-  }
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
   /**
    * Adiciona um access token à blacklist.
@@ -109,12 +96,5 @@ export class TokenBlacklistService {
       this.logger.error(`Falha ao contar tokens na blacklist: ${err.message}`);
       return 0;
     }
-  }
-
-  /**
-   * Cleanup ao destruir o serviço (shutdown graceful).
-   */
-  async onModuleDestroy() {
-    await this.redis.quit();
   }
 }

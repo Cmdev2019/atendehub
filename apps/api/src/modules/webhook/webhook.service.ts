@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { MessageType, MessageStatus, SenderType } from '@prisma/client';
@@ -70,9 +72,11 @@ export class WebhookService {
 
   // Throttle da busca de foto de perfil: no máximo 1 tentativa por contato
   // a cada 6h (contatos sem foto/privacidade sempre retornam null — sem o
-  // throttle seria 1 chamada à Evolution por mensagem recebida)
-  private readonly avatarFetchedAt = new Map<string, number>();
+  // throttle seria 1 chamada à Evolution por mensagem recebida). B-80: chave
+  // no Redis com TTL — antes era um Map do processo que nunca era limpo
+  // (crescia a cada contato) e, com várias réplicas, valia por réplica.
   private static readonly AVATAR_RETRY_MS = 6 * 60 * 60 * 1000;
+  private static readonly AVATAR_KEY_PREFIX = 'avatar:fetched:';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,6 +89,7 @@ export class WebhookService {
     private readonly autoAttendanceEngine: AutoAttendanceEngineService,
     @InjectQueue(QUEUE_NAMES.MEDIA_DOWNLOAD)
     private readonly mediaQueue: Queue<MediaDownloadJobData>,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   // ── Entry point — roteia pelo tipo de evento ──────────────────────────────
@@ -638,9 +643,13 @@ export class WebhookService {
     phone: string,
     contactId: string,
   ): Promise<void> {
-    const last = this.avatarFetchedAt.get(contactId);
-    if (last && Date.now() - last < WebhookService.AVATAR_RETRY_MS) return;
-    this.avatarFetchedAt.set(contactId, Date.now());
+    // SET NX com expiração: só quem cria a chave busca — atômico entre
+    // réplicas. Redis fora do ar → não busca (melhor sem foto que inundar a
+    // Evolution com uma chamada por mensagem).
+    const acquired = await this.redis
+      .set(WebhookService.AVATAR_KEY_PREFIX + contactId, '1', 'PX', WebhookService.AVATAR_RETRY_MS, 'NX')
+      .catch(() => null);
+    if (acquired !== 'OK') return;
 
     const url = await this.evolutionService.fetchProfilePictureUrl(sessionName, phone);
     if (!url) return;

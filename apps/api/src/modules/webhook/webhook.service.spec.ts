@@ -17,6 +17,7 @@ describe('WebhookService — extractPhoneFromJid', () => {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
   );
 
   const extract = (jid?: string | null) => (service as any).extractPhoneFromJid(jid);
@@ -96,6 +97,8 @@ describe('WebhookService — processamento de eventos', () => {
     emitMessageUpdated: jest.fn(),
   };
   const mockMediaQueue = { add: jest.fn() };
+  // B-80: throttle da foto de perfil no Redis (SET NX com TTL)
+  const mockRedis = { set: jest.fn().mockResolvedValue('OK') };
   // B-78: o webhook só enfileira a reação do robô (kind greeting/reply/activity)
   const mockAutoAttendanceEngine = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const enqueuedKinds = () => mockAutoAttendanceEngine.enqueue.mock.calls.map(([, job]) => job.kind);
@@ -117,6 +120,7 @@ describe('WebhookService — processamento de eventos', () => {
       mockEventsService as any,
       mockAutoAttendanceEngine as any,
       mockMediaQueue as any,
+      mockRedis as any,
     );
     mockPrisma.whatsAppConnection.findUnique.mockResolvedValue(connection);
   });
@@ -647,6 +651,71 @@ describe('WebhookService — processamento de eventos', () => {
         'msg-media-2',
         expect.objectContaining({ kind: 'activity', conversationId: 'conv-1' }),
       );
+    });
+
+    // B-80 (M-27 / B-46): o throttle da foto de perfil era um Map do processo,
+    // nunca limpo; agora é uma chave no Redis com TTL, atômica entre réplicas.
+    describe('foto de perfil (throttle no Redis)', () => {
+      const flush = () => new Promise((resolve) => setImmediate(resolve));
+      const newContactWithoutAvatar = () => {
+        mockContactService.upsertFromWebhook.mockResolvedValueOnce({
+          id: 'contact-sem-foto',
+          name: 'Cliente',
+          phone: '5512999999999',
+          isBlocked: false,
+          avatarUrl: null,
+        });
+        mockConversationService.upsertFromWebhook.mockResolvedValueOnce({
+          conversation: oldConversation,
+          isNew: false,
+          queue: null,
+        });
+        mockMessageService.createFromWebhook.mockResolvedValueOnce({
+          id: 'msg-av',
+          status: 'DELIVERED',
+          sentAt: new Date(),
+          isNew: true,
+        });
+      };
+      const receive = () =>
+        service.handleEvent({
+          event: 'MESSAGES_UPSERT',
+          instance: 'session-1',
+          data: {
+            key: { remoteJid: '5512999999999@s.whatsapp.net', fromMe: false, id: 'wa-av' },
+            message: { conversation: 'Oi' },
+          },
+        });
+
+      it('busca a foto quando ganha a chave (SET NX com TTL de 6h)', async () => {
+        newContactWithoutAvatar();
+        mockEvolutionService.fetchProfilePictureUrl.mockResolvedValueOnce(null);
+
+        await receive();
+        await flush();
+
+        expect(mockRedis.set).toHaveBeenCalledWith(
+          'avatar:fetched:contact-sem-foto',
+          '1',
+          'PX',
+          6 * 60 * 60 * 1000,
+          'NX',
+        );
+        expect(mockEvolutionService.fetchProfilePictureUrl).toHaveBeenCalledWith('session-1', '5512999999999');
+      });
+
+      it.each([
+        ['chave já existe (buscada há menos de 6h, em qualquer réplica)', () => mockRedis.set.mockResolvedValueOnce(null)],
+        ['Redis fora do ar', () => mockRedis.set.mockRejectedValueOnce(new Error('ECONNREFUSED'))],
+      ])('não busca a foto: %s', async (_label, arrange) => {
+        newContactWithoutAvatar();
+        arrange();
+
+        await receive();
+        await flush();
+
+        expect(mockEvolutionService.fetchProfilePictureUrl).not.toHaveBeenCalled();
+      });
     });
 
     it('texto não enfileira download de mídia', async () => {
