@@ -9,7 +9,6 @@ import {
   Logger,
   ForbiddenException,
   InternalServerErrorException,
-  UseGuards,
   Header,
   Inject,
 } from '@nestjs/common';
@@ -21,7 +20,6 @@ import { Queue } from 'bull';
 import { Role } from '@prisma/client';
 import { timingSafeEqual, createHash } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { WebhookJobData } from './webhook.processor';
@@ -153,7 +151,6 @@ export class WebhookController {
   // réplica, ver B-46) + profundidade AO VIVO das duas filas, direto do
   // Bull/Redis. Formato de exposição de texto do Prometheus.
   @Get('metrics')
-  @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async metrics(): Promise<string> {

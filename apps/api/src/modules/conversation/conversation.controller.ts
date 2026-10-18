@@ -16,7 +16,6 @@ import { TagService } from '../tag/tag.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { ConversationScopeGuard } from '../../shared/conversation-scope/conversation-scope.guard';
@@ -26,7 +25,7 @@ import { SingleFlight } from '../../shared/concurrency/single-flight';
 // C-10/B-40: ConversationScopeGuard barra (404) toda rota com :id fora do
 // escopo do usuário; listagem e stats filtram pelo mesmo escopo.
 @Controller('conversations')
-@UseGuards(JwtAuthGuard, ConversationScopeGuard)
+@UseGuards(ConversationScopeGuard)
 export class ConversationController {
   // B-84 (M-10): GET /stats faz 9 consultas; vários pedidos simultâneos do
   // mesmo usuário (abas, rajada de eventos) dividem uma só execução.

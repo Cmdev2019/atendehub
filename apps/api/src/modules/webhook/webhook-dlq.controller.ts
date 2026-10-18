@@ -1,8 +1,6 @@
-import { Controller, Get, Post, Delete, Param, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { WebhookDlqService } from './webhook-dlq.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
@@ -11,7 +9,6 @@ import { AuthUserDto } from '../auth/dto/auth-response.dto';
 // Endpoint de reprocessamento manual pedido no critério de aceite do item —
 // ADMIN da própria empresa (nunca cross-tenant, ver WebhookDlqService).
 @Controller('webhooks/dlq')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class WebhookDlqController {
   constructor(private readonly dlqService: WebhookDlqService) {}
 

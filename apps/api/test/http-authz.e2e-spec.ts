@@ -7,6 +7,7 @@ import * as http from 'http';
 import { AppModule } from '../src/app.module';
 import { applyHttpPipeline } from '../src/shared/http/http-pipeline';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
+import { AccessSessionService } from '../src/modules/auth/access-session.service';
 
 /**
  * M-22/B-63 — Autorização pela API HTTP de verdade (AppModule inteiro).
@@ -168,6 +169,16 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     expect(await call('PATCH', `/conversations/${conv.encerrada}/assign`, 'adminA', body)).toBe(400);
     expect(await call('PATCH', `/conversations/${conv.resolvida}/assign`, 'adminA', body)).toBe(409);
     expect(await call('PATCH', `/conversations/${conv.resolvida}/status`, 'adminA', { status: 'OPEN' })).toBe(409);
+  });
+
+  // B-95 (L-06): os guards globais não rodam de novo no controller — antes,
+  // cada requisição validava a sessão (banco + Redis) duas vezes.
+  it('cada requisição autenticada valida a sessão uma vez só', async () => {
+    const spy = jest.spyOn(app.get(AccessSessionService), 'validate');
+    expect(await call('GET', '/users', 'supervisorA')).toBe(200);
+    expect(await call('GET', `/conversations/${conv.juridico}`, 'agentJur')).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
   });
 
   it('validação global: campo fora do DTO responde 400', async () => {
