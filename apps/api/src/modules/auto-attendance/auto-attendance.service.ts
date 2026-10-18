@@ -1,8 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { UpdateAutoAttendanceFlowDto } from './dto/update-auto-attendance-flow.dto';
 import { CreateMenuOptionDto } from './dto/create-menu-option.dto';
 import { UpdateMenuOptionDto } from './dto/update-menu-option.dto';
+
+// B-99 (L-11): duas opções com o mesmo `order` batiam no @@unique([flowId,
+// order]) e respondiam 500
+function rethrowDuplicateOrder(err: unknown): never {
+  if (isUniqueConstraintViolation(err)) {
+    throw new ConflictException('Já existe uma opção do menu com essa ordem');
+  }
+  throw err;
+}
 
 const FLOW_SELECT = {
   id: true,
@@ -92,17 +102,19 @@ export class AutoAttendanceService {
 
     await this.validateTarget(companyId, dto.action, dto.departmentId, dto.queueId);
 
-    return this.prisma.autoAttendanceMenuOption.create({
-      data: {
-        flowId: flow.id,
-        order: dto.order,
-        label: dto.label,
-        action: dto.action,
-        departmentId: dto.departmentId,
-        queueId: dto.queueId,
-      },
-      select: OPTION_SELECT,
-    });
+    return this.prisma.autoAttendanceMenuOption
+      .create({
+        data: {
+          flowId: flow.id,
+          order: dto.order,
+          label: dto.label,
+          action: dto.action,
+          departmentId: dto.departmentId,
+          queueId: dto.queueId,
+        },
+        select: OPTION_SELECT,
+      })
+      .catch(rethrowDuplicateOrder);
   }
 
   async updateMenuOption(companyId: string, optionId: string, dto: UpdateMenuOptionDto) {
@@ -117,11 +129,13 @@ export class AutoAttendanceService {
       );
     }
 
-    return this.prisma.autoAttendanceMenuOption.update({
-      where: { id: optionId },
-      data: dto,
-      select: OPTION_SELECT,
-    });
+    return this.prisma.autoAttendanceMenuOption
+      .update({
+        where: { id: optionId },
+        data: dto,
+        select: OPTION_SELECT,
+      })
+      .catch(rethrowDuplicateOrder);
   }
 
   async removeMenuOption(companyId: string, optionId: string) {
@@ -188,13 +202,19 @@ export class AutoAttendanceService {
     departmentId?: string,
     queueId?: string,
   ) {
-    if (action === 'ROUTE_TO_DEPARTMENT') {
-      if (!departmentId) throw new BadRequestException('departmentId é obrigatório para ROUTE_TO_DEPARTMENT');
+    if (action === 'ROUTE_TO_DEPARTMENT' && !departmentId) {
+      throw new BadRequestException('departmentId é obrigatório para ROUTE_TO_DEPARTMENT');
+    }
+    if (action === 'ROUTE_TO_QUEUE' && !queueId) {
+      throw new BadRequestException('queueId é obrigatório para ROUTE_TO_QUEUE');
+    }
+    // B-99 (L-11): todo id informado é conferido contra a empresa, seja qual
+    // for a ação — antes, ROUTE_TO_QUEUE aceitava departmentId de outra empresa.
+    if (departmentId) {
       const dept = await this.prisma.department.findFirst({ where: { id: departmentId, companyId } });
       if (!dept) throw new BadRequestException('Departamento não encontrado');
     }
-    if (action === 'ROUTE_TO_QUEUE') {
-      if (!queueId) throw new BadRequestException('queueId é obrigatório para ROUTE_TO_QUEUE');
+    if (queueId) {
       const queue = await this.prisma.queue.findFirst({ where: { id: queueId, companyId } });
       if (!queue) throw new BadRequestException('Fila não encontrada');
     }

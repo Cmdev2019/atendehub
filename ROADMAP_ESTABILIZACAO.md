@@ -180,6 +180,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-96 | L-07 | Login com e-mail que não é texto responde 400, não 500; senha nova limitada a 72 bytes; boot com tratamento de erro | ✅ 2026-10-18 |
 | B-97 | L-08 | Blacklist de tokens guarda o SHA-256 do token, não o JWT inteiro; sai o count() com KEYS | ✅ 2026-10-18 |
 | B-98 | L-10 | SLA: marca de violação zerada ao sair da espera; sem SLA para conversa aberta pela empresa nem fora do expediente | ✅ 2026-10-18 |
+| B-99 | L-11 | Auto-atendimento: businessHours validado; todo id da opção conferido contra a empresa; order repetido vira 409 | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 
