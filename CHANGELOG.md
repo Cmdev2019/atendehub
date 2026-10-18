@@ -28,7 +28,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ### Alterado
 - **2026-10-18:** o check `api-e2e` (B-63) passa a ser obrigatório no `master`, junto com `api` e `web`.
-  Planejamento da Fase 2 (filas de atendimento, B-65 a B-68) registrado no roadmap.
+  Filas de atendimento (B-65 a B-68) registradas no roadmap como evolução, depois da Fase 2.
 - **B-64 (2026-10-18):** mídia de produção no **Cloudflare R2**. A imagem do MinIO usada no projeto saiu
   do Docker Hub e do quay.io, e um servidor novo não subia a stack. O MinIO fica só em desenvolvimento e
   na CI (`bitnamilegacy/minio`, mesmo build, fixado por digest, no `docker-compose.override.yml`). A API
