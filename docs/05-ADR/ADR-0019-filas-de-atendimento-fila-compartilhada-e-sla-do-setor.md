@@ -460,6 +460,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
 | 2026-10-19 | Criação — regras do responsável (fila compartilhada, Online/Offline, quem pode transferir, SLA da espera e SLA do atendimento por setor, setores no cadastro do atendente) e proposta técnica (rotas, campos, relógio no expediente, plano por item) | 1.0 |
 | 2026-10-19 | Aprovada pelo responsável no PR #104 | 1.0 |
 | 2026-10-19 | **B-65 implementado** (PR #105, regras 8 a 12): `users.availability`, `AvailabilityService` com troca condicional, `PATCH /users/me/availability`, Offline no logout e na desativação, evento `user.availability` e seletor no topo do painel. Validado por e2e com Socket.IO real (`websocket-session.e2e-spec.ts`) | 1.0 |
+| 2026-10-19 | **B-113 implementado** (regra 22): `departmentIds` no cadastro e na edição do usuário (a lista substitui), setor de outra empresa recusado, e mudar os setores — também pela tela de Grupos — reconecta o socket com as salas novas. Validado por e2e HTTP (`http-authz.e2e-spec.ts`) | 1.0 |
 
 ## Referências
 

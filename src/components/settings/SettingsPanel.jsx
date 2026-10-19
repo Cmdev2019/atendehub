@@ -303,25 +303,58 @@ function WhatsappSection() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Seção: Usuários (criação + níveis de acesso)
 // ─────────────────────────────────────────────────────────────────────────────
+const EMPTY_USER_FORM = { name: '', email: '', password: '', role: 'AGENT', departmentIds: [] };
+
+const toggleId = (ids, id) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
+
+const sectorsLabel = (u) =>
+  u.departments?.length ? `Setores: ${u.departments.map((d) => d.name).join(', ')}` : 'Sem setor';
+
+// B-113 (ADR-0019, regra 22): os setores que o atendente atende, um ou vários
+function SectorChoices({ legend, departments, selected, onToggle }) {
+  return h(
+    'fieldset',
+    { className: 'settings-sectors' },
+    h('legend', null, legend),
+    departments.map((d) =>
+      h(
+        'label',
+        { key: d.id, className: 'settings-sector-option' },
+        h('input', { type: 'checkbox', checked: selected.includes(d.id), onChange: () => onToggle(d.id) }),
+        ` ${d.name}`,
+      ),
+    ),
+  );
+}
+
 function UsersSection({ canManage }) {
   const { user: currentUser } = useAuth();
   const confirm = useConfirm();
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'AGENT' });
+  const [form, setForm] = useState(EMPTY_USER_FORM);
+  // B-113: setores em edição numa linha — { userId, departmentIds }
+  const [sectorEdit, setSectorEdit] = useState(null);
   // Senha temporária gerada pelo reset administrativo (B-26) — só existe em
   // memória, nunca é logada nem persistida; some ao fechar ou trocar de tela.
   const [resetResult, setResetResult] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      setUsers(unwrap(await apiClient.getUsers()));
+      const [us, deps] = await Promise.all([
+        apiClient.getUsers(),
+        // Só quem gerencia escolhe setores; sem a lista, os usuários aparecem igual
+        canManage ? apiClient.getDepartments().catch(() => []) : [],
+      ]);
+      setUsers(unwrap(us));
+      setDepartments(unwrap(deps));
       setError(null);
     } catch (e) {
       setError(errMsg(e));
     }
-  }, []);
+  }, [canManage]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -340,13 +373,24 @@ function UsersSection({ canManage }) {
     setBusy(true);
     try {
       await apiClient.createUser(form);
-      setForm({ name: '', email: '', password: '', role: 'AGENT' });
+      setForm(EMPTY_USER_FORM);
       setError(null);
       load();
     } catch (err) {
       setError(errMsg(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveSectors = async () => {
+    try {
+      await apiClient.updateUser(sectorEdit.userId, { departmentIds: sectorEdit.departmentIds });
+      setSectorEdit(null);
+      setError(null);
+      load();
+    } catch (err) {
+      setError(errMsg(err));
     }
   };
 
@@ -435,6 +479,12 @@ function UsersSection({ canManage }) {
         { className: 'settings-input', value: form.role, onChange: setField('role') },
         ASSIGNABLE_ROLES.map((r) => h('option', { key: r, value: r }, ROLE_LABELS[r])),
       ),
+      departments.length > 0 && h(SectorChoices, {
+        legend: 'Setores que atende',
+        departments,
+        selected: form.departmentIds,
+        onToggle: (id) => setForm((f) => ({ ...f, departmentIds: toggleId(f.departmentIds, id) })),
+      }),
       h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy },
         h(Icon, { name: 'plus', size: 14 }), ' Criar usuário'),
     ),
@@ -445,48 +495,85 @@ function UsersSection({ canManage }) {
       users.map((u) =>
         h(
           'div',
-          { key: u.id, className: `settings-item${u.isActive === false ? ' inactive' : ''}` },
+          { key: u.id, className: `settings-item column${u.isActive === false ? ' inactive' : ''}` },
           h(
             'div',
-            { className: 'settings-item-main' },
-            h('div', { className: 'settings-row-title' }, u.name),
-            h('div', { className: 'settings-hint' }, u.email),
+            { className: 'settings-item-row' },
+            h(
+              'div',
+              { className: 'settings-item-main' },
+              h('div', { className: 'settings-row-title' }, u.name),
+              h('div', { className: 'settings-hint' }, u.email),
+              h('div', { className: 'settings-hint' }, sectorsLabel(u)),
+            ),
+            h('span', {
+              className: `settings-badge ${u.availability === 'ONLINE' ? 'ok' : 'off'}`,
+              title: 'Estado escolhido pelo próprio usuário',
+            }, AVAILABILITY_LABELS[u.availability === 'ONLINE' ? 'ONLINE' : 'OFFLINE']),
+            canManage && u.role !== 'SUPER_ADMIN'
+              ? h(
+                  'select',
+                  {
+                    className: 'settings-input compact',
+                    value: u.role,
+                    onChange: (e) => changeRole(u.id, e.target.value),
+                    title: 'Nível de acesso',
+                  },
+                  ASSIGNABLE_ROLES.map((r) => h('option', { key: r, value: r }, ROLE_LABELS[r])),
+                )
+              : h('span', { className: 'settings-badge' }, ROLE_LABELS[u.role] ?? u.role),
+            canManage && h(
+              'div',
+              { className: 'settings-item-actions' },
+              h('button', {
+                className: 'settings-btn', type: 'button',
+                title: 'Escolher os setores que este usuário atende',
+                'aria-expanded': sectorEdit?.userId === u.id,
+                onClick: () => setSectorEdit(
+                  sectorEdit?.userId === u.id
+                    ? null
+                    : { userId: u.id, departmentIds: (u.departments ?? []).map((d) => d.id) },
+                ),
+              }, h(Icon, { name: 'users', size: 14 }), ' Setores'),
+              u.id !== currentUser?.id && h('button', {
+                className: 'settings-btn', type: 'button', onClick: () => resetPassword(u),
+                title: 'Gerar senha temporária para este usuário',
+              }, h(Icon, { name: 'lock', size: 14 }), ' Resetar senha'),
+              // Backend recusa autodesativação/autoexclusão (ver user.service.ts)
+              // — esconder os botões na própria linha em vez de deixá-los
+              // clicáveis só pra sempre falhar, mesmo padrão do "Resetar senha".
+              u.id !== currentUser?.id && h('button', {
+                className: 'settings-btn', type: 'button', onClick: () => toggleActive(u),
+                title: u.isActive === false ? 'Reativar usuário' : 'Desativar usuário',
+              }, h(Icon, { name: u.isActive === false ? 'play' : 'pause', size: 14 }),
+                u.isActive === false ? ' Ativar' : ' Desativar'),
+              u.id !== currentUser?.id && h('button', {
+                className: 'settings-btn danger', type: 'button', onClick: () => remove(u),
+                title: 'Excluir usuário',
+              }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
+            ),
           ),
-          h('span', {
-            className: `settings-badge ${u.availability === 'ONLINE' ? 'ok' : 'off'}`,
-            title: 'Estado escolhido pelo próprio usuário',
-          }, AVAILABILITY_LABELS[u.availability === 'ONLINE' ? 'ONLINE' : 'OFFLINE']),
-          canManage && u.role !== 'SUPER_ADMIN'
-            ? h(
-                'select',
-                {
-                  className: 'settings-input compact',
-                  value: u.role,
-                  onChange: (e) => changeRole(u.id, e.target.value),
-                  title: 'Nível de acesso',
-                },
-                ASSIGNABLE_ROLES.map((r) => h('option', { key: r, value: r }, ROLE_LABELS[r])),
-              )
-            : h('span', { className: 'settings-badge' }, ROLE_LABELS[u.role] ?? u.role),
-          canManage && h(
+
+          // B-113: edição dos setores, na própria linha
+          sectorEdit?.userId === u.id && h(
             'div',
-            { className: 'settings-item-actions' },
-            u.id !== currentUser?.id && h('button', {
-              className: 'settings-btn', type: 'button', onClick: () => resetPassword(u),
-              title: 'Gerar senha temporária para este usuário',
-            }, h(Icon, { name: 'lock', size: 14 }), ' Resetar senha'),
-            // Backend recusa autodesativação/autoexclusão (ver user.service.ts)
-            // — esconder os botões na própria linha em vez de deixá-los
-            // clicáveis só pra sempre falhar, mesmo padrão do "Resetar senha".
-            u.id !== currentUser?.id && h('button', {
-              className: 'settings-btn', type: 'button', onClick: () => toggleActive(u),
-              title: u.isActive === false ? 'Reativar usuário' : 'Desativar usuário',
-            }, h(Icon, { name: u.isActive === false ? 'play' : 'pause', size: 14 }),
-              u.isActive === false ? ' Ativar' : ' Desativar'),
-            u.id !== currentUser?.id && h('button', {
-              className: 'settings-btn danger', type: 'button', onClick: () => remove(u),
-              title: 'Excluir usuário',
-            }, h(Icon, { name: 'trash', size: 15, label: 'Excluir' })),
+            { className: 'settings-members' },
+            departments.length === 0
+              ? h('p', { className: 'settings-hint' }, 'Nenhum setor criado ainda — crie em Grupos (setores).')
+              : h(SectorChoices, {
+                  legend: `Setores que ${u.name} atende`,
+                  departments,
+                  selected: sectorEdit.departmentIds,
+                  onToggle: (id) => setSectorEdit((s) => ({ ...s, departmentIds: toggleId(s.departmentIds, id) })),
+                }),
+            h(
+              'div',
+              { className: 'settings-form-row' },
+              h('button', { className: 'settings-btn primary', type: 'button', onClick: saveSectors },
+                h(Icon, { name: 'check', size: 14 }), ' Salvar setores'),
+              h('button', { className: 'settings-btn', type: 'button', onClick: () => setSectorEdit(null) },
+                h(Icon, { name: 'x', size: 14 }), ' Cancelar'),
+            ),
           ),
         ),
       ),

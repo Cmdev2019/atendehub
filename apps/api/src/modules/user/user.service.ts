@@ -60,6 +60,16 @@ const USER_SELECT = {
   updatedAt: true,
 };
 
+// B-113: setores de cada usuário — a tela de Usuários mostra e edita
+const DEPARTMENTS_SELECT = {
+  departments: {
+    select: { id: true, name: true, color: true },
+    orderBy: { name: 'asc' as const },
+  },
+};
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
+
 @Injectable()
 export class UserService {
   constructor(
@@ -91,7 +101,7 @@ export class UserService {
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        select: USER_SELECT,
+        select: { ...USER_SELECT, ...DEPARTMENTS_SELECT },
         orderBy: { name: 'asc' },
         skip,
         take: limit,
@@ -114,16 +124,24 @@ export class UserService {
   async findOne(companyId: string, id: string) {
     const user = await this.prisma.user.findFirst({
       where: { id, companyId },
-      select: {
-        ...USER_SELECT,
-        departments: {
-          select: { id: true, name: true, color: true },
-        },
-      },
+      select: { ...USER_SELECT, ...DEPARTMENTS_SELECT },
     });
 
     if (!user) throw new NotFoundException('Usuário não encontrado');
     return user;
+  }
+
+  // ── Setores informados no cadastro/edição (B-113) ─────────────────────────
+  // Todos precisam ser desta empresa. Com o RLS (B-83), o setor de outra
+  // empresa nem entraria na contagem, mas o filtro explícito é a regra.
+  private async assertCompanyDepartments(companyId: string, departmentIds: string[]) {
+    if (departmentIds.length === 0) return;
+    const found = await this.prisma.department.count({
+      where: { companyId, id: { in: departmentIds } },
+    });
+    if (found !== departmentIds.length) {
+      throw new BadRequestException('Setor não encontrado nesta empresa');
+    }
   }
 
   // ── Criar usuário ─────────────────────────────────────────────────────────
@@ -161,6 +179,9 @@ export class UserService {
       throw new ForbiddenException('Não é permitido criar usuário SUPER_ADMIN');
     }
 
+    const departmentIds = dto.departmentIds ?? [];
+    await this.assertCompanyDepartments(companyId, departmentIds);
+
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     const created = await this.prisma.user.create({
@@ -172,8 +193,12 @@ export class UserService {
         role: dto.role ?? Role.AGENT,
         phone: dto.phone,
         avatarUrl: dto.avatarUrl,
+        // B-113 (ADR-0019, regra 22): já nasce nos setores que vai atender
+        ...(departmentIds.length > 0 && {
+          departments: { connect: departmentIds.map((departmentId) => ({ id: departmentId })) },
+        }),
       },
-      select: USER_SELECT,
+      select: { ...USER_SELECT, ...DEPARTMENTS_SELECT },
     });
 
     await this.auditLog.record({
@@ -182,7 +207,7 @@ export class UserService {
       action: 'user.created',
       entity: 'User',
       entityId: created.id,
-      after: { name: created.name, email: created.email, role: created.role },
+      after: { name: created.name, email: created.email, role: created.role, departmentIds },
     });
 
     return created;
@@ -196,18 +221,31 @@ export class UserService {
       throw new ForbiddenException('Não é permitido atribuir role SUPER_ADMIN');
     }
 
+    // B-113: a lista substitui os setores do usuário; ausente, não mexe neles
+    const { departmentIds, ...fields } = dto;
+    if (departmentIds) await this.assertCompanyDepartments(companyId, departmentIds);
+
     const updated = await this.prisma.user.update({
       where: { id },
-      data: dto,
-      select: USER_SELECT,
+      data: {
+        ...fields,
+        ...(departmentIds && {
+          departments: { set: departmentIds.map((departmentId) => ({ id: departmentId })) },
+        }),
+      },
+      select: { ...USER_SELECT, ...DEPARTMENTS_SELECT },
     });
 
     // B-74 (M-09): papel novo muda as salas do socket (empresa inteira ou só
     // departamentos) e desativação tira o acesso — os sockets abertos caem e,
-    // na reconexão, o handshake decide de novo.
+    // na reconexão, o handshake decide de novo. B-113: setores novos também
+    // mudam as salas — sem isto, a fila do setor novo só chegaria em tempo
+    // real quando o token expirasse.
     const roleChanged = !!dto.role && dto.role !== before.role;
     const deactivated = dto.isActive === false && before.isActive;
-    if (roleChanged || deactivated) {
+    const departmentsChanged =
+      !!departmentIds && !sameIds(before.departments.map((d) => d.id), departmentIds);
+    if (roleChanged || deactivated || departmentsChanged) {
       this.events.disconnectUser(id);
     }
 

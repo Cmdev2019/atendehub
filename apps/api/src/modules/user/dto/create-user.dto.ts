@@ -7,6 +7,9 @@ import {
   MaxLength,
   IsUrl,
   Matches,
+  IsArray,
+  ArrayUnique,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Role } from '@prisma/client';
 import { BCRYPT_MAX_BYTES, MaxBytes } from '../../../shared/validators/max-bytes.validator';
@@ -42,4 +45,12 @@ export class CreateUserDto {
   @IsOptional()
   @IsUrl({}, { message: 'avatarUrl deve ser uma URL válida' })
   avatarUrl?: string;
+
+  // B-113 (ADR-0019, regra 22): setores que o atendente atende — um ou vários
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique({ message: 'Setor repetido' })
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  departmentIds?: string[];
 }
