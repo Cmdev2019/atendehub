@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ReportService } from './report.service';
+import { BadRequestException } from '@nestjs/common';
+import { REPORT_MAX_ROWS, ReportService } from './report.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 
 const mockPrisma = {
@@ -34,6 +35,28 @@ describe('ReportService (B-33)', () => {
       expect(call.where.companyId).toBe(companyA);
       expect(call.where.createdAt.gte.toISOString()).toBe('2026-01-01T00:00:00.000Z');
       expect(call.where.createdAt.lte.toISOString()).toBe('2026-01-31T00:00:00.000Z');
+    });
+
+    // B-105 (L-13): sem limite, um período enorme carregava tudo na memória
+    it('recusa período acima de 366 dias e período invertido, sem consultar conversas', async () => {
+      await expect(service.getAttendanceReport(companyA, '2024-01-01', '2025-12-31')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getAttendanceReport(companyA, '2026-02-01', '2026-01-01')).rejects.toThrow(
+        'O início do período precisa ser antes do fim',
+      );
+      expect(mockPrisma.conversation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('passado o teto de linhas, pede um período menor', async () => {
+      mockPrisma.conversation.findMany.mockResolvedValueOnce(
+        Array.from({ length: REPORT_MAX_ROWS + 1 }, (_, i) => ({ id: `c${i}` })),
+      );
+
+      await expect(service.getAttendanceReport(companyA, '2026-01-01', '2026-01-31')).rejects.toThrow(
+        /reduza o período/,
+      );
+      expect(mockPrisma.conversation.findMany.mock.calls[0][0].take).toBe(REPORT_MAX_ROWS + 1);
     });
 
     it('sem from/to, usa os últimos 30 dias terminando agora', async () => {

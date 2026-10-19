@@ -13,6 +13,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 ## [Não lançado]
 
 ### Alterado
+- **B-105 (2026-10-18, L-13):** relatórios aceitam até 366 dias e 5.000 conversas por consulta, e o painel abre mais rápido — as telas de Dashboard, Relatórios, Contatos e Configurações carregam só quando abertas.
 - **B-95 (2026-10-18, L-06):** cada requisição autenticada valida o usuário uma vez só (antes eram duas consultas ao banco e duas ao Redis).
 - **B-92 (2026-10-18, L-03):** o Dependabot sobe `prisma` e `@prisma/client` juntos e não propõe mais versões ímpares do Node na imagem da API.
 - **B-91 (2026-10-18, L-02):** relatório de inclusão de padrões movido da raiz para `docs/99-Arquivo/`.
