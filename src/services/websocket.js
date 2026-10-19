@@ -28,6 +28,7 @@ const BACKEND_EVENTS = [
   'conversation.assigned',
   'connection.status',
   'sla.breached',
+  'user.availability', // B-65: Online/Offline (supervisor e as outras abas do próprio usuário)
 ];
 
 export class WebSocketClient {

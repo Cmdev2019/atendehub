@@ -4,6 +4,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { Logo } from './Logo';
 import { Icon } from './icons';
 import { NotificationBell } from './NotificationBell';
+import { AvailabilityToggle } from './AvailabilityToggle';
 
 // O toggle de tema saiu daqui — agora fica em Configurações → Aparência.
 export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
@@ -33,6 +34,8 @@ export function Topbar({ title = 'Caixa de Entrada', onOpenSettings }) {
     h(
       'div',
       { className: 'topbar-actions' },
+      // B-65: Online/Offline do próprio atendente
+      h(AvailabilityToggle),
       user && h('span', { className: 'user-display' },
         h(Icon, { name: 'user', size: 16 }),
         ` ${user.name}`,

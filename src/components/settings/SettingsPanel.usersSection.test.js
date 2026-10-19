@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { createElement as h } from 'react';
 import { ThemeProvider } from '../../context/ThemeContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
@@ -28,6 +28,8 @@ jest.mock('../../services/websocket', () => ({
 }));
 
 import { SettingsPanel } from './SettingsPanel';
+import { apiClient } from '../../services/api';
+import { wsClient } from '../../services/websocket';
 
 function renderPanel() {
   return render(h(ThemeProvider, null, h(ConfirmProvider, null, h(SettingsPanel))));
@@ -57,5 +59,30 @@ describe('SettingsPanel — UsersSection não mostra ações destrutivas na pró
     expect(within(otherRow).getByTitle('Gerar senha temporária para este usuário')).toBeInTheDocument();
     expect(within(otherRow).getByTitle('Desativar usuário')).toBeInTheDocument();
     expect(within(otherRow).getByTitle('Excluir usuário')).toBeInTheDocument();
+  });
+});
+
+// B-65 (ADR-0019): o supervisor vê o estado de cada um e a troca chega na hora
+describe('SettingsPanel — UsersSection mostra quem está Online', () => {
+  it('mostra o estado de cada usuário e atualiza com o evento user.availability', async () => {
+    apiClient.getUsers.mockResolvedValueOnce({
+      data: [
+        { id: 'user-1', name: 'Admin', email: 'admin@demo.com', role: 'ADMIN', isActive: true, availability: 'ONLINE' },
+        { id: 'user-2', name: 'Outro Atendente', email: 'outro@demo.com', role: 'AGENT', isActive: true },
+      ],
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /Usuários e níveis/ }));
+    await waitFor(() => expect(screen.getByText('Outro Atendente')).toBeInTheDocument());
+
+    const ownRow = screen.getByText('Admin').closest('.settings-item');
+    const otherRow = screen.getByText('Outro Atendente').closest('.settings-item');
+    expect(within(ownRow).getByText('Online')).toBeInTheDocument();
+    // Sem o campo, vale Offline
+    expect(within(otherRow).getByText('Offline')).toBeInTheDocument();
+
+    const [, onAvailability] = wsClient.on.mock.calls.filter(([event]) => event === 'user.availability').pop();
+    act(() => onAvailability({ userId: 'user-2', availability: 'ONLINE' }));
+    expect(within(otherRow).getByText('Online')).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Availability, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
@@ -8,6 +8,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { AuthService } from '../auth/auth.service';
 import { EventsService } from '../events/events.service';
+import { AvailabilityService } from '../availability/availability.service';
 
 jest.mock('bcrypt');
 
@@ -32,6 +33,8 @@ const mockAuditLog = { record: jest.fn() };
 const mockStorage = { upload: jest.fn() };
 const mockAuth = { revokeAllSessions: jest.fn(), issueTokens: jest.fn() };
 const mockEvents = { disconnectUser: jest.fn() };
+const offlineState = { availability: 'OFFLINE', availabilityChangedAt: new Date('2026-10-19T10:00:00Z') };
+const mockAvailability = { set: jest.fn() };
 
 describe('UserService — isolamento multi-tenant', () => {
   let service: UserService;
@@ -41,6 +44,7 @@ describe('UserService — isolamento multi-tenant', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockAvailability.set.mockResolvedValue(offlineState);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +54,7 @@ describe('UserService — isolamento multi-tenant', () => {
         { provide: StorageService, useValue: mockStorage },
         { provide: AuthService, useValue: mockAuth },
         { provide: EventsService, useValue: mockEvents },
+        { provide: AvailabilityService, useValue: mockAvailability },
       ],
     }).compile();
 
@@ -206,9 +211,10 @@ describe('UserService — isolamento multi-tenant', () => {
 
       expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
+      expect(mockAvailability.set).not.toHaveBeenCalled();
     });
 
-    it('desativar pelo update derruba os sockets do usuário (B-74)', async () => {
+    it('desativar pelo update derruba os sockets do usuário (B-74) e o põe Offline (B-65)', async () => {
       mockPrisma.user.findFirst.mockResolvedValueOnce({
         id: 'user-1',
         companyId: companyA,
@@ -216,11 +222,33 @@ describe('UserService — isolamento multi-tenant', () => {
         isActive: true,
         departments: [],
       });
-      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', isActive: false });
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', isActive: false, availability: 'ONLINE' });
 
-      await service.update(companyA, 'user-1', { isActive: false }, requesterId);
+      const result = await service.update(companyA, 'user-1', { isActive: false }, requesterId);
 
       expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
+      expect(mockAvailability.set).toHaveBeenCalledWith(
+        { id: 'user-1', companyId: companyA },
+        Availability.OFFLINE,
+        'deactivated',
+        requesterId,
+      );
+      // A resposta já sai com o estado novo, não o lido antes da troca
+      expect(result).toEqual(expect.objectContaining({ isActive: false, ...offlineState }));
+    });
+  });
+
+  describe('updateOwnAvailability (B-65)', () => {
+    it('troca só o estado do próprio usuário, com o motivo "self"', async () => {
+      mockAvailability.set.mockResolvedValueOnce({ availability: 'ONLINE', availabilityChangedAt: new Date() });
+
+      await service.updateOwnAvailability(companyA, 'user-1', Availability.ONLINE);
+
+      expect(mockAvailability.set).toHaveBeenCalledWith(
+        { id: 'user-1', companyId: companyA },
+        Availability.ONLINE,
+        'self',
+      );
     });
   });
 
@@ -462,7 +490,7 @@ describe('UserService — isolamento multi-tenant', () => {
       expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
     });
 
-    it('desativa e derruba os sockets abertos do usuário (B-74)', async () => {
+    it('desativa, derruba os sockets abertos (B-74) e põe Offline (B-65)', async () => {
       mockPrisma.user.findFirst.mockResolvedValueOnce({
         id: 'user-1',
         companyId: companyA,
@@ -471,9 +499,16 @@ describe('UserService — isolamento multi-tenant', () => {
       });
       mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1', isActive: false });
 
-      await service.remove(companyA, 'user-1', requesterId);
+      const result = await service.remove(companyA, 'user-1', requesterId);
 
       expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
+      expect(mockAvailability.set).toHaveBeenCalledWith(
+        { id: 'user-1', companyId: companyA },
+        Availability.OFFLINE,
+        'deactivated',
+        requesterId,
+      );
+      expect(result).toEqual(expect.objectContaining({ isActive: false, ...offlineState }));
     });
   });
 });

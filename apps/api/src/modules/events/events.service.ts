@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
-import { roomsForConversation } from './scope-rooms';
+import { allRoom, roomsForConversation } from './scope-rooms';
 import { EventsGateway, sessionRoom } from './events.gateway';
 import { StorageService } from '../../shared/storage/storage.service';
 
@@ -70,6 +70,13 @@ export interface SlaBreachedPayload {
   waitTimeSeconds: number;
   maxWaitSecs: number;
   breachedAt: Date | string;
+}
+
+export interface UserAvailabilityPayload {
+  companyId: string;
+  userId: string;
+  availability: 'ONLINE' | 'OFFLINE';
+  changedAt: Date | string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +231,19 @@ export class EventsService {
 
   disconnectSession(jti: string): void {
     this.gateway.server.in(sessionRoom(jti)).disconnectSockets(true);
+  }
+
+  // ── Estado do atendente mudou (B-65 / ADR-0019) ───────────────────────────
+  // ADMIN e SUPERVISOR veem o estado de todos (sala da empresa inteira); a
+  // sala do próprio usuário sincroniza as outras abas dele.
+  emitUserAvailability(payload: UserAvailabilityPayload): void {
+    const { companyId, userId } = payload;
+
+    this.gateway.server
+      .to([allRoom(companyId), `agent:${userId}`])
+      .emit('user.availability', payload);
+
+    this.logger.debug(`user.availability → ${userId} : ${payload.availability}`);
   }
 
   // ── SLA violado (conversa esperando muito tempo) ───────────────────────────

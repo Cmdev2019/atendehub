@@ -7,8 +7,9 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { EventsService } from '../events/events.service';
+import { AvailabilityService } from '../availability/availability.service';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
-import { Role } from '@prisma/client';
+import { Availability, Role } from '@prisma/client';
 
 jest.mock('bcrypt');
 
@@ -56,6 +57,8 @@ const mockEvents = {
   disconnectSession: jest.fn(),
 };
 
+const mockAvailability = { set: jest.fn() };
+
 // B-85: contador diário de cadastros por IP (MULTI INCR + EXPIRE)
 let signupCount = 0;
 const mockRedis = {
@@ -98,6 +101,7 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: TokenBlacklistService, useValue: mockTokenBlacklist },
         { provide: EventsService, useValue: mockEvents },
+        { provide: AvailabilityService, useValue: mockAvailability },
         { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
@@ -488,6 +492,28 @@ describe('AuthService', () => {
       await service.logout('meu-refresh-token', 'access-token-expirado');
 
       expect(mockTokenBlacklist.add).not.toHaveBeenCalled();
+    });
+
+    // B-65 (ADR-0019): quem sai do sistema não continua aparecendo Online
+    it('põe Offline o usuário que fez logout', async () => {
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockAvailability.set.mockResolvedValueOnce({ availability: 'OFFLINE' });
+      const user = { id: 'user-1', companyId: 'company-1' };
+
+      await service.logout('meu-refresh-token', undefined, user);
+
+      expect(mockAvailability.set).toHaveBeenCalledWith(user, Availability.OFFLINE, 'logout');
+    });
+
+    it('logout segue de pé quando a troca para Offline falha', async () => {
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockAvailability.set.mockRejectedValueOnce(new Error('banco fora do ar'));
+
+      await expect(
+        service.logout('meu-refresh-token', undefined, { id: 'user-1', companyId: 'company-1' }),
+      ).resolves.toBeUndefined();
+      // O refresh token já foi revogado antes
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
     });
   });
 });
