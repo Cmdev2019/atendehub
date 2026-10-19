@@ -5,12 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { EventsService } from '../events/events.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
 
 @Injectable()
 export class DepartmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly events: EventsService,
+  ) {}
 
   // ── Listar departamentos da empresa ───────────────────────────────────────
   async findAll(companyId: string) {
@@ -139,29 +143,44 @@ export class DepartmentService {
   // ── Adicionar usuário ao departamento ─────────────────────────────────────
   async addUser(companyId: string, id: string, userId: string) {
     await this.findOne(companyId, id);
+    await this.assertCompanyUser(companyId, userId);
 
-    // Verifica se o usuário pertence à mesma empresa
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, companyId },
-    });
-
-    if (!user) throw new NotFoundException('Usuário não encontrado nesta empresa');
-
-    return this.prisma.department.update({
+    const updated = await this.prisma.department.update({
       where: { id },
       data: { users: { connect: { id: userId } } },
       select: { id: true, name: true, users: { select: { id: true, name: true } } },
     });
+
+    // B-113: as salas do socket dependem dos setores — reconecta já com o
+    // setor novo, como na troca de papel (B-74)
+    this.events.disconnectUser(userId);
+    return updated;
   }
 
   // ── Remover usuário do departamento ──────────────────────────────────────
   async removeUser(companyId: string, id: string, userId: string) {
     await this.findOne(companyId, id);
+    // B-113: antes, um id de outra empresa passava direto — e agora ainda
+    // derrubaria os sockets dele
+    await this.assertCompanyUser(companyId, userId);
 
-    return this.prisma.department.update({
+    const updated = await this.prisma.department.update({
       where: { id },
       data: { users: { disconnect: { id: userId } } },
       select: { id: true, name: true, users: { select: { id: true, name: true } } },
     });
+
+    this.events.disconnectUser(userId);
+    return updated;
+  }
+
+  // Verifica se o usuário pertence à mesma empresa
+  private async assertCompanyUser(companyId: string, userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, companyId },
+      select: { id: true },
+    });
+
+    if (!user) throw new NotFoundException('Usuário não encontrado nesta empresa');
   }
 }

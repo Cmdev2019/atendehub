@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { applyHttpPipeline } from '../src/shared/http/http-pipeline';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
 import { AccessSessionService } from '../src/modules/auth/access-session.service';
+import { AuthService } from '../src/modules/auth/auth.service';
 
 /**
  * M-22/B-63 — Autorização pela API HTTP de verdade (AppModule inteiro).
@@ -35,6 +36,7 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
   const companyIds: string[] = [];
   const users: Record<string, { id: string; token: string }> = {};
   const conv: Record<string, string> = {};
+  const depts: Record<string, string> = {};
 
   const call = async (method: string, path: string, who?: string, data?: unknown) =>
     (
@@ -66,6 +68,8 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     const B = await company('b');
     const jur = await prisma.department.create({ data: { companyId: A, name: 'Jurídico' } });
     const fin = await prisma.department.create({ data: { companyId: A, name: 'Financeiro' } });
+    depts.jur = jur.id;
+    depts.fin = fin.id;
 
     const mkUser = async (key: string, companyId: string, role: 'ADMIN' | 'SUPERVISOR' | 'AGENT', deptId?: string) => {
       const u = await prisma.user.create({
@@ -205,5 +209,39 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
 
   it('validação global: campo fora do DTO responde 400', async () => {
     expect(await call('PATCH', '/users/me', 'agentJur', { name: 'Novo nome', campoQueNaoExiste: 1 })).toBe(400);
+  });
+
+  // B-113 (ADR-0019, regra 22): setores escolhidos no cadastro do atendente
+  it('setores no cadastro: com dois setores vê a fila dos dois; a lista substitui; setor de outra empresa é 400', async () => {
+    const res = await axios.post(
+      `${base}/api/v1/users`,
+      { name: 'Dois Setores', email: `dois-setores-${run}@e2e.test`, password: PASSWORD, departmentIds: [depts.jur, depts.fin] },
+      { headers: { authorization: `Bearer ${users.adminA.token}` }, httpAgent: agent, validateStatus: () => true },
+    );
+    expect(res.status).toBe(201);
+    expect(res.data.departments.map((d: { id: string }) => d.id).sort()).toEqual([depts.jur, depts.fin].sort());
+
+    // Sessão direto pelo AuthService: o POST /auth/login tem limite de 5 por minuto por IP
+    const created = await prisma.user.findUniqueOrThrow({
+      where: { id: res.data.id },
+      select: { id: true, companyId: true, name: true, email: true, role: true, avatarUrl: true },
+    });
+    users.doisSetores = { id: created.id, token: (await app.get(AuthService).login(created)).accessToken };
+
+    expect(await call('GET', `/conversations/${conv.juridico}`, 'doisSetores')).toBe(200);
+    expect(await call('GET', `/conversations/${conv.financeiro}`, 'doisSetores')).toBe(200);
+
+    // A lista substitui os setores: sem o Financeiro, a conversa dele sai do alcance na hora
+    expect(await call('PATCH', `/users/${created.id}`, 'adminA', { departmentIds: [depts.jur] })).toBe(200);
+    expect(await call('GET', `/conversations/${conv.financeiro}`, 'doisSetores')).toBe(404);
+
+    // Setor de outra empresa não entra, nem no cadastro nem na edição
+    const deptB = await prisma.department.create({ data: { companyId: companyIds[1], name: `Setor B ${run}` } });
+    expect(await call('PATCH', `/users/${created.id}`, 'adminA', { departmentIds: [deptB.id] })).toBe(400);
+    expect(
+      await call('POST', '/users', 'adminA', {
+        name: 'Outra', email: `outra-empresa-${run}@e2e.test`, password: PASSWORD, departmentIds: [deptB.id],
+      }),
+    ).toBe(400);
   });
 });

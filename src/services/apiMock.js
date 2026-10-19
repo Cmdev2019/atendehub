@@ -771,7 +771,31 @@ export class MockApiClient {
   // ── USERS ──────────────────────────────────────────────────────────────────
   async getUsers() {
     await this.simulateDelay();
-    return { data: mockUsersList };
+    return { data: mockUsersList.map((u) => ({ ...u, departments: this.departmentsOf(u.id) })) };
+  }
+
+  // B-113: os setores de cada usuário são os grupos de que ele é membro —
+  // o mesmo vínculo da tela Grupos → Membros, como no backend
+  departmentsOf(userId) {
+    return mockDepartments
+      .filter((d) => d.users.some((u) => u.id === userId))
+      .map(({ id, name, color }) => ({ id, name, color }));
+  }
+
+  assertMockDepartments(departmentIds) {
+    if (departmentIds.some((id) => !mockDepartments.some((d) => d.id === id))) {
+      throw { status: 400, message: 'Setor não encontrado nesta empresa' };
+    }
+  }
+
+  setUserDepartments(userId, departmentIds) {
+    this.assertMockDepartments(departmentIds);
+    const user = mockUsersList.find((u) => u.id === userId);
+    mockDepartments.forEach((d) => {
+      const member = d.users.some((u) => u.id === userId);
+      if (departmentIds.includes(d.id) && !member && user) d.users.push(user);
+      if (!departmentIds.includes(d.id) && member) d.users = d.users.filter((u) => u.id !== userId);
+    });
   }
 
   async createUser(data) {
@@ -789,18 +813,24 @@ export class MockApiClient {
       isActive: true,
       availability: 'OFFLINE',
     };
+    // B-113: setor inválido recusa antes de criar, como no backend
+    if (data.departmentIds?.length) this.assertMockDepartments(data.departmentIds);
     mockUsersList.push(user);
-    return user;
+    if (data.departmentIds?.length) this.setUserDepartments(user.id, data.departmentIds);
+    return { ...user, departments: this.departmentsOf(user.id) };
   }
 
   async updateUser(id, data) {
     await this.simulateDelay();
     const user = mockUsersList.find((u) => u.id === id);
     if (!user) throw { status: 404, message: 'Usuário não encontrado' };
-    Object.assign(user, data);
+    // B-113: a lista substitui os setores; não fica gravada no próprio usuário
+    const { departmentIds, ...fields } = data;
+    if (departmentIds) this.setUserDepartments(id, departmentIds);
+    Object.assign(user, fields);
     // B-65: desativado não continua Online
     if (data.isActive === false) this.setAvailability(id, 'OFFLINE');
-    return user;
+    return { ...user, departments: this.departmentsOf(id) };
   }
 
   async deleteUser(id) {

@@ -413,8 +413,9 @@ Atribui/remove uma tag existente do contato (B1-1). 404 se a tag ou o contato n�
 ### `GET /users`
 Query: `search?` · `role?` · `isActive?` · `page` · `limit`.
 Item (`USER_SELECT` — nunca expõe `passwordHash`):
-`{ id, companyId, name, email, role, phone, avatarUrl, isActive, lastSeenAt, availability, availabilityChangedAt, createdAt, updatedAt }`.
-Wrapper: `{ data, meta }`. `availability` é o estado Online/Offline escolhido pelo próprio usuário (B-65).
+`{ id, companyId, name, email, role, phone, avatarUrl, isActive, lastSeenAt, availability, availabilityChangedAt, createdAt, updatedAt, departments: [{ id, name, color }] }`.
+Wrapper: `{ data, meta }`. `availability` é o estado Online/Offline escolhido pelo próprio usuário (B-65);
+`departments` são os setores que ele atende, em ordem alfabética (B-113). `GET /users/:id` tem o mesmo shape.
 
 ### `POST /users`
 ```jsonc
@@ -423,13 +424,19 @@ Wrapper: `{ data, meta }`. `availability` é o estado Online/Offline escolhido p
   "email": "válido",
   "password": "mín. 8, com maiúscula, minúscula e número",
   "role?": "AGENT | SUPERVISOR | ADMIN",   // default AGENT
-  "phone?": "...", "avatarUrl?": "URL válida"
+  "phone?": "...", "avatarUrl?": "URL válida",
+  "departmentIds?": ["..."]                // B-113: setores que atende, sem repetir
 }
 ```
+Setor que não é da empresa responde `400` ("Setor não encontrado nesta empresa"), antes de criar
+o usuário. A resposta traz `departments`, como no `GET /users`.
 
-### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`), requer `ADMIN`
+### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`, `departmentIds`), requer `ADMIN`
 `isActive: false` também põe o usuário Offline (B-65). `availability` não faz parte do DTO: o
 estado de outra pessoa não se muda por aqui (`400`, campo não permitido).
+`departmentIds` (B-113) **substitui** os setores do usuário: `[]` tira de todos, e ausente não mexe
+neles. Setor de outra empresa responde `400`. Mudar os setores, como mudar o papel, derruba os
+sockets do usuário, que reconectam já com as salas novas.
 ### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (só o próprio usuário)
 `:id` precisa ser o do usuário do token: qualquer outro id responde `403` antes de
 consultar o banco (B-51). Senha atual errada responde `400`. Limite próprio de
@@ -503,6 +510,8 @@ Item: `{ id, name, description, color, isActive, createdAt, _count: { users, con
 ### `PATCH /departments/:id` · `DELETE /departments/:id`
 ### `POST /departments/:id/users` — `{ userId }` → retorna o department com `users[]` atualizado
 ### `DELETE /departments/:id/users/:userId` — idem
+É o mesmo vínculo do `departmentIds` de `/users`. Desde o B-113, as duas rotas conferem se o usuário
+é da empresa (`404` se não for) e derrubam os sockets dele, que reconectam com as salas novas.
 
 ---
 
@@ -700,13 +709,14 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 - **Desconexão pelo servidor** (`disconnect` com motivo `"io server disconnect"`, B-74): quando
   o access token do handshake expira, no logout (só os sockets daquela sessão), na troca ou
   reset de senha (menos a sessão de quem trocou a própria senha), na desativação do usuário e
-  na mudança de papel (as salas dependem dele). O cliente renova o token e reconecta; se a
+  na mudança de papel ou de setores (as salas dependem deles; setores desde o B-113). O cliente renova o token e reconecta; se a
   renovação for recusada, a sessão acabou.
 - **Salas automáticas:** `company:<companyId>` e `agent:<userId>` no connect, mais as
   salas de escopo (B-40): `company:<companyId>:all` para ADMIN/SUPERVISOR; para AGENT,
   `company:<companyId>:dept:<departmentId>` de cada departamento seu e
-  `company:<companyId>:dept:none` (conversas sem departamento). Departamentos mudados
-  durante a sessão valem na próxima conexão (no máximo até o access token expirar, B-74).
+  `company:<companyId>:dept:none` (conversas sem departamento). Mudar os setores de alguém
+  (cadastro do usuário ou Grupos → Membros) derruba os sockets dele, que reconectam já com as
+  salas novas (B-113); antes, valia só na próxima conexão.
   Mais `session:<jti>` (B-74), usada para derrubar só a sessão que fez logout.
 - **Emissão:** eventos de conversa (`message.*`, `conversation.*`, `sla.breached`) saem
   para a **união** de `conversation:<id>` + `company:<companyId>:all` + a sala do

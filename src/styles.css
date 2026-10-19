@@ -2919,6 +2919,37 @@ button {
   color: var(--text);
 }
 
+/* B-113: setores que o atendente atende (cadastro e edição do usuário) */
+.settings-sectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.settings-form-grid .settings-sectors {
+  grid-column: 1 / -1;
+}
+
+.settings-sectors legend {
+  padding: 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.settings-sector-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
 /* ── Auto-atendimento (B-35) ─────────────────────────────────────────────── */
 .settings-toggle-row {
   display: flex;

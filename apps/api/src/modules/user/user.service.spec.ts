@@ -27,6 +27,9 @@ const mockPrisma = {
   company: {
     findUnique: jest.fn(),
   },
+  department: {
+    count: jest.fn(),
+  },
 };
 
 const mockAuditLog = { record: jest.fn() };
@@ -137,6 +140,43 @@ describe('UserService — isolamento multi-tenant', () => {
         expect.objectContaining({ action: 'user.created', companyId: companyA }),
       );
       expect(result.id).toBe('user-novo');
+      // Sem setores informados, nem consulta setor nem conecta nada
+      expect(mockPrisma.department.count).not.toHaveBeenCalled();
+      expect(mockPrisma.user.create.mock.calls[0][0].data.departments).toBeUndefined();
+    });
+
+    // B-113 (ADR-0019, regra 22): o atendente já nasce nos setores que atende
+    it('cria já nos setores informados, conferidos contra a empresa', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.department.count.mockResolvedValueOnce(2);
+      mockPrisma.user.create.mockResolvedValueOnce({ id: 'user-novo', departments: [] });
+
+      await service.create(companyA, { ...dto, departmentIds: ['dep-1', 'dep-2'] } as any, requesterId);
+
+      expect(mockPrisma.department.count).toHaveBeenCalledWith({
+        where: { companyId: companyA, id: { in: ['dep-1', 'dep-2'] } },
+      });
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            departments: { connect: [{ id: 'dep-1' }, { id: 'dep-2' }] },
+          }),
+        }),
+      );
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ after: expect.objectContaining({ departmentIds: ['dep-1', 'dep-2'] }) }),
+      );
+    });
+
+    it('recusa (400) setor que não é da empresa, sem criar o usuário', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.department.count.mockResolvedValueOnce(1); // só um dos dois é desta empresa
+
+      await expect(
+        service.create(companyA, { ...dto, departmentIds: ['dep-1', 'dep-de-outra'] } as any, requesterId),
+      ).rejects.toThrow(BadRequestException);
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
     });
   });
 
@@ -235,6 +275,79 @@ describe('UserService — isolamento multi-tenant', () => {
       );
       // A resposta já sai com o estado novo, não o lido antes da troca
       expect(result).toEqual(expect.objectContaining({ isActive: false, ...offlineState }));
+    });
+  });
+
+  // B-113: a lista substitui os setores; mudou, o socket reconecta com as
+  // salas novas
+  describe('update — setores (B-113)', () => {
+    const agentWith = (departmentIds: string[]) => ({
+      id: 'user-1',
+      companyId: companyA,
+      role: Role.AGENT,
+      isActive: true,
+      departments: departmentIds.map((id) => ({ id, name: id, color: '#000' })),
+    });
+
+    it('troca os setores pela lista informada e reconecta o socket', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(agentWith(['dep-1']));
+      mockPrisma.department.count.mockResolvedValueOnce(2);
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
+
+      await service.update(companyA, 'user-1', { departmentIds: ['dep-1', 'dep-2'] }, requesterId);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { departments: { set: [{ id: 'dep-1' }, { id: 'dep-2' }] } },
+        }),
+      );
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
+    });
+
+    it('lista vazia tira o usuário de todos os setores', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(agentWith(['dep-1']));
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
+
+      await service.update(companyA, 'user-1', { departmentIds: [] }, requesterId);
+
+      expect(mockPrisma.department.count).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { departments: { set: [] } } }),
+      );
+      expect(mockEvents.disconnectUser).toHaveBeenCalledWith('user-1');
+    });
+
+    it('os mesmos setores, em outra ordem: não reconecta à toa', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(agentWith(['dep-1', 'dep-2']));
+      mockPrisma.department.count.mockResolvedValueOnce(2);
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
+
+      await service.update(companyA, 'user-1', { departmentIds: ['dep-2', 'dep-1'] }, requesterId);
+
+      expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
+    });
+
+    it('sem departmentIds, não mexe nos setores', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(agentWith(['dep-1']));
+      mockPrisma.user.update.mockResolvedValueOnce({ id: 'user-1' });
+
+      await service.update(companyA, 'user-1', { name: 'Novo Nome' }, requesterId);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { name: 'Novo Nome' } }),
+      );
+      expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
+    });
+
+    it('recusa (400) setor de outra empresa sem atualizar nada', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(agentWith(['dep-1']));
+      mockPrisma.department.count.mockResolvedValueOnce(0);
+
+      await expect(
+        service.update(companyA, 'user-1', { departmentIds: ['dep-de-outra'] }, requesterId),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockEvents.disconnectUser).not.toHaveBeenCalled();
     });
   });
 
