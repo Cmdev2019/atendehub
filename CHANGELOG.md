@@ -12,7 +12,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
-_Nada ainda._
+### Adicionado
+- **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
 ## [0.2.0] - 2026-10-18
 
