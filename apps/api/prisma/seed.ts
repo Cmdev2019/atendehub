@@ -103,21 +103,23 @@ async function main() {
     },
   });
 
-  for (const [index, sector] of sectors.entries()) {
-    await prisma.autoAttendanceMenuOption.upsert({
-      where: { flowId_order: { flowId: flow.id, order: index + 1 } },
-      update: {},
-      create: {
+  // Menu que já tem opções fica como está — completar só as posições vazias
+  // misturaria o menu configurado com os setores do seed
+  const existingOptions = await prisma.autoAttendanceMenuOption.count({ where: { flowId: flow.id } });
+  if (existingOptions > 0) {
+    console.log(`✓ Menu do auto-atendimento já configurado (${existingOptions} opções) — mantido`);
+  } else {
+    await prisma.autoAttendanceMenuOption.createMany({
+      data: sectors.map((sector, index) => ({
         flowId: flow.id,
         order: index + 1,
         label: sector.name,
         action: AutoAttendanceAction.ROUTE_TO_DEPARTMENT,
         departmentId: sector.id,
-      },
+      })),
     });
+    console.log("✓ Menu do auto-atendimento com uma opção por setor (desligado)");
   }
-
-  console.log("✓ Menu do auto-atendimento com uma opção por setor (desligado)");
 
   // ── Tags padrão ──────────────────────────────────────────────────────────────
   const tagData = [
