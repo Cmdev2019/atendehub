@@ -929,7 +929,7 @@ export class MockApiClient {
   // ── WHATSAPP ───────────────────────────────────────────────────────────────
   async getWhatsappConnections() {
     await this.simulateDelay();
-    return { data: mockConnections.map(({ statusPolls, ...c }) => c) };
+    return { data: mockConnections.map(({ statusPolls: _polls, ...c }) => c) };
   }
 
   async createWhatsappConnection(data) {
@@ -939,7 +939,7 @@ export class MockApiClient {
       statusPolls: 0, departmentId: data.departmentId || null,
     };
     mockConnections.push(conn);
-    const { statusPolls, ...rest } = conn;
+    const { statusPolls: _polls, ...rest } = conn;
     return rest;
   }
 

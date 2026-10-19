@@ -35,6 +35,10 @@ jobs:
 
       - run: npm ci
 
+      # B-103 (L-14 / B-47): lint do front — erro de lint falha o job
+      - name: Lint
+        run: npm run lint
+
       - name: Tests
         run: npm test
 

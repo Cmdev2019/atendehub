@@ -62,7 +62,6 @@
 |---|---|---|---|
 | B-43 | — | infra/nginx/nginx.conf não define nenhum header de segurança | 🔄 Parcial 2026-10-17 · em espera (projeto de estudo) |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
-| B-47 | — | O frontend não tem linter | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
 | B-65 | — | O atendente não tem disponibilidade | ⬜ Pendente |
 | B-66 | M-21 | A estratégia da fila (ROUND_ROBIN, LEAST_BUSY) é gravada e nunca aplicada | ⬜ Pendente |
@@ -128,7 +127,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-44 | — | apps/api/Dockerfile não declara USER em nenhum estágio — a API roda como root no container de produção | ✅ 2026-10-17 |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-46 | — | Há estado em memória de processo que impede rodar a API em mais de uma réplica corretamente — o que colide com a existência do Redis… | ✅ 2026-10-18 (pelo B-80) |
-| B-47 | — | O frontend não tem linter | ⬜ Pendente |
+| B-47 | — | O frontend não tem linter | ✅ 2026-10-18 (pelo B-103) |
 | B-48 | — | Sob concorrência REAL (não sequencial), a deduplicação de mensagem de webhook tem uma condição de corrida | ✅ 2026-08-01 |
 | B-49 | — | ConversationService#upsertFromWebhook (conversation.service.ts:543-588, chamado por WebhookService#processMessage — mesmo pipeline… | ✅ 2026-08-01 |
 | B-50 | — | O download de mídia do webhook tinha um caminho alternativo (MediaDownloadService#downloadAndStore, acionado por… | ✅ 2026-10-16 |
@@ -184,6 +183,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-100 | L-12 | Conexão de WhatsApp só aceita departamento da própria empresa; sincronizar status virou POST restrito a ADMIN | ✅ 2026-10-18 |
 | B-101 | L-15 | Retenção: notificações lidas expiram em 90 dias (configurável); purga de auditoria pronta, desligada até a decisão de LGPD; sai o log de query sem ouvinte | ✅ 2026-10-18 (mecanismo — prazos de auditoria e conversas em espera) |
 | B-102 | L-16 | Diagnóstico de dependências (GET /health/dependencies, ADMIN): banco, Redis, storage e Evolution com timeout de 2 s | ✅ 2026-10-18 |
+| B-103 | L-14 | Front ganha ESLint (React, hooks, no-console) na CI; os 10 console.log de produção saíram — resolve o B-47 | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 

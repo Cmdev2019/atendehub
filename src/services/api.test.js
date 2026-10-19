@@ -148,7 +148,7 @@ describe('Mock API Client', () => {
     });
 
     it('retorna usuário se token válido', async () => {
-      const loginResponse = await mockApiClient.login('admin@demo.com', 'Admin@123');
+      await mockApiClient.login('admin@demo.com', 'Admin@123');
       const user = await mockApiClient.getCurrentUser();
       expect(user.email).toBe('admin@demo.com');
     });

@@ -74,7 +74,6 @@ export class WebSocketClient {
         });
 
         this.socket.on('connect', () => {
-          console.log('✅ WebSocket conectado!');
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.status.set('connected');
@@ -132,7 +131,6 @@ export class WebSocketClient {
       this.isConnected = false;
       this.hasConnectedBefore = false;
       this.status.set('idle');
-      console.log('⏸️ WebSocket desconectado gracefully');
     }
   }
 
@@ -168,13 +166,11 @@ export class WebSocketClient {
   // Entrar em uma sala de conversa
   joinConversation(conversationId) {
     this.send('join:conversation', { conversationId });
-    console.log(`📍 Entrando na conversa: ${conversationId}`);
   }
 
   // Sair de uma sala de conversa
   leaveConversation(conversationId) {
     this.send('leave:conversation', { conversationId });
-    console.log(`📍 Saindo da conversa: ${conversationId}`);
   }
 }
 

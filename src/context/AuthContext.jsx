@@ -62,7 +62,6 @@ export function AuthProvider({ children }) {
       // Conectar WebSocket após login bem-sucedido
       try {
         await wsClient.connect(response.accessToken);
-        console.log('✅ WebSocket conectado após login');
       } catch (wsErr) {
         console.warn('⚠️ WebSocket não conseguiu conectar:', wsErr.message);
         // Não falha o login se WebSocket falhar

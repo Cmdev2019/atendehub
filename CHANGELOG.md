@@ -29,6 +29,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-96 (2026-10-18, L-07):** login com e-mail ou senha em formato inválido responde 400 em vez de erro 500; senhas novas têm no máximo 72 bytes (o bcrypt ignorava o resto).
 
 ### Adicionado
+- **B-103 (2026-10-18, L-14):** o front passa a ter lint (ESLint) na CI, e os `console.log` que iam para o navegador em produção foram removidos.
 - **B-102 (2026-10-18, L-16):** `GET /health/dependencies` (só ADMIN) mostra se banco, Redis, storage e Evolution respondem, com o tempo de resposta.
 - **B-101 (2026-10-18, L-15):** notificações já lidas são apagadas depois de 90 dias (`NOTIFICATION_RETENTION_DAYS`); a purga da auditoria existe mas fica desligada até a decisão de LGPD (`AUDIT_LOG_RETENTION_DAYS`).
 
