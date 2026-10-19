@@ -221,4 +221,42 @@ describe('ConversationQueue — busca no servidor e tempo na fila (B-104)', () =
 
     expect(screen.getByTitle('Tempo na fila')).toHaveTextContent('12 min');
   });
+
+  // B-66: conversa transferida ou reaberta espera desde que voltou para a fila
+  it('conta o tempo desde o início da espera atual (waitingSince), não do createdAt', () => {
+    jest.setSystemTime(new Date('2026-10-18T12:00:00Z'));
+    render(h(ConversationQueue, {
+      activeId: null,
+      conversations: [{
+        id: '1', contact: 'Maria', messages: [], status: 'WAITING',
+        createdAt: '2026-10-17T09:00:00Z', waitingSince: '2026-10-18T11:55:00Z',
+      }],
+      onSelect: jest.fn(),
+    }));
+
+    expect(screen.getByTitle('Tempo na fila')).toHaveTextContent('5 min');
+  });
+});
+
+// B-66 (ADR-0019, regra 3): quem chegou depois vê o motivo da recusa
+describe('ConversationQueue — aviso do Atender recusado', () => {
+  it('mostra o motivo e fecha pelo botão', () => {
+    const onDismiss = jest.fn();
+    render(h(ConversationQueue, {
+      activeId: null,
+      conversations,
+      onSelect: jest.fn(),
+      attendNotice: 'Bruno já está atendendo',
+      onDismissAttendNotice: onDismiss,
+    }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Bruno já está atendendo');
+    fireEvent.click(screen.getByTitle('Fechar aviso'));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('sem aviso, nada aparece', () => {
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn() }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

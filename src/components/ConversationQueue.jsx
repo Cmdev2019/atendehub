@@ -52,6 +52,9 @@ export function ConversationQueue({
   currentUserId,
   onAttend,
   onSearch,
+  // B-66: por que o "Atender" foi recusado ("Fulano já está atendendo")
+  attendNotice = null,
+  onDismissAttendNotice,
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
@@ -202,6 +205,18 @@ export function ConversationQueue({
       onChange: (e) => setSearchTerm(e.target.value),
       'aria-label': 'Buscar conversa',
     }),
+    attendNotice && h(
+      'div',
+      { className: 'queue-notice', role: 'alert' },
+      h(Icon, { name: 'warning', size: 14 }),
+      h('span', null, attendNotice),
+      onDismissAttendNotice && h('button', {
+        type: 'button',
+        className: 'queue-notice-close',
+        onClick: onDismissAttendNotice,
+        title: 'Fechar aviso',
+      }, h(Icon, { name: 'x', size: 12, label: 'Fechar aviso' })),
+    ),
     h(
       'div',
       { className: 'queue-list', onScroll: handleScroll },
@@ -261,8 +276,10 @@ export function ConversationQueue({
               ? h(
                   'div',
                   { className: 'queue-item-actions' },
-                  // B-104: há quanto tempo a conversa espera na fila
-                  h('span', { className: 'queue-item-time', title: 'Tempo na fila' }, formatElapsed(conv.createdAt, now)),
+                  // B-104: há quanto tempo a conversa espera na fila — desde o
+                  // início da espera atual (B-66), não do nascimento da conversa
+                  h('span', { className: 'queue-item-time', title: 'Tempo na fila' },
+                    formatElapsed(conv.waitingSince || conv.createdAt, now)),
                   h('button', {
                     type: 'button',
                     className: 'queue-item-attend',

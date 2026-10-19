@@ -296,6 +296,9 @@ class ApiClient {
       if (sub === 'assign' && method === 'PATCH') {
         return mockApiClient.assignConversation(id, body.agentId);
       }
+      if (sub === 'attend' && method === 'POST') {
+        return mockApiClient.attendConversation(id);
+      }
       if (sub === 'read' && method === 'PATCH') {
         return { id, unreadCount: 0 };
       }
@@ -557,7 +560,15 @@ class ApiClient {
     return this.request('/conversations/stats', { method: 'GET' });
   }
 
-  // Atender (B-31): atribui a conversa a um agente — o backend move
+  // Atender (B-66 / ADR-0019): pega a conversa da fila para quem chama.
+  // Quem chegar primeiro fica com ela; quem perdeu recebe 409 com o motivo
+  // ("Fulano já está atendendo", "Fique Online para atender").
+  async attendConversation(id) {
+    return this.request(`/conversations/${id}/attend`, { method: 'POST' });
+  }
+
+  // Transferir (B-66): para uma pessoa ou, sem agentId, de volta à fila. Antes
+  // era também o "Atender" (B-31) — o backend move
   // sozinho pra status OPEN quando `agentId` é informado.
   async assignConversation(id, data) {
     return this.request(`/conversations/${id}/assign`, {

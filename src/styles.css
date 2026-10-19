@@ -751,6 +751,34 @@ button {
   background: var(--panel);
 }
 
+/* B-66: por que o "Atender" foi recusado ("Fulano já está atendendo") */
+.queue-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.queue-notice > span {
+  flex: 1;
+}
+
+.queue-notice-close {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.queue-notice-close:hover {
+  background: var(--line);
+}
+
 .queue-list {
   overflow-y: auto;
   padding: 4px;

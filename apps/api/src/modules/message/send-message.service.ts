@@ -11,6 +11,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
+import { ConversationService } from '../conversation/conversation.service';
 import { MessageService } from './message.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
@@ -32,6 +33,7 @@ export class SendMessageService {
     private readonly evolution: EvolutionService,
     private readonly eventsService: EventsService,
     private readonly messageService: MessageService,
+    private readonly conversationService: ConversationService,
   ) {}
 
   // ── Carrega a conversa e aplica as regras de envio (compartilhado) ────────
@@ -97,6 +99,14 @@ export class SendMessageService {
       throw new BadRequestException(
         `Conexão WhatsApp está ${conversation.whatsapp.status}. Reconecte antes de enviar mensagens`,
       );
+    }
+
+    // B-66 (ADR-0019, regras 2 e 3): responder uma conversa da fila é atender
+    // — passa pela mesma troca atômica do botão Atender, ANTES de falar com o
+    // paciente: quem perdeu a disputa (ou está Offline) não manda nada. Só
+    // ADMIN/SUPERVISOR chegam aqui com a conversa em espera (canSend acima).
+    if (conversation.status === ConversationStatus.WAITING) {
+      await this.conversationService.attend(companyId, conversationId, senderId);
     }
 
     return conversation;
@@ -168,18 +178,12 @@ export class SendMessageService {
     // B-60: mesmo rótulo usado para mensagem recebida ("Áudio", "Imagem"...)
     const preview = buildMessagePreview(MessageType.TEXT, dto.content);
 
+    // B-66: a saída da fila já aconteceu no prepareSend (attend)
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: preview.slice(0, 100),
-        // Se a conversa estava em espera, move para OPEN ao enviar
-        ...(conversation.status === ConversationStatus.WAITING && {
-          status: ConversationStatus.OPEN,
-          agentId: senderId,
-          // B-98 (L-10): saiu da espera — zera a marca de SLA violado
-          slaBreachedAt: null,
-        }),
       },
     });
 
@@ -311,12 +315,6 @@ export class SendMessageService {
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: preview.slice(0, 100),
-        ...(conversation.status === ConversationStatus.WAITING && {
-          status: ConversationStatus.OPEN,
-          agentId: senderId,
-          // B-98 (L-10): saiu da espera — zera a marca de SLA violado
-          slaBreachedAt: null,
-        }),
       },
     });
 

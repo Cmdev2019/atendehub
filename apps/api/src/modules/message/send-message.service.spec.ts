@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { MessageType, Role, ConversationStatus, SenderType, MessageStatus, Prisma } from '@prisma/client';
 import { SendMessageService } from './send-message.service';
@@ -11,6 +12,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { EventsService } from '../events/events.service';
+import { ConversationService } from '../conversation/conversation.service';
 
 // B4-5: envio de mensagem é síncrono (decisão B2-1 — sem fila/retry, a
 // própria requisição HTTP espera a Evolution confirmar). Isolamento
@@ -28,6 +30,7 @@ describe('SendMessageService', () => {
   const mockStorage = { upload: jest.fn() };
   const mockEvolution = { sendTextMessage: jest.fn(), sendMediaMessage: jest.fn() };
   const mockEvents = { emitNewMessage: jest.fn(), emitMessageUpdated: jest.fn() };
+  const mockConversationService = { attend: jest.fn() };
 
   const companyId = 'company-1';
   const conversationId = 'conv-1';
@@ -64,6 +67,7 @@ describe('SendMessageService', () => {
         { provide: StorageService, useValue: mockStorage },
         { provide: EvolutionService, useValue: mockEvolution },
         { provide: EventsService, useValue: mockEvents },
+        { provide: ConversationService, useValue: mockConversationService },
       ],
     }).compile();
 
@@ -213,14 +217,21 @@ describe('SendMessageService', () => {
       expect(result.id).toBe('msg-1');
     });
 
-    it('conversa em WAITING (sem agente ainda) vira OPEN e ganha o remetente como agente — SUPERVISOR assumindo da fila', async () => {
+    // B-66 (ADR-0019, regras 2 e 3): responder da fila é atender — pela mesma
+    // troca atômica do botão, e ANTES de falar com o paciente
+    it('conversa em WAITING: o SUPERVISOR atende pela troca atômica antes de enviar', async () => {
       mockPrisma.conversation.findFirst.mockReset();
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         ...baseConversation,
         status: ConversationStatus.WAITING,
         agentId: null, // ninguém atribuído ainda — só ADMIN/SUPERVISOR pode enviar direto (canSend)
       });
-      mockEvolution.sendTextMessage.mockResolvedValueOnce({ key: { id: 'wa-msg-1' } });
+      const order: string[] = [];
+      mockConversationService.attend.mockImplementationOnce(async () => order.push('attend'));
+      mockEvolution.sendTextMessage.mockImplementationOnce(async () => {
+        order.push('send');
+        return { key: { id: 'wa-msg-1' } };
+      });
       mockPrisma.message.create.mockResolvedValueOnce({
         id: 'msg-1',
         senderType: SenderType.AGENT,
@@ -234,15 +245,41 @@ describe('SendMessageService', () => {
 
       await service.send(companyId, conversationId, senderId, Role.SUPERVISOR, textDto);
 
-      expect(mockPrisma.conversation.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: conversationId },
-          data: expect.objectContaining({
-            status: ConversationStatus.OPEN,
-            agentId: senderId,
-          }),
-        }),
-      );
+      expect(mockConversationService.attend).toHaveBeenCalledWith(companyId, conversationId, senderId);
+      expect(order).toEqual(['attend', 'send']);
+      // A saída da fila já aconteceu no attend — aqui só a prévia
+      expect(mockPrisma.conversation.update.mock.calls[0][0].data).not.toHaveProperty('status');
+    });
+
+    it('perdeu a disputa da fila (ou está Offline): nada vai para o paciente', async () => {
+      mockPrisma.conversation.findFirst.mockReset();
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        ...baseConversation,
+        status: ConversationStatus.WAITING,
+        agentId: null,
+      });
+      mockConversationService.attend.mockRejectedValueOnce(new ConflictException('Bruno já está atendendo'));
+
+      await expect(
+        service.send(companyId, conversationId, senderId, Role.SUPERVISOR, textDto),
+      ).rejects.toThrow(new ConflictException('Bruno já está atendendo'));
+      expect(mockEvolution.sendTextMessage).not.toHaveBeenCalled();
+      expect(mockPrisma.message.create).not.toHaveBeenCalled();
+    });
+
+    it('conversa já em atendimento não passa pelo attend', async () => {
+      mockPrisma.conversation.findFirst.mockReset();
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(baseConversation);
+      mockEvolution.sendTextMessage.mockResolvedValueOnce({ key: { id: 'wa-msg-2' } });
+      mockPrisma.message.create.mockResolvedValueOnce({
+        id: 'msg-2', senderType: SenderType.AGENT, content: 'Olá!', type: MessageType.TEXT,
+        status: MessageStatus.SENT, sentAt: new Date(), externalId: 'wa-msg-2',
+      });
+      mockPrisma.conversation.update.mockResolvedValueOnce({});
+
+      await service.send(companyId, conversationId, senderId, Role.AGENT, textDto);
+
+      expect(mockConversationService.attend).not.toHaveBeenCalled();
     });
   });
 

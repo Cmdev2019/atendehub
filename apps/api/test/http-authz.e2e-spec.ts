@@ -84,6 +84,9 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     await mkUser('supervisorA', A, 'SUPERVISOR');
     await mkUser('agentJur', A, 'AGENT', jur.id);
     await mkUser('adminB', B, 'ADMIN');
+    // B-66: transferir exige o destino Online — sem isto, o 409 do B-73 abaixo
+    // viria do "está Offline", e não do índice de conversa ativa por contato
+    await prisma.user.update({ where: { id: users.supervisorA.id }, data: { availability: 'ONLINE' } });
 
     const mkConv = async (key: string, companyId: string, departmentId: string | null) => {
       const contact = await prisma.contact.create({ data: { companyId, phone: `55${Math.floor(Math.random() * 1e11)}`, name: key } });

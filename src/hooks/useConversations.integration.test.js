@@ -13,6 +13,7 @@ jest.mock('../services/api', () => ({
     addConversationTag: jest.fn(),
     removeConversationTag: jest.fn(),
     assignConversation: jest.fn(),
+    attendConversation: jest.fn(),
     updateConversationStatus: jest.fn(),
     markConversationRead: jest.fn().mockResolvedValue({ unreadCount: 0 }),
   },
@@ -618,6 +619,39 @@ describe('useConversations Integration Tests', () => {
     });
   });
 
+  // B-66: quem atendeu tira a conversa da Fila de todos na hora — o evento
+  // traz o status (antes só o agente, e a conversa seguia WAITING nos outros
+  // painéis, com o botão Atender ativo)
+  it('conversation.assigned com status: sai da fila; devolvida, volta com a espera nova', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({
+      data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+      pagination: { page: 1, limit: 20, total: 1 },
+    });
+
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+    const assignedHandler = mockWsClient.on.mock.calls.find((call) => call[0] === 'conversation.assigned')[1];
+
+    act(() => {
+      assignedHandler({
+        conversationId: '1', agentId: 'bruno', agent: { id: 'bruno', name: 'Bruno' }, status: 'OPEN',
+      });
+    });
+    await waitFor(() => expect(result.current.conversations[0].status).toBe('OPEN'));
+
+    act(() => {
+      assignedHandler({
+        conversationId: '1', agentId: null, agent: null, status: 'WAITING', waitingSince: '2026-10-19T15:00:00.000Z',
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.conversations[0].status).toBe('WAITING');
+      expect(result.current.conversations[0].agentId).toBeNull();
+      expect(result.current.conversations[0].waitingSince).toBe('2026-10-19T15:00:00.000Z');
+    });
+  });
+
   it('limpa slaBreached ao receber conversation.updated com status fora de WAITING (F3-4)', async () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [
@@ -1083,12 +1117,12 @@ describe('useConversations Integration Tests', () => {
 
   // B-31: etapas de atendimento — atender (assign) e encerrar (status).
   describe('etapas de atendimento (B-31)', () => {
-    it('atender: atribui e atualiza status/agente localmente', async () => {
+    it('atender: pega pela rota própria (B-66) e atualiza status/agente localmente', async () => {
       mockApiClient.getConversations.mockResolvedValueOnce({
         data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
         pagination: { page: 1, limit: 20, total: 1 },
       });
-      mockApiClient.assignConversation.mockResolvedValueOnce({
+      mockApiClient.attendConversation.mockResolvedValueOnce({
         status: 'OPEN',
         agent: { id: 'user-1', name: 'Ana' },
       });
@@ -1096,15 +1130,39 @@ describe('useConversations Integration Tests', () => {
       const { result } = renderHook(() => useConversations());
       await waitFor(() => expect(result.current.conversations).toHaveLength(1));
 
+      let outcome;
       await act(async () => {
-        await result.current.attendConversation('1', { id: 'user-1', name: 'Ana' });
+        outcome = await result.current.attendConversation('1', { id: 'user-1', name: 'Ana' });
       });
 
-      expect(mockApiClient.assignConversation).toHaveBeenCalledWith('1', { agentId: 'user-1' });
+      expect(outcome).toEqual({ ok: true });
+      expect(mockApiClient.attendConversation).toHaveBeenCalledWith('1');
+      expect(mockApiClient.assignConversation).not.toHaveBeenCalled();
       const conv = result.current.conversations.find((c) => c.id === '1');
       expect(conv.status).toBe('OPEN');
       expect(conv.agent).toBe('Ana');
       expect(conv.agentId).toBe('user-1');
+    });
+
+    it('atender recusado (outro chegou antes): devolve o motivo e não mexe na conversa', async () => {
+      mockApiClient.getConversations.mockResolvedValueOnce({
+        data: [{ id: '1', contact: 'João', status: 'WAITING', messages: [] }],
+        pagination: { page: 1, limit: 20, total: 1 },
+      });
+      mockApiClient.attendConversation.mockRejectedValueOnce(
+        Object.assign(new Error('Bruno já está atendendo'), { status: 409 }),
+      );
+
+      const { result } = renderHook(() => useConversations());
+      await waitFor(() => expect(result.current.conversations).toHaveLength(1));
+
+      let outcome;
+      await act(async () => {
+        outcome = await result.current.attendConversation('1', { id: 'user-1', name: 'Ana' });
+      });
+
+      expect(outcome).toEqual({ ok: false, error: 'Bruno já está atendendo' });
+      expect(result.current.conversations[0].status).toBe('WAITING');
     });
 
     it('encerrar: sai da lista ativa e entra em closedConversations, com o motivo (B-32)', async () => {

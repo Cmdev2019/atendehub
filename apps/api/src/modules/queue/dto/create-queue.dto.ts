@@ -1,5 +1,9 @@
-import { IsString, IsOptional, IsInt, IsEnum, Min, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, Min, MaxLength } from 'class-validator';
 import { QueueStrategy } from '@prisma/client';
+
+// B-66 (ADR-0019, M-21): a fila é compartilhada — só MANUAL existe de fato
+export const QUEUE_STRATEGY_MESSAGE =
+  'A fila é compartilhada: a única estratégia é MANUAL (quem atender primeiro fica com a conversa)';
 
 export class CreateQueueDto {
   @IsString()
@@ -7,7 +11,7 @@ export class CreateQueueDto {
   name: string;
 
   @IsOptional()
-  @IsEnum(QueueStrategy)
+  @IsIn([QueueStrategy.MANUAL], { message: QUEUE_STRATEGY_MESSAGE })
   strategy?: QueueStrategy;
 
   @IsOptional()

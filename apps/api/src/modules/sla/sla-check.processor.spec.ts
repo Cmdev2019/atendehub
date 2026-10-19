@@ -60,6 +60,47 @@ describe('SlaCheckProcessor', () => {
     expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
   });
 
+  // B-66: o prazo vale o gravado na conversa
+  it('job de um ciclo anterior não alerta antes do prazo do ciclo atual', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      id: 'conv-1',
+      status: ConversationStatus.WAITING,
+      slaBreachedAt: null,
+      waitingSince: new Date(),
+      waitSlaDueAt: new Date(Date.now() + 120_000), // o ciclo novo ainda tem 2 min
+      agentId: null,
+      queueId: 'queue-1',
+      contact: {},
+      queue: {},
+    });
+
+    await processor.handleSlaCheck(makeJob());
+
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+    expect(mockEventsService.emitSlaBreached).not.toHaveBeenCalled();
+  });
+
+  it('prazo vencido: o tempo de espera conta do início do ciclo gravado', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      id: 'conv-1',
+      status: ConversationStatus.WAITING,
+      slaBreachedAt: null,
+      waitingSince: new Date(Date.now() - 300_000),
+      waitSlaDueAt: new Date(Date.now() - 1000),
+      agentId: null,
+      queueId: 'queue-1',
+      contact: { id: 'contact-1', name: 'Fulano', phone: '5512999999999' },
+      queue: { id: 'queue-1', name: 'Fila', maxWaitSecs: 60 },
+    });
+    mockPrisma.conversation.update.mockResolvedValueOnce({});
+    mockPrisma.user.findMany.mockResolvedValueOnce([]);
+
+    await processor.handleSlaCheck(makeJob());
+
+    const [{ waitTimeSeconds }] = mockEventsService.emitSlaBreached.mock.calls[0];
+    expect(waitTimeSeconds).toBeGreaterThanOrEqual(299);
+  });
+
   it('não faz nada quando a conversa não é mais WAITING (já foi atendida)', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValueOnce({
       id: 'conv-1',

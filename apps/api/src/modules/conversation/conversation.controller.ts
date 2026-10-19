@@ -59,14 +59,24 @@ export class ConversationController {
     return this.conversationService.findOne(user.companyId, id);
   }
 
+  // POST /api/v1/conversations/:id/attend
+  // B-66 (ADR-0019): pegar a conversa da fila para si — quem chegar primeiro
+  // fica com ela; o outro recebe 409 "Fulano já está atendendo"
+  @Post(':id/attend')
+  @HttpCode(HttpStatus.OK)
+  attend(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
+    return this.conversationService.attend(user.companyId, id, user.id);
+  }
+
   // PATCH /api/v1/conversations/:id/assign
+  // B-66: transferência — o papel decide quem pode mexer em qual conversa
   @Patch(':id/assign')
   assign(
     @CurrentUser() user: AuthUserDto,
     @Param('id') id: string,
     @Body() dto: AssignConversationDto,
   ) {
-    return this.conversationService.assign(user.companyId, id, dto, user.id);
+    return this.conversationService.assign(user.companyId, id, dto, user);
   }
 
   // PATCH /api/v1/conversations/:id/status
@@ -76,7 +86,7 @@ export class ConversationController {
     @Param('id') id: string,
     @Body() dto: UpdateConversationStatusDto,
   ) {
-    return this.conversationService.updateStatus(user.companyId, id, dto);
+    return this.conversationService.updateStatus(user.companyId, id, dto, user);
   }
 
   // PATCH /api/v1/conversations/:id/read
