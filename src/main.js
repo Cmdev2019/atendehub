@@ -1,4 +1,4 @@
-import { StrictMode, createElement, useState } from "react";
+import { StrictMode, Suspense, createElement, lazy, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -12,18 +12,25 @@ import { LoginPage } from "./pages/LoginPage";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Metrics } from "./components/Metrics";
-import { DashboardView } from "./components/DashboardView";
-import { ReportsView } from "./components/ReportsView";
-import { ContactsView } from "./components/ContactsView";
 import { ConversationQueue } from "./components/ConversationQueue";
 import { ChatPanel } from "./components/ChatPanel";
 import { EmptyChatState } from "./components/EmptyChatState";
 import { CustomerPanel } from "./components/CustomerPanel";
-import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { DemoBanner } from "./components/DemoBanner";
 import { RealtimeStatusBanner } from "./components/RealtimeStatusBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useConversations } from "./hooks/useConversations";
+
+// B-105 (L-13): telas fora do atendimento carregam sob demanda — o bundle
+// inicial tinha 856 kB (recharts dos gráficos incluso) mesmo para quem só
+// atende a fila.
+const named = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
+const DashboardView = named(() => import("./components/DashboardView"), "DashboardView");
+const ReportsView = named(() => import("./components/ReportsView"), "ReportsView");
+const ContactsView = named(() => import("./components/ContactsView"), "ContactsView");
+const SettingsPanel = named(() => import("./components/settings/SettingsPanel"), "SettingsPanel");
+const lazyView = (component) =>
+  h(Suspense, { fallback: h("div", { className: "loading-screen" }, h("div", { className: "spinner" })) }, h(component));
 
 initMonitoring(); // B-18
 
@@ -97,13 +104,13 @@ function Dashboard() {
       { className: "main-layout" },
       h(Sidebar, { activeView: view, onNavigate: setView }),
       view === "settings"
-        ? h("div", { className: "workspace workspace-settings" }, h(SettingsPanel))
+        ? h("div", { className: "workspace workspace-settings" }, lazyView(SettingsPanel))
         : view === "dashboard"
-        ? h("div", { className: "workspace workspace-dashboard" }, h(DashboardView))
+        ? h("div", { className: "workspace workspace-dashboard" }, lazyView(DashboardView))
         : view === "reports"
-        ? h("div", { className: "workspace workspace-reports" }, h(ReportsView))
+        ? h("div", { className: "workspace workspace-reports" }, lazyView(ReportsView))
         : view === "contacts"
-        ? h("div", { className: "workspace workspace-contacts" }, h(ContactsView))
+        ? h("div", { className: "workspace workspace-contacts" }, lazyView(ContactsView))
         : h(
             "div",
             { className: "workspace-inbox" },

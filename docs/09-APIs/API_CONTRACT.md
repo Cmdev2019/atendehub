@@ -254,6 +254,8 @@ obrigatória, B-36), não uma tentativa de atendimento que não deu certo.
 ---
 
 ## Reports — `/reports` (B-33)
+B-105: período de no máximo **366 dias** e início antes do fim (`400` caso contrário); a base de atendimento
+recusa (`400`) períodos com mais de **5.000** conversas — peça um período menor.
 
 > **Só SUPERVISOR em diante (B-40):** os relatórios cobrem a empresa toda;
 > AGENT recebe **403**.

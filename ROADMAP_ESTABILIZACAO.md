@@ -185,6 +185,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-102 | L-16 | Diagnóstico de dependências (GET /health/dependencies, ADMIN): banco, Redis, storage e Evolution com timeout de 2 s | ✅ 2026-10-18 |
 | B-103 | L-14 | Front ganha ESLint (React, hooks, no-console) na CI; os 10 console.log de produção saíram — resolve o B-47 | ✅ 2026-10-18 |
 | B-104 | L-09 | Busca da fila no servidor (com o filtro da aba) e tempo na fila / última atividade em cada conversa | ✅ 2026-10-18 |
+| B-105 | L-13 | Relatórios com limite de período (366 dias) e de linhas (5.000); front carrega Dashboard, Relatórios, Contatos e Configurações sob demanda (856 → 462 kB no carregamento inicial) | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 

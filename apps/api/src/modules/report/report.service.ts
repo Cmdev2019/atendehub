@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConversationStatus, ConversationResolution } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { loadCompanyTimeZone, parsePeriodBoundary } from '../../shared/time/company-time';
@@ -6,6 +6,11 @@ import type { ExportRow } from './report-export.util';
 
 const DEFAULT_PERIOD_DAYS = 30;
 const HOUR_MS = 60 * 60 * 1000;
+// B-105 (L-13): relatório sem limite de período nem de linhas carregava tudo
+// na memória (e o PDF é desenhado no próprio processo). Um ano por consulta e
+// um teto de linhas na base de atendimento.
+export const REPORT_MAX_PERIOD_DAYS = 366;
+export const REPORT_MAX_ROWS = 5000;
 
 const RESOLUTION_LABELS: Record<string, string> = {
   RESOLVED: 'Resolvido',
@@ -52,6 +57,12 @@ export class ReportService {
     const from_ = from
       ? parsePeriodBoundary(from, timeZone, 'start')
       : new Date(to_.getTime() - DEFAULT_PERIOD_DAYS * 24 * HOUR_MS);
+    if (from_ > to_) {
+      throw new BadRequestException('O início do período precisa ser antes do fim');
+    }
+    if (to_.getTime() - from_.getTime() > REPORT_MAX_PERIOD_DAYS * 24 * HOUR_MS) {
+      throw new BadRequestException(`O período do relatório pode ter no máximo ${REPORT_MAX_PERIOD_DAYS} dias`);
+    }
     return { from: from_, to: to_, timeZone };
   }
 
@@ -79,7 +90,15 @@ export class ReportService {
         tags: { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
+      // B-105 (L-13): uma a mais que o teto, para saber se passou
+      take: REPORT_MAX_ROWS + 1,
     });
+
+    if (conversations.length > REPORT_MAX_ROWS) {
+      throw new BadRequestException(
+        `O período tem mais de ${REPORT_MAX_ROWS} conversas — reduza o período do relatório`,
+      );
+    }
 
     const rows = conversations.map((c) => ({
       contato: c.contact?.name || c.contact?.phone || '—',
