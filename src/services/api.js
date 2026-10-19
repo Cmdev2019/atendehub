@@ -364,6 +364,10 @@ class ApiClient {
         const currentUser = await mockApiClient.getCurrentUser();
         return mockApiClient.updateOwnProfile(currentUser.id, body);
       }
+      if (id === 'me' && sub === 'availability' && method === 'PATCH') {
+        const currentUser = await mockApiClient.getCurrentUser();
+        return mockApiClient.updateOwnAvailability(currentUser.id, body.availability);
+      }
       if (id && sub === 'password' && method === 'PATCH') {
         return mockApiClient.changePassword(id, body);
       }
@@ -728,6 +732,14 @@ class ApiClient {
     return this.request('/users/me', {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  }
+
+  // B-65 (ADR-0019): Online/Offline do próprio usuário — nunca de outro
+  async updateMyAvailability(availability) {
+    return this.request('/users/me/availability', {
+      method: 'PATCH',
+      body: JSON.stringify({ availability }),
     });
   }
 

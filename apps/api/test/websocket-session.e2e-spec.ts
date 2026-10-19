@@ -64,6 +64,15 @@ describe('Sessão no WebSocket (E2E)', () => {
       });
     });
 
+  const nextEvent = (socket: Socket, event: string, ms = 5000): Promise<any> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), ms);
+      socket.once(event, (payload) => {
+        clearTimeout(timer);
+        resolve(payload);
+      });
+    });
+
   const request = (method: string, path: string, token: string, data?: unknown) =>
     axios.request({
       method,
@@ -195,5 +204,62 @@ describe('Sessão no WebSocket (E2E)', () => {
     expect((await connect(change.data.accessToken)).outcome).toEqual({ connected: true });
     const old = (await connect(celular.accessToken)).outcome;
     expect(old).toEqual({ connected: false, message: 'Sessão encerrada', code: 'UNAUTHORIZED' });
+  });
+
+  // B-65 (ADR-0019): estado do atendente com o Socket.IO real — o supervisor
+  // vê a troca na hora, a queda da conexão não muda o estado (presença
+  // manual) e o logout põe Offline.
+  it('estado do atendente: supervisor vê na hora, queda do socket não muda e logout põe Offline', async () => {
+    const supervisor = await mkUser('sueli', Role.SUPERVISOR);
+    const atendente = await mkUser('fabio', Role.AGENT);
+    const supSession = await auth.login(supervisor);
+    const session = await auth.login(atendente);
+    const { socket: supSocket } = await connect(supSession.accessToken);
+
+    const ficouOnline = nextEvent(supSocket, 'user.availability');
+    const online = await request('PATCH', '/users/me/availability', session.accessToken, {
+      availability: 'ONLINE',
+    });
+    expect(online.status).toBe(200);
+    expect(online.data).toEqual(expect.objectContaining({ availability: 'ONLINE' }));
+    expect(await ficouOnline).toEqual(
+      expect.objectContaining({ companyId, userId: atendente.id, availability: 'ONLINE' }),
+    );
+
+    // Só os dois estados existem
+    const pausa = await request('PATCH', '/users/me/availability', session.accessToken, {
+      availability: 'PAUSA',
+    });
+    expect(pausa.status).toBe(400);
+
+    // Nem o ADMIN muda o estado de outra pessoa: o campo não existe no PATCH /users/:id
+    const admin = await mkUser('helena', Role.ADMIN);
+    const adminSession = await auth.login(admin);
+    const alheio = await request('PATCH', `/users/${atendente.id}`, adminSession.accessToken, {
+      availability: 'OFFLINE',
+    });
+    expect(alheio.status).toBe(400);
+
+    // Presença manual: a conexão do atendente cair não muda nada
+    const { socket: agentSocket } = await connect(session.accessToken);
+    const caiu = disconnectReason(agentSocket);
+    agentSocket.close();
+    await caiu;
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await request('GET', `/users/${atendente.id}`, supSession.accessToken)).data.availability).toBe(
+      'ONLINE',
+    );
+
+    const ficouOffline = nextEvent(supSocket, 'user.availability');
+    const logout = await request('POST', '/auth/logout', session.accessToken, {
+      refreshToken: session.refreshToken,
+    });
+    expect(logout.status).toBe(204);
+    expect(await ficouOffline).toEqual(
+      expect.objectContaining({ userId: atendente.id, availability: 'OFFLINE' }),
+    );
+    expect((await request('GET', `/users/${atendente.id}`, supSession.accessToken)).data.availability).toBe(
+      'OFFLINE',
+    );
   });
 });

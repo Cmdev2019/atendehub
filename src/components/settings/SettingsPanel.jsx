@@ -5,6 +5,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import { apiClient } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import { Icon } from '../icons';
+import { AVAILABILITY_LABELS } from '../AvailabilityToggle';
 
 // ── Níveis de usuário (Role do backend → rótulo do produto) ─────────────────
 export const ROLE_LABELS = {
@@ -324,6 +325,14 @@ function UsersSection({ canManage }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // B-65 (ADR-0019): o supervisor vê o estado de cada um mudar na hora
+  useEffect(
+    () => wsClient.on('user.availability', ({ userId, availability }) => {
+      setUsers((list) => list.map((u) => (u.id === userId ? { ...u, availability } : u)));
+    }),
+    [],
+  );
+
   const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
   const create = async (e) => {
@@ -443,6 +452,10 @@ function UsersSection({ canManage }) {
             h('div', { className: 'settings-row-title' }, u.name),
             h('div', { className: 'settings-hint' }, u.email),
           ),
+          h('span', {
+            className: `settings-badge ${u.availability === 'ONLINE' ? 'ok' : 'off'}`,
+            title: 'Estado escolhido pelo próprio usuário',
+          }, AVAILABILITY_LABELS[u.availability === 'ONLINE' ? 'ONLINE' : 'OFFLINE']),
           canManage && u.role !== 'SUPER_ADMIN'
             ? h(
                 'select',

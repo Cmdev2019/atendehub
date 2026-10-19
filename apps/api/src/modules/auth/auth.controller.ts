@@ -64,13 +64,15 @@ export class AuthController {
   }
 
   // POST /api/v1/auth/logout
+  // B-65: quem faz logout fica Offline — o usuário vem do token da requisição
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
     @Body() dto: RefreshTokenDto,
+    @CurrentUser() user: AuthUserDto,
     @AccessToken() accessToken?: string,
   ): Promise<void> {
-    return this.authService.logout(dto.refreshToken, accessToken);
+    return this.authService.logout(dto.refreshToken, accessToken, user);
   }
 
   // POST /api/v1/auth/revoke

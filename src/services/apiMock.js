@@ -68,7 +68,7 @@ const nextId = (prefix) => `${prefix}-${mockIdSeq++}`;
 // verdade (mock reinicia a cada reload da página).
 const mockRegisteredPasswords = {};
 
-const mockUsersList = Object.values(mockUsers).map((u) => ({ ...u, isActive: true }));
+const mockUsersList = Object.values(mockUsers).map((u) => ({ ...u, isActive: true, availability: 'OFFLINE' }));
 
 const mockDepartments = [
   { id: 'dept-1', name: 'Comercial', color: '#0f766e', users: [mockUsersList[1]] },
@@ -326,6 +326,9 @@ export class MockApiClient {
 
   async logout() {
     await this.simulateDelay();
+    // B-65: quem sai fica Offline, igual ao backend
+    const userId = this.token?.split('_')[1];
+    if (userId) this.setAvailability(userId, 'OFFLINE');
     this.clearToken();
   }
 
@@ -784,6 +787,7 @@ export class MockApiClient {
       companyId: 'comp-1',
       avatarUrl: null,
       isActive: true,
+      availability: 'OFFLINE',
     };
     mockUsersList.push(user);
     return user;
@@ -794,6 +798,8 @@ export class MockApiClient {
     const user = mockUsersList.find((u) => u.id === id);
     if (!user) throw { status: 404, message: 'Usuário não encontrado' };
     Object.assign(user, data);
+    // B-65: desativado não continua Online
+    if (data.isActive === false) this.setAvailability(id, 'OFFLINE');
     return user;
   }
 
@@ -824,6 +830,24 @@ export class MockApiClient {
 
   async uploadAvatar(id, dataUrl) {
     return this.updateOwnProfile(id, { avatarUrl: dataUrl });
+  }
+
+  // ── Estado Online/Offline (B-65) ────────────────────────────────────────────
+  // Mesmas duas estruturas do perfil próprio: a lista editável e a de login
+  setAvailability(id, availability) {
+    const availabilityChangedAt = new Date().toISOString();
+    [mockUsersList.find((u) => u.id === id), Object.values(mockUsers).find((u) => u.id === id)]
+      .filter(Boolean)
+      .forEach((u) => Object.assign(u, { availability, availabilityChangedAt }));
+    return { availability, availabilityChangedAt };
+  }
+
+  async updateOwnAvailability(id, availability) {
+    await this.simulateDelay();
+    if (!['ONLINE', 'OFFLINE'].includes(availability)) {
+      throw { status: 400, message: 'availability deve ser ONLINE ou OFFLINE' };
+    }
+    return this.setAvailability(id, availability);
   }
 
   async changePassword(id, data) {

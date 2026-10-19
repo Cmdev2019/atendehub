@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SessionModule } from './session.module';
 import { EventsModule } from '../events/events.module';
+import { AvailabilityModule } from '../availability/availability.module';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -21,6 +22,8 @@ import { RolesGuard } from './guards/roles.guard';
     // conexão Redis da blacklist, compartilhada com o WebSocket).
     SessionModule,
     EventsModule,
+    // B-65: o logout põe o usuário Offline
+    AvailabilityModule,
     // Registra o JwtModule com secret carregado via ConfigService (após .env ser lido)
     JwtModule.registerAsync({
       imports: [ConfigModule],

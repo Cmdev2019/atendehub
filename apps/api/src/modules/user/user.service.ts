@@ -5,7 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Availability, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
@@ -19,6 +19,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuthService } from '../auth/auth.service';
 import { runAsSystem } from '../../shared/tenant/tenant-context';
 import { EventsService } from '../events/events.service';
+import { AvailabilityService } from '../availability/availability.service';
 
 // Gera senha temporária que já satisfaz a política de senha do produto
 // (ChangePasswordDto: mín. 8, 1 maiúscula, 1 minúscula, 1 número) — sem
@@ -52,6 +53,9 @@ const USER_SELECT = {
   avatarUrl: true,
   isActive: true,
   lastSeenAt: true,
+  // B-65: o supervisor vê o estado de todos na lista de usuários
+  availability: true,
+  availabilityChangedAt: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -64,6 +68,7 @@ export class UserService {
     private readonly storage: StorageService,
     private readonly auth: AuthService,
     private readonly events: EventsService,
+    private readonly availability: AvailabilityService,
   ) {}
 
   // ── Listar com paginação e filtros ────────────────────────────────────────
@@ -201,9 +206,15 @@ export class UserService {
     // departamentos) e desativação tira o acesso — os sockets abertos caem e,
     // na reconexão, o handshake decide de novo.
     const roleChanged = !!dto.role && dto.role !== before.role;
-    if (roleChanged || (dto.isActive === false && before.isActive)) {
+    const deactivated = dto.isActive === false && before.isActive;
+    if (roleChanged || deactivated) {
       this.events.disconnectUser(id);
     }
+
+    // B-65 (ADR-0019): usuário desativado não continua aparecendo Online
+    const availability = deactivated
+      ? await this.availability.set({ id, companyId }, Availability.OFFLINE, 'deactivated', requesterId)
+      : null;
 
     // Mudança de role é a ação sensível aqui — edições de nome/telefone/avatar
     // não entram na auditoria v1 (decisão B1-4, ver Registro de decisões)
@@ -219,7 +230,7 @@ export class UserService {
       });
     }
 
-    return updated;
+    return availability ? { ...updated, ...availability } : updated;
   }
 
   // ── Auto-edição do próprio perfil (B3-1) ──────────────────────────────────
@@ -235,6 +246,13 @@ export class UserService {
       data: dto,
       select: USER_SELECT,
     });
+  }
+
+  // ── Estado do próprio usuário (B-65 / ADR-0019) ───────────────────────────
+  // Só o próprio usuário troca o seu estado: a rota não recebe id, então não
+  // há como mudar o de outra pessoa por aqui.
+  async updateOwnAvailability(companyId: string, userId: string, availability: Availability) {
+    return this.availability.set({ id: userId, companyId }, availability, 'self');
   }
 
   // ── Upload do próprio avatar (B3-2) ───────────────────────────────────────
@@ -374,6 +392,14 @@ export class UserService {
       after: { isActive: false },
     });
 
-    return updated;
+    // B-65 (ADR-0019): e não continua aparecendo Online
+    const availability = await this.availability.set(
+      { id, companyId },
+      Availability.OFFLINE,
+      'deactivated',
+      requesterId,
+    );
+
+    return { ...updated, ...availability };
   }
 }

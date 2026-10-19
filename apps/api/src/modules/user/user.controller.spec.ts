@@ -34,6 +34,14 @@ describe('UserController — troca de senha (B-51)', () => {
     );
   });
 
+  // B-65 (ADR-0019): o estado é sempre o do dono do token — a rota não tem :id
+  it('troca o estado do usuário do token, nunca de outro', () => {
+    const service = { updateOwnAvailability: jest.fn() };
+    new UserController(service as any).updateOwnAvailability(user, { availability: 'ONLINE' as any });
+
+    expect(service.updateOwnAvailability).toHaveBeenCalledWith('company-a', 'user-a', 'ONLINE');
+  });
+
   it('aplica limite próprio de 5 tentativas por minuto na rota', () => {
     // Mesmas chaves que o decorator @Throttle grava (THROTTLER:LIMIT/TTL +
     // nome do throttler) — o @nestjs/throttler não exporta essas constantes.

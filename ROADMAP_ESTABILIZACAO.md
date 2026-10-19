@@ -26,14 +26,16 @@
 - **Filas de atendimento — ADR-0019 aprovado** (2026-10-19, PR #104): fila compartilhada por
   setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento por
   setor e setores escolhidos no cadastro do atendente. A distribuição automática saiu do plano.
+  **B-65 concluído** (2026-10-19): o atendente escolhe Online/Offline no topo da tela, o logout e a
+  desativação põem Offline e o supervisor vê a troca na hora.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
-1. **Evolução: filas de atendimento** (ADR-0019), nesta ordem: **B-65** (Online/Offline — o
-   próximo), B-113 (setores no cadastro do atendente), B-66 (Atender atômico e fila
-   compartilhada), B-67 ("Pegar próxima"), B-112 (SLA no expediente), B-114 (SLA do atendimento) e
-   B-68 (painel, com os prints de referência do responsável).
+1. **Evolução: filas de atendimento** (ADR-0019), nesta ordem: B-65 (Online/Offline) ✅, **B-113**
+   (setores no cadastro do atendente — o próximo), B-66 (Atender atômico e fila compartilhada),
+   B-67 ("Pegar próxima"), B-112 (SLA no expediente), B-114 (SLA do atendimento) e B-68 (painel,
+   com os prints de referência do responsável).
 2. **Atualização de majors** (B-86) — um PR por major; os do Dependabot já estão abertos.
 3. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
 
@@ -60,7 +62,7 @@
 | Fase 1 | Bloqueadores de go-live | B-55 a B-64, B-40, B-43, B-44 | ✅ Concluída (B-43 e B-64 parciais, em espera) |
 | **Fase 2** | **Estabilização:** M-01, M-02, M-03, M-05 a M-11, M-13, M-14, M-16, M-19, M-20, M-21, M-23, M-25, M-26, M-27 e revisão da documentação (M-24) | B-69 em diante (M-16 resolvido no B-64; M-21 registrado como B-66) | ✅ Concluída 2026-10-18 (B-69 a B-90; em espera: e-mail/CAPTCHA do B-85, número real no B-81) |
 | Fase 3 | Higiene contínua: itens baixos L-01 a L-17 | — | ✅ Concluída 2026-10-18 (B-91 a B-106; L-01 no B-89; recomendações antigas registradas como B-107 a B-111) |
-| Evolução | **Filas de atendimento** — fora do plano da auditoria, depois da Fase 2 (decisão de 2026-10-17) | ADR-0019, B-65 a B-68, B-112 a B-114 | 🔄 Em andamento (ADR-0019 aprovado em 2026-10-19; próximo: B-65) |
+| Evolução | **Filas de atendimento** — fora do plano da auditoria, depois da Fase 2 (decisão de 2026-10-17) | ADR-0019, B-65 a B-68, B-112 a B-114 | 🔄 Em andamento (ADR-0019 aprovado e B-65 concluído em 2026-10-19; próximo: B-113) |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -73,7 +75,6 @@
 | B-43 | — | infra/nginx/nginx.conf não define nenhum header de segurança | 🔄 Parcial 2026-10-17 · em espera (projeto de estudo) |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
-| B-65 | — | O atendente não tem disponibilidade | ⬜ Pendente |
 | B-66 | M-21 | A estratégia da fila (ROUND_ROBIN, LEAST_BUSY) é gravada e nunca aplicada, e o "Atender" não é atômico | ⬜ Pendente |
 | B-67 | — | O atendente não consegue "pegar a próxima" conversa | ⬜ Pendente |
 | B-68 | L-09 | Não há painel de fila | ⬜ Pendente |
@@ -163,7 +164,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-62 | M-12 | LGPD: a anonimização de contato estava incompleta — o telefone continuava em messages.metadata.remoteJid de toda mensagem recebida, o… | ✅ 2026-10-17 |
 | B-63 | M-22 | Cobertura de ~50% na API com 0% em controllers, guards, estratégias JWT, DTOs e main.ts — por isso C-02, C-06 e as falhas de… | ✅ 2026-10-17 |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
-| B-65 | — | O atendente não tem disponibilidade | ⬜ Pendente |
+| B-65 | — | Atendente Online/Offline: só ele troca (seletor no topo), logout e desativação põem Offline, supervisor vê na hora | ✅ 2026-10-19 |
 | B-66 | M-21 | A estratégia da fila (ROUND_ROBIN, LEAST_BUSY) é gravada e nunca aplicada, e o "Atender" não é atômico | ⬜ Pendente |
 | B-67 | — | O atendente não consegue "pegar a próxima" conversa | ⬜ Pendente |
 | B-68 | L-09 | Não há painel de fila | ⬜ Pendente |

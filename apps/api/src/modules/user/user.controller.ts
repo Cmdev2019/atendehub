@@ -20,6 +20,7 @@ import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -59,6 +60,14 @@ export class UserController {
   @Patch('me')
   updateOwnProfile(@CurrentUser() user: AuthUserDto, @Body() dto: UpdateOwnProfileDto) {
     return this.userService.updateOwnProfile(user.companyId, user.id, dto);
+  }
+
+  // PATCH /api/v1/users/me/availability
+  // B-65 (ADR-0019): Online/Offline do próprio usuário. Sem :id — só se muda
+  // o próprio estado. Sem @Roles: todo papel atende, inclusive ADMIN.
+  @Patch('me/availability')
+  updateOwnAvailability(@CurrentUser() user: AuthUserDto, @Body() dto: UpdateAvailabilityDto) {
+    return this.userService.updateOwnAvailability(user.companyId, user.id, dto.availability);
   }
 
   // POST /api/v1/users/me/avatar

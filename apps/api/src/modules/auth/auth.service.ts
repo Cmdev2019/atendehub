@@ -12,12 +12,13 @@ import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, Role } from '@prisma/client';
+import { Availability, Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { EventsService } from '../events/events.service';
+import { AvailabilityOwner, AvailabilityService } from '../availability/availability.service';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -46,6 +47,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly events: EventsService,
+    private readonly availability: AvailabilityService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -63,6 +65,7 @@ export class AuthService {
         email: true,
         role: true,
         avatarUrl: true,
+        availability: true, // B-65: o painel mostra o estado logo depois do login
         passwordHash: true,
         isActive: true,
         company: {
@@ -289,7 +292,9 @@ export class AuthService {
   }
 
   // ── Logout — revoga o refresh token e opcionalmente o access token ────────
-  async logout(refreshToken: string, accessToken?: string): Promise<void> {
+  // B-65 (ADR-0019): quem sai do sistema fica Offline (`user` é quem está
+  // autenticado na requisição de logout).
+  async logout(refreshToken: string, accessToken?: string, user?: AvailabilityOwner): Promise<void> {
     // Revoga o refresh token (padrão)
     await this.prisma.refreshToken.updateMany({
       where: {
@@ -307,6 +312,16 @@ export class AuthService {
       // eventos depois do logout.
       const jti = (this.jwtService.decode(accessToken) as JwtPayload | null)?.jti;
       if (jti) this.events.disconnectSession(jti);
+    }
+
+    // Depois de revogar: uma falha aqui não pode impedir o logout — no pior
+    // caso o atendente aparece Online até ficar Offline por conta própria.
+    if (user) {
+      try {
+        await this.availability.set(user, Availability.OFFLINE, 'logout');
+      } catch (err: any) {
+        this.logger.warn(`Logout de ${user.id} sem passar para Offline: ${err.message}`);
+      }
     }
   }
 
@@ -359,6 +374,7 @@ export class AuthService {
         email: true,
         role: true,
         avatarUrl: true,
+        availability: true, // B-65
       },
     });
 

@@ -36,6 +36,7 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 | Enum | Valores |
 |---|---|
 | `Role` | `SUPER_ADMIN` · `ADMIN` · `SUPERVISOR` · `AGENT` |
+| `Availability` | `ONLINE` · `OFFLINE` — estado do atendente (B-65, ADR-0019); padrão `OFFLINE` |
 | `ConnectionStatus` | `CONNECTED` · `DISCONNECTED` · `CONNECTING` · `QR_CODE` · `ERROR` |
 | `Channel` | `WHATSAPP` · `INSTAGRAM` · `EMAIL` · `CHAT` |
 | `ConversationStatus` | `WAITING` · `OPEN` · `RESOLVED` · `CLOSED` |
@@ -64,7 +65,8 @@ usuário, troca) têm no máximo **72 bytes** — o limite do bcrypt.
   "expiresIn": 900,                    // segundos de vida do accessToken
   "user": {
     "id": "...", "companyId": "...", "name": "...", "email": "...",
-    "role": "ADMIN", "avatarUrl": null
+    "role": "ADMIN", "avatarUrl": null,
+    "availability": "OFFLINE"            // B-65: o login não muda o estado
   }
 }
 // 401 → { statusCode: 401, message: "Usuário ou senha incorreta." }
@@ -108,12 +110,14 @@ Empresa nasce no plano `FREE` (`maxAgents=5`, `maxChannels=2` — defaults do sc
 
 ### `POST /auth/logout`
 `{ "refreshToken": "..." }` → revoga o refresh token e blacklista o access token atual. Responde **204 No Content**.
+B-65: põe o usuário do token **Offline** (emite `user.availability` se ele estava Online). Uma falha
+nessa troca não impede o logout.
 
 ### `POST /auth/revoke`
 Revoga TODOS os refresh tokens do usuário (logout de todos os dispositivos).
 
 ### `GET /auth/me`
-→ `AuthUserDto`: `{ id, companyId, name, email, role, avatarUrl }`
+→ `AuthUserDto`: `{ id, companyId, name, email, role, avatarUrl, availability }`
 
 > ⚠️ **Não existe `POST /auth/register`** genérico (criar um novo usuário
 > dentro de uma empresa já existente sem ser ADMIN) — o `apiClient.register()`
@@ -409,8 +413,8 @@ Atribui/remove uma tag existente do contato (B1-1). 404 se a tag ou o contato n�
 ### `GET /users`
 Query: `search?` · `role?` · `isActive?` · `page` · `limit`.
 Item (`USER_SELECT` — nunca expõe `passwordHash`):
-`{ id, companyId, name, email, role, phone, avatarUrl, isActive, lastSeenAt, createdAt, updatedAt }`.
-Wrapper: `{ data, meta }`.
+`{ id, companyId, name, email, role, phone, avatarUrl, isActive, lastSeenAt, availability, availabilityChangedAt, createdAt, updatedAt }`.
+Wrapper: `{ data, meta }`. `availability` é o estado Online/Offline escolhido pelo próprio usuário (B-65).
 
 ### `POST /users`
 ```jsonc
@@ -424,6 +428,8 @@ Wrapper: `{ data, meta }`.
 ```
 
 ### `PATCH /users/:id` — campos parciais (incl. `role`, `isActive`), requer `ADMIN`
+`isActive: false` também põe o usuário Offline (B-65). `availability` não faz parte do DTO: o
+estado de outra pessoa não se muda por aqui (`400`, campo não permitido).
 ### `PATCH /users/:id/password` — `{ currentPassword, newPassword }` (só o próprio usuário)
 `:id` precisa ser o do usuário do token: qualquer outro id responde `403` antes de
 consultar o banco (B-51). Senha atual errada responde `400`. Limite próprio de
@@ -434,6 +440,7 @@ Encerra **todas** as sessões do usuário, inclusive a do token usado na chamada
 — o cliente precisa trocar os tokens salvos pelos da resposta para continuar logado.
 
 ### `DELETE /users/:id`
+Desativa (soft delete) e põe o usuário Offline (B-65).
 
 ### `POST /users/:id/reset-password` (B-26) — requer `ADMIN`
 Reset administrativo mínimo, sem SMTP: gera uma senha temporária aleatória
@@ -459,6 +466,19 @@ aceito, então o `ValidationPipe` (`forbidNonWhitelisted`) rejeita com 400
 antes de qualquer checagem de negócio. Retorna o `USER_SELECT` atualizado.
 **Atenção de rota:** precisa ser chamado antes de `PATCH /users/:id` na
 declaração do controller — "me" seria interpretado como `:id` senão.
+
+### `PATCH /users/me/availability` (B-65, ADR-0019) — estado do próprio usuário, qualquer papel
+```jsonc
+// Request
+{ "availability": "ONLINE" }               // ou "OFFLINE"; outro valor → 400
+// Response 200
+{ "availability": "ONLINE", "availabilityChangedAt": "2026-10-19T13:40:00.000Z" }
+```
+Só o próprio estado: a rota não tem `:id`. Online recebe o aviso de conversa nova e pega da fila;
+Offline não (a recusa ao atender entra no B-66). A troca é condicional: pedir o estado que já
+está devolve o atual, sem evento nem auditoria. Quando muda, emite `user.availability` e registra
+`user.availability_changed` na auditoria (`after.reason`: `self`, `logout` ou `deactivated`). O
+login não muda o estado; fechar a aba ou cair a conexão também não.
 
 ### `POST /users/me/avatar` (B3-2) — multipart, campo `file`
 Só aceita `image/*`, limite 5MB (menor que os 16MB de `messages/media` —
@@ -692,6 +712,8 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
   para a **união** de `conversation:<id>` + `company:<companyId>:all` + a sala do
   departamento da conversa + `agent:<agentId>` atribuído — nunca mais para a empresa
   inteira. `connection.status` (não é de conversa) segue em `company:<companyId>`.
+  `user.availability` (B-65) vai para `company:<companyId>:all` (ADMIN/SUPERVISOR) e
+  `agent:<userId>` (as outras abas do próprio usuário) — nunca para os colegas atendentes.
 
 ### Cliente → servidor
 | Evento | Payload | Efeito |
@@ -712,6 +734,7 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 | `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent }` |
 | `connection.status` | `{ companyId, connectionId, sessionName, status, phone?, profileName? }` |
 | `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` |
+| `user.availability` | `{ companyId, userId, availability: "ONLINE" \| "OFFLINE", changedAt }` — B-65 |
 
 ---
 
