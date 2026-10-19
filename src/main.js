@@ -72,6 +72,7 @@ function Dashboard() {
     closedLoadingMore,
     loadClosedConversations,
     loadMoreClosedConversations,
+    searchConversations,
     attendConversation,
     closeConversation,
   } = useConversations(user?.id);
@@ -131,6 +132,7 @@ function Dashboard() {
                   closedLoadingMore,
                   onLoadClosed: loadClosedConversations,
                   onLoadMoreClosed: loadMoreClosedConversations,
+                  onSearch: searchConversations,
                   currentUserId: user?.id,
                   onAttend: handleAttend,
                 }),

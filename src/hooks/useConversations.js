@@ -317,6 +317,22 @@ export function useConversations(currentUserId) {
     }
   }, [loadedFromApi, openHasMore, openLoadingMore, openPage, mergeConversations]);
 
+  // B-104 (L-09): busca da fila no servidor (nome/telefone do contato), com o
+  // filtro da aba — antes a busca só olhava o que já estava carregado
+  const searchConversations = useCallback(
+    async (term, tab) => {
+      const filters = {
+        queue: { status: 'WAITING' },
+        mine: { status: 'OPEN', agentId: currentUserId },
+        open: { status: 'OPEN' },
+        closed: { status: 'CLOSED' },
+      }[tab] ?? {};
+      const response = await apiClient.getConversations({ ...filters, search: term, page: 1, limit: 50 });
+      return (response.data || []).map(toUiConversation);
+    },
+    [currentUserId],
+  );
+
   // B-74 (M-09): eventos emitidos enquanto o socket esteve fora não voltam —
   // ao reconectar, a lista e as métricas são buscadas de novo. A conversa
   // aberta continua selecionada se ainda estiver na lista; as mensagens dela
@@ -939,6 +955,7 @@ export function useConversations(currentUserId) {
     closedLoadingMore,
     loadClosedConversations,
     loadMoreClosedConversations,
+    searchConversations,
     attendConversation,
     closeConversation,
   };

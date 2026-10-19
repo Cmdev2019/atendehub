@@ -1,6 +1,12 @@
-import { createElement as h, useState } from 'react';
+import { createElement as h, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { messagePreview } from '../utils/messagePreview';
+import { formatElapsed } from '../utils/elapsed';
+
+// B-104 (L-09): a partir de quantos caracteres a busca vai ao servidor, e o
+// intervalo de digitação antes de buscar
+export const SERVER_SEARCH_MIN_CHARS = 2;
+export const SEARCH_DEBOUNCE_MS = 300;
 
 // Distância (px) do fim da lista que já dispara a busca da próxima página —
 // carrega antes do usuário bater no fim de verdade, pra parecer contínuo.
@@ -45,11 +51,46 @@ export function ConversationQueue({
   onLoadMoreClosed,
   currentUserId,
   onAttend,
+  onSearch,
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
+  // B-104 (L-09): resultado da busca no servidor para (termo, aba). Antes, a
+  // busca filtrava só o que já estava carregado na tela — conversa da 2ª
+  // página em diante nunca aparecia.
+  const [serverResult, setServerResult] = useState(null);
+  // Relógio do tempo de espera, atualizado a cada minuto
+  const [now, setNow] = useState(() => Date.now());
 
-  const sourceList = activeTab === 'closed' ? closedConversations : conversations;
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const term = searchTerm.trim();
+  useEffect(() => {
+    if (!onSearch || term.length < SERVER_SEARCH_MIN_CHARS) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const list = await onSearch(term, activeTab);
+        if (!cancelled) setServerResult({ term, tab: activeTab, list });
+      } catch {
+        // Sem servidor, segue o filtro local abaixo
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [term, activeTab, onSearch]);
+
+  const usingServer = serverResult && serverResult.term === term && serverResult.tab === activeTab;
+  const sourceList = usingServer
+    ? serverResult.list
+    : activeTab === 'closed'
+      ? closedConversations
+      : conversations;
 
   const tabList = sourceList.filter((conv) => {
     if (activeTab === 'queue') return conv.status === 'WAITING';
@@ -62,7 +103,9 @@ export function ConversationQueue({
   // conversa que recebia mensagem em tempo real ficava parada onde estava.
   const activityOf = (conv) => new Date(conv.lastMessageAt || conv.createdAt || 0).getTime();
   const filteredConversations = tabList
-    .filter((conv) => conv.contact.toLowerCase().includes(searchTerm.toLowerCase()))
+    // O servidor já filtrou pelo nome/telefone; o filtro local cobre o
+    // intervalo de digitação e o modo sem servidor
+    .filter((conv) => usingServer || conv.contact.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => activityOf(b) - activityOf(a));
 
   // Contagens rápidas no seletor (menos a de encerrados, que só reflete o
@@ -215,13 +258,19 @@ export function ConversationQueue({
                 h('div', { className: 'queue-item-agent' }, h(Icon, { name: 'user', size: 11 }), ` ${conv.agent}`),
             ),
             activeTab === 'queue'
-              ? h('button', {
-                  type: 'button',
-                  className: 'queue-item-attend',
-                  onClick: (e) => handleAttend(e, conv.id),
-                  title: 'Assumir esta conversa',
-                }, 'Atender')
-              : h('div', { className: 'queue-item-time' }, conv.wait || ''),
+              ? h(
+                  'div',
+                  { className: 'queue-item-actions' },
+                  // B-104: há quanto tempo a conversa espera na fila
+                  h('span', { className: 'queue-item-time', title: 'Tempo na fila' }, formatElapsed(conv.createdAt, now)),
+                  h('button', {
+                    type: 'button',
+                    className: 'queue-item-attend',
+                    onClick: (e) => handleAttend(e, conv.id),
+                    title: 'Assumir esta conversa',
+                  }, 'Atender'),
+                )
+              : h('div', { className: 'queue-item-time', title: 'Última atividade' }, formatElapsed(activityOf(conv), now)),
           ),
         )
       ) : (
