@@ -12,7 +12,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
+_Nada ainda._
+
+## [0.2.0] - 2026-10-18
+
+Fecha a Fase 3 do plano da auditoria de 2026-10-16 (B-91 a B-106) e, com ela, o plano inteiro.
+
 ### Alterado
+- **B-106 (2026-10-18, L-17):** recomendações dos relatórios antigos registradas no backlog (B-107 a B-111).
 - **B-105 (2026-10-18, L-13):** relatórios aceitam até 366 dias e 5.000 conversas por consulta, e o painel abre mais rápido — as telas de Dashboard, Relatórios, Contatos e Configurações carregam só quando abertas.
 - **B-95 (2026-10-18, L-06):** cada requisição autenticada valida o usuário uma vez só (antes eram duas consultas ao banco e duas ao Redis).
 - **B-92 (2026-10-18, L-03):** o Dependabot sobe `prisma` e `@prisma/client` juntos e não propõe mais versões ímpares do Node na imagem da API.
