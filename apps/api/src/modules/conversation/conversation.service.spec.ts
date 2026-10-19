@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bull';
-import { ConversationStatus, Prisma } from '@prisma/client';
+import { ConversationStatus, Prisma, Role } from '@prisma/client';
 import { ConversationService } from './conversation.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
@@ -21,9 +21,13 @@ const mockPrisma = {
     count: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
+    findFirstOrThrow: jest.fn(),
     create: jest.fn(),
     aggregate: jest.fn(),
   },
+  // B-98: sem fluxo de auto-atendimento ativo, o expediente vale sempre
+  autoAttendanceFlow: { findUnique: jest.fn().mockResolvedValue(null) },
   user: { findFirst: jest.fn() },
   department: { findFirst: jest.fn() },
   queue: { findFirst: jest.fn(), findUnique: jest.fn() },
@@ -231,87 +235,286 @@ describe('ConversationService — isolamento multi-tenant', () => {
     });
   });
 
-  describe('assign', () => {
-    it('nunca chama conversation.update para uma conversa de outra empresa', async () => {
+  // B-66 (ADR-0019, regras 2, 3 e 10): pegar da fila — quem chegar primeiro
+  describe('attend', () => {
+    const waiting = {
+      id: 'conv-1',
+      waitingSince: new Date(Date.now() - 90_000),
+      waitSlaDueAt: new Date(Date.now() + 210_000),
+      slaBreachedAt: null,
+      queue: { maxWaitSecs: 300 },
+    };
+    const attended = {
+      id: 'conv-1',
+      status: ConversationStatus.OPEN,
+      waitingSince: waiting.waitingSince,
+      agent: { id: requesterId, name: 'Ana', avatarUrl: null },
+      department: { id: 'dep-1', name: 'Receitas' },
+    };
+
+    it('fica com a conversa numa troca condicional, cancela o SLA, audita o ciclo e avisa todos', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(waiting);
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(attended);
+
+      const result = await service.attend(companyA, 'conv-1', requesterId);
+
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'conv-1', companyId: companyA, status: ConversationStatus.WAITING, agentId: null },
+        data: { status: ConversationStatus.OPEN, agentId: requesterId, slaBreachedAt: null, waitSlaDueAt: null },
+      });
+      expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'conversation.attended',
+          userId: requesterId,
+          after: expect.objectContaining({ agentId: requesterId, maxWaitSecs: 300, breached: false }),
+        }),
+      );
+      expect(mockAuditLog.record.mock.calls[0][0].after.waitSeconds).toBeGreaterThanOrEqual(90);
+      expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv-1', agentId: requesterId, status: ConversationStatus.OPEN }),
+      );
+      expect(result).toEqual(attended);
+    });
+
+    it('Offline: 409 "Fique Online para atender", sem tocar na conversa', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'OFFLINE' });
+
+      await expect(service.attend(companyA, 'conv-1', requesterId)).rejects.toThrow(
+        new ConflictException('Fique Online para atender'),
+      );
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('chegou depois: 409 com o nome de quem está atendendo, sem auditoria nem evento', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+      mockPrisma.conversation.findFirst
+        .mockResolvedValueOnce(waiting)
+        .mockResolvedValueOnce({ status: ConversationStatus.OPEN, agent: { name: 'Bruno' } });
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.attend(companyA, 'conv-1', requesterId)).rejects.toThrow(
+        new ConflictException('Bruno já está atendendo'),
+      );
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+      expect(mockEventsService.emitConversationAssigned).not.toHaveBeenCalled();
+    });
+
+    it('encerrada antes de atender: 400', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+      mockPrisma.conversation.findFirst
+        .mockResolvedValueOnce(waiting)
+        .mockResolvedValueOnce({ status: ConversationStatus.CLOSED, agent: null });
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.attend(companyA, 'conv-1', requesterId)).rejects.toThrow(BadRequestException);
+    });
+
+    it('conversa de outra empresa: 404 sem tentar a troca', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.attend(companyA, conversationOfCompanyB, requesterId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // B-66 (ADR-0019, regra 4): transferir — o atendente só as dele; supervisor
+  // e admin transferem qualquer uma e puxam para si
+  describe('assign — transferência', () => {
+    const supervisor = { id: 'sup-1', role: Role.SUPERVISOR };
+    const ana = { id: 'ana', role: Role.AGENT };
+    const conv = (over: Record<string, unknown> = {}) => ({
+      id: 'conv-1',
+      status: ConversationStatus.OPEN,
+      contact: { name: 'Fulano' },
+      agent: { id: 'ana', name: 'Ana' },
+      department: { id: 'dep-1', name: 'Receitas' },
+      queue: { id: 'q-1', maxWaitSecs: 300 },
+      waitingSince: null,
+      waitSlaDueAt: null,
+      slaBreachedAt: null,
+      ...over,
+    });
+    const user = (id: string, name: string, availability = 'ONLINE') => ({ id, name, availability });
+    const result = (
+      agent: { id: string; name: string } | null,
+      status: ConversationStatus = ConversationStatus.OPEN,
+    ) => ({
+      id: 'conv-1', status, waitingSince: null, agent, department: { id: 'dep-1', name: 'Receitas' },
+    });
+
+    it('nunca toca numa conversa de outra empresa', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce(null); // findOne interno não acha
 
       await expect(
-        service.assign(
-          companyA,
-          conversationOfCompanyB,
-          { agentId: 'agente-hostil' },
-          requesterId,
-        ),
+        service.assign(companyA, conversationOfCompanyB, { agentId: 'agente-hostil' }, supervisor),
       ).rejects.toThrow(NotFoundException);
-      expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
-    });
-
-    it('registra auditoria e notifica o agente ao atribuir uma conversa de verdade', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.WAITING,
-        contact: { name: 'Fulano' },
-        agent: null,
-        department: null,
-      });
-      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1' });
-      mockPrisma.conversation.update.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.OPEN,
-        companyId: companyA,
-        agentId: 'agent-1',
-        departmentId: null,
-        agent: { id: 'agent-1', name: 'Agente', avatarUrl: null },
-        department: null,
-      });
-
-      await service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, requesterId);
-
-      expect(mockAuditLog.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'conversation.assigned',
-          before: { agentId: null },
-          after: { agentId: 'agent-1' },
-        }),
-      );
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'agent-1', type: 'conversation_assigned' }),
-      );
     });
 
     // B-73 (M-07): atribuir punha em OPEN qualquer conversa, inclusive
     // encerrada — contornava a regra de que CLOSED não reabre.
     it('recusa (400) atribuir uma conversa encerrada, sem alterar nada', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.CLOSED,
-        contact: { name: 'Fulano' },
-        agent: null,
-        department: null,
-      });
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv({ status: ConversationStatus.CLOSED }));
 
-      await expect(
-        service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, requesterId),
-      ).rejects.toThrow(BadRequestException);
-      expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'bruno' }, supervisor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
-    it('responde 409 quando reativar a conversa colide com outra conversa ativa do contato', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.RESOLVED,
-        contact: { name: 'Fulano' },
-        agent: null,
-        department: null,
-      });
-      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1' });
-      mockPrisma.conversation.update.mockRejectedValueOnce(p2002());
+    it('atendente transfere a conversa dele para um colega Online: troca condicional, auditoria e notificação', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('bruno', 'Bruno'));
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(result({ id: 'bruno', name: 'Bruno' }));
 
-      await expect(
-        service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, requesterId),
-      ).rejects.toThrow(ConflictException);
+      await service.assign(companyA, 'conv-1', { agentId: 'bruno' }, ana);
+
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'conv-1', companyId: companyA, status: ConversationStatus.OPEN, agentId: 'ana' },
+        data: expect.objectContaining({ agentId: 'bruno', status: ConversationStatus.OPEN }),
+      });
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'conversation.assigned',
+          before: { agentId: 'ana' },
+          after: { agentId: 'bruno' },
+        }),
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'bruno', type: 'conversation_assigned' }),
+      );
+    });
+
+    it('atendente não transfere a conversa de um colega nem a puxa para si (403)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv({ agent: { id: 'bruno', name: 'Bruno' } }));
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'ana' }, ana)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('atendente não tira conversa da fila pelo assign (403 — o caminho é o Atender)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv({ status: ConversationStatus.WAITING, agent: null }));
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'ana' }, ana)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('supervisor puxa para si a conversa de um atendente, sem notificar a si mesmo', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('sup-1', 'Sueli'));
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(result({ id: 'sup-1', name: 'Sueli' }));
+
+      await service.assign(companyA, 'conv-1', { agentId: 'sup-1' }, supervisor);
+
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ agentId: 'sup-1' }) }),
+      );
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('destino Offline: 409 com o nome, sem alterar nada', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('bruno', 'Bruno', 'OFFLINE'));
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'bruno' }, ana)).rejects.toThrow(
+        new ConflictException('Bruno está Offline'),
+      );
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('supervisor Offline puxando para si: 409 "Fique Online para atender"', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('sup-1', 'Sueli', 'OFFLINE'));
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'sup-1' }, supervisor)).rejects.toThrow(
+        new ConflictException('Fique Online para atender'),
+      );
+    });
+
+    it('sem pessoa: volta para a fila do setor com espera e SLA novos', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'q-1', maxWaitSecs: 300 });
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(result(null, ConversationStatus.WAITING));
+
+      await service.assign(companyA, 'conv-1', {}, ana);
+
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'conv-1', companyId: companyA, status: ConversationStatus.OPEN, agentId: 'ana' },
+        data: {
+          agentId: null,
+          departmentId: 'dep-1',
+          queueId: 'q-1',
+          status: ConversationStatus.WAITING,
+          waitingSince: expect.any(Date),
+          waitSlaDueAt: expect.any(Date),
+          slaBreachedAt: null,
+        },
+      });
+      expect(mockSlaQueue.add).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv-1', maxWaitSecs: 300 }),
+        expect.objectContaining({ jobId: 'sla-check:conv-1' }),
+      );
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'conversation.assigned', after: { agentId: null } }),
+      );
+      expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: null, status: ConversationStatus.WAITING }),
+      );
+    });
+
+    it('supervisor tira da fila para um atendente: fecha o ciclo da espera', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(
+        conv({ status: ConversationStatus.WAITING, agent: null, waitingSince: new Date(Date.now() - 60_000) }),
+      );
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('ana', 'Ana'));
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(result({ id: 'ana', name: 'Ana' }));
+
+      await service.assign(companyA, 'conv-1', { agentId: 'ana' }, supervisor);
+
+      expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'conversation.attended',
+          userId: 'sup-1',
+          after: expect.objectContaining({ agentId: 'ana' }),
+        }),
+      );
+    });
+
+    it('a conversa mudou no meio (alguém atendeu ou transferiu antes): 409, sem auditoria', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv());
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('bruno', 'Bruno'));
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'bruno' }, ana)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('responde 409 quando reativar a conversa colide com outra conversa ativa do contato (B-73)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conv({ status: ConversationStatus.RESOLVED, agent: null }));
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user('agent-1', 'Agente'));
+      mockPrisma.conversation.updateMany.mockRejectedValueOnce(p2002());
+
+      await expect(service.assign(companyA, 'conv-1', { agentId: 'agent-1' }, supervisor)).rejects.toThrow(
+        new ConflictException('Este contato já tem outra conversa ativa'),
+      );
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
@@ -366,19 +569,27 @@ describe('ConversationService — isolamento multi-tenant', () => {
       ).rejects.toThrow(ConflictException);
     });
 
-    // B-98 (L-10): sem zerar, uma 2ª espera da mesma conversa nunca era alertada
-    it('zera slaBreachedAt ao sair da espera e mantém ao voltar para WAITING', async () => {
+    // B-98 (L-10): sem zerar, uma 2ª espera da mesma conversa nunca era
+    // alertada. B-66: voltar para a fila abre um ciclo novo e limpo.
+    it('zera a marca de SLA ao sair da espera; ao voltar, abre um ciclo novo sem atendente', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING });
       mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.OPEN, companyId: companyA });
       await service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.OPEN });
       expect(mockPrisma.conversation.update.mock.calls[0][0].data).toEqual(
-        expect.objectContaining({ slaBreachedAt: null }),
+        expect.objectContaining({ slaBreachedAt: null, waitSlaDueAt: null }),
       );
 
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.RESOLVED });
       mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING, companyId: companyA });
       await service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.WAITING });
-      expect(mockPrisma.conversation.update.mock.calls[1][0].data).not.toHaveProperty('slaBreachedAt');
+      expect(mockPrisma.conversation.update.mock.calls[1][0].data).toEqual(
+        expect.objectContaining({
+          agentId: null,
+          waitingSince: expect.any(Date),
+          waitSlaDueAt: null, // sem fila, sem prazo
+          slaBreachedAt: null,
+        }),
+      );
     });
 
     it('não grava resolution em transições que não são para CLOSED', async () => {
@@ -428,6 +639,53 @@ describe('ConversationService — isolamento multi-tenant', () => {
           }),
         }),
       );
+    });
+
+    // B-66 (regra 4): sem isto, devolver a conversa de um colega para a fila e
+    // atendê-la era um atalho para puxar conversa
+    describe('permissões do atendente comum', () => {
+      const ana = { id: 'ana', role: Role.AGENT };
+
+      it('não muda o status da conversa de um colega (403)', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+          id: 'conv-1', status: ConversationStatus.OPEN, agent: { id: 'bruno' },
+        });
+
+        await expect(
+          service.updateStatus(companyA, 'conv-1', { status: ConversationStatus.WAITING }, ana),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+      });
+
+      it('encerra uma conversa da fila ("Encerrar sem atender", B-36)', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+          id: 'conv-1', status: ConversationStatus.WAITING, agent: null,
+        });
+        mockPrisma.conversation.update.mockResolvedValueOnce({
+          id: 'conv-1', status: ConversationStatus.CLOSED, companyId: companyA,
+        });
+
+        await service.updateStatus(
+          companyA, 'conv-1',
+          { status: ConversationStatus.CLOSED, resolution: 'CANCELLED' as any, resolutionNote: 'Spam' },
+          ana,
+        );
+        expect(mockPrisma.conversation.update).toHaveBeenCalled();
+      });
+
+      it('muda o status das conversas dele', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+          id: 'conv-1', status: ConversationStatus.OPEN, agent: { id: 'ana' },
+        });
+        mockPrisma.conversation.update.mockResolvedValueOnce({
+          id: 'conv-1', status: ConversationStatus.CLOSED, companyId: companyA,
+        });
+
+        await service.updateStatus(
+          companyA, 'conv-1', { status: ConversationStatus.CLOSED, resolution: 'RESOLVED' as any }, ana,
+        );
+        expect(mockPrisma.conversation.update).toHaveBeenCalled();
+      });
     });
   });
 

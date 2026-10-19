@@ -81,7 +81,7 @@ const mockConnections = [
 
 const mockQueues = [
   {
-    id: 'queue-1', name: 'Comercial', strategy: 'ROUND_ROBIN', maxWaitSecs: 300,
+    id: 'queue-1', name: 'Comercial', strategy: 'MANUAL', maxWaitSecs: 300,
     greetingMsg: 'Olá! Em instantes um atendente vai te responder.',
     departmentId: 'dept-1', isActive: true,
   },
@@ -413,7 +413,23 @@ export class MockApiClient {
     return { data, meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } };
   }
 
-  // Atender (B-31): atribui e move pra OPEN, igual ao ConversationService#assign real.
+  // Atender (B-66): igual ao ConversationService#attend — precisa estar Online,
+  // e quem chegar primeiro fica com a conversa
+  async attendConversation(id) {
+    await this.simulateDelay();
+    const conv = mockConversationsList.find((c) => c.id === id);
+    if (!conv) throw { status: 404, message: 'Conversa não encontrada' };
+    const me = await this.getCurrentUser();
+    if (me.availability !== 'ONLINE') throw { status: 409, message: 'Fique Online para atender' };
+    if (conv.status !== 'WAITING' || conv.agent) {
+      throw { status: 409, message: conv.agent ? `${conv.agent.name} já está atendendo` : 'Esta conversa não está na fila' };
+    }
+    conv.agent = { id: me.id, name: me.name, avatarUrl: me.avatarUrl ?? null };
+    conv.status = 'OPEN';
+    return { id: conv.id, status: conv.status, agent: conv.agent, department: conv.department ?? null };
+  }
+
+  // Transferir (B-66): atribui e move pra OPEN (antes era também o Atender, B-31).
   async assignConversation(id, agentId) {
     await this.simulateDelay();
     const conv = mockConversationsList.find((c) => c.id === id);
@@ -1052,7 +1068,7 @@ export class MockApiClient {
     const queue = {
       id: nextId('queue'),
       name: data.name,
-      strategy: data.strategy || 'ROUND_ROBIN',
+      strategy: 'MANUAL', // B-66: a fila é compartilhada — só MANUAL existe
       maxWaitSecs: data.maxWaitSecs || 300,
       greetingMsg: data.greetingMsg || null,
       departmentId: data.departmentId || null,

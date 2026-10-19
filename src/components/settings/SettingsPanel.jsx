@@ -18,12 +18,6 @@ export const ROLE_LABELS = {
 // Níveis atribuíveis pela tela (SUPER_ADMIN é interno do sistema)
 const ASSIGNABLE_ROLES = ['AGENT', 'SUPERVISOR', 'ADMIN'];
 
-const QUEUE_STRATEGY_LABELS = {
-  ROUND_ROBIN: 'Round-robin (distribui igualmente)',
-  MANUAL: 'Manual (atendente escolhe)',
-  LEAST_BUSY: 'Menos ocupado primeiro',
-};
-const QUEUE_STRATEGIES = ['ROUND_ROBIN', 'MANUAL', 'LEAST_BUSY'];
 
 const CONNECTION_STATUS_LABELS = {
   CONNECTED: { label: 'Conectado', tone: 'ok' },
@@ -755,7 +749,8 @@ function QueuesSection() {
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const emptyForm = { name: '', strategy: 'ROUND_ROBIN', maxWaitSecs: 300, greetingMsg: '', departmentId: '' };
+  // B-66 (ADR-0019): sem escolha de estratégia — a fila é compartilhada
+  const emptyForm = { name: '', maxWaitSecs: 300, greetingMsg: '', departmentId: '' };
   const [form, setForm] = useState(emptyForm);
   // Fila sendo editada (null = formulário de criação)
   const [editingId, setEditingId] = useState(null);
@@ -787,7 +782,6 @@ function QueuesSection() {
     setEditingId(queue.id);
     setForm({
       name: queue.name,
-      strategy: queue.strategy,
       maxWaitSecs: queue.maxWaitSecs,
       greetingMsg: queue.greetingMsg || '',
       departmentId: queue.departmentId || '',
@@ -801,7 +795,6 @@ function QueuesSection() {
     setError(null);
     const payload = {
       name: form.name.trim(),
-      strategy: form.strategy,
       maxWaitSecs: Number(form.maxWaitSecs) || 300,
       greetingMsg: form.greetingMsg.trim() || undefined,
       departmentId: form.departmentId || undefined,
@@ -847,8 +840,8 @@ function QueuesSection() {
     { className: 'settings-section' },
     h('h3', null, h(Icon, { name: 'clock', size: 17 }), ' Filas de distribuição'),
     h('p', { className: 'settings-hint' },
-      'Cada fila define como as conversas de um setor são distribuídas e quanto tempo ' +
-      'de espera é tolerado antes de alertar (SLA).'),
+      'As conversas ficam na fila do setor até alguém atender — quem pegar primeiro fica com ' +
+      'a conversa. O tempo máximo de espera é o prazo do SLA: passou dele, o supervisor é avisado.'),
     error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     h(
@@ -858,11 +851,6 @@ function QueuesSection() {
         className: 'settings-input', placeholder: 'Nome da fila (ex.: Comercial)', required: true,
         maxLength: 80, value: form.name, onChange: setField('name'),
       }),
-      h(
-        'select',
-        { className: 'settings-input', value: form.strategy, onChange: setField('strategy') },
-        QUEUE_STRATEGIES.map((s) => h('option', { key: s, value: s }, QUEUE_STRATEGY_LABELS[s])),
-      ),
       h('input', {
         className: 'settings-input', type: 'number', min: 1, placeholder: 'Tempo máx. de espera (segundos)',
         value: form.maxWaitSecs, onChange: setField('maxWaitSecs'),
@@ -901,8 +889,7 @@ function QueuesSection() {
                 { className: 'settings-item-main' },
                 h('div', { className: 'settings-row-title' }, queue.name),
                 h('div', { className: 'settings-hint' },
-                  `${QUEUE_STRATEGY_LABELS[queue.strategy] ?? queue.strategy} · ` +
-                  `espera máx. ${queue.maxWaitSecs}s · ${queue.department?.name ?? 'sem setor'}`),
+                  `Fila compartilhada · espera máx. ${queue.maxWaitSecs}s · ${queue.department?.name ?? 'sem setor'}`),
               ),
               h('span', { className: `settings-badge ${queue.isActive === false ? 'off' : 'ok'}` },
                 queue.isActive === false ? 'Inativa' : 'Ativa'),

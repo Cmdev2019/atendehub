@@ -43,7 +43,7 @@ Datas: ISO 8601 (`2026-07-16T18:14:56.851Z`). IDs: cuid (`cmrm93kc9...`).
 | `SenderType` | `AGENT` · `CLIENT` · `BOT` · `SYSTEM` |
 | `MessageType` | `TEXT` · `IMAGE` · `VIDEO` · `AUDIO` · `DOCUMENT` · `STICKER` · `LOCATION` · `CONTACT_CARD` · `TEMPLATE` · `REACTION` · `DELETED` — desde o B-81 a reação não vira mensagem (fica na original, em `metadata.reaction`); `REACTION` só aparece em mensagens antigas |
 | `MessageStatus` | `PENDING` · `SENT` · `DELIVERED` · `READ` · `FAILED` |
-| `QueueStrategy` | `ROUND_ROBIN` · `MANUAL` · `LEAST_BUSY` |
+| `QueueStrategy` | `ROUND_ROBIN` · `MANUAL` · `LEAST_BUSY` — desde o B-66 (ADR-0019) a API só aceita e aplica `MANUAL` (fila compartilhada); os outros dois ficam no enum só por histórico |
 | `AutoAttendanceAction` | `ROUTE_TO_DEPARTMENT` · `ROUTE_TO_QUEUE` · `END_CONVERSATION` |
 | `Plan` | `FREE` · `STARTER` · `PROFESSIONAL` · `ENTERPRISE` |
 
@@ -163,7 +163,11 @@ Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `department
   "department": { "id": "...", "name": "...", "color": "#6366f1" } | null,
   "whatsapp":   { "id": "...", "name": "teste", "phone": "5512..." } | null,
   "tags":       [{ "id": "...", "name": "...", "color": "..." }],
-  "_count":     { "messages": 12 }
+  "_count":     { "messages": 12 },
+  // B-66 (ADR-0019, regra 15): ciclo de espera atual
+  "waitingSince": "2026-10-19T13:00:00.000Z" | null, // início da espera atual (mantido depois de atendida)
+  "waitSlaDueAt": "2026-10-19T13:05:00.000Z" | null, // prazo do SLA da espera; null = sem SLA ou fora da fila
+  "slaBreachedAt": null                              // estouro do SLA da espera
 }
 // Wrapper: { data, meta: { total, page, limit, totalPages } }
 // Ordenação: lastMessageAt desc, createdAt desc
@@ -192,13 +196,37 @@ interpretado como `:id` senão.
 ```
 
 ### `GET /conversations/:id`
-Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos.
+Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos. `queue` traz `maxWaitSecs` (B-66).
 
-### `PATCH /conversations/:id/assign`
-`{ "agentId": "..." | null, "departmentId"?: "..." }` — atribui/desatribui. Emite `conversation.assigned`.
-Atribuir agente põe a conversa em `OPEN`. Conversa `CLOSED` responde `400` (encerrada
-não reabre, B-73). `409` se a conversa voltaria a ficar ativa e o contato já tem
-outra conversa `WAITING`/`OPEN` (uma ativa por contato, B-49).
+### `POST /conversations/:id/attend` (B-66, ADR-0019) — pegar a conversa da fila para si
+Corpo vazio. **Quem chegar primeiro fica com a conversa:** a passagem `WAITING → OPEN` é uma
+atualização condicional no banco, e com pedidos simultâneos só um passa.
+```jsonc
+// Response 200
+{ "id": "...", "status": "OPEN", "waitingSince": "...", "agent": { "id", "name", "avatarUrl" }, "department": { "id", "name" } | null }
+// 409 → { message: "Fulano já está atendendo" }          — outro chegou antes
+// 409 → { message: "Fique Online para atender" }          — quem chamou está Offline (B-65)
+// 409 → { message: "Esta conversa não está na fila" }
+// 400 → { message: "Esta conversa já foi encerrada" }
+```
+Qualquer papel, desde que a conversa esteja no escopo (B-40; fora dele, 404). Cancela o SLA da
+espera, registra `conversation.attended` na auditoria e emite `conversation.assigned` com `status`.
+
+### `PATCH /conversations/:id/assign` — transferir (B-66, ADR-0019 regra 4)
+`{ "agentId"?: "..." | null, "departmentId"?: "..." }` — para uma pessoa (`agentId`) ou, sem
+`agentId`, **de volta à fila** do setor (o informado ou o atual): `WAITING`, sem atendente, com
+`waitingSince` e prazo de SLA novos.
+- **Quem pode:** o `AGENT` transfere só as conversas que estão com ele — a de um colega, ou uma
+  da fila, responde `403` (para pegar da fila, `POST /attend`). `SUPERVISOR`/`ADMIN` transferem
+  qualquer conversa e puxam para si a de outro atendente.
+- **Destino:** a pessoa precisa estar Online (`409` "Fulano está Offline"; puxando para si,
+  "Fique Online para atender").
+- **Concorrência:** a troca confere quem estava com a conversa; se mudou no meio (alguém atendeu
+  ou transferiu antes), `409`.
+- Conversa `CLOSED` responde `400` (encerrada não reabre, B-73). `409` se a conversa voltaria a
+  ficar ativa e o contato já tem outra conversa `WAITING`/`OPEN` (uma ativa por contato, B-49).
+- Resposta: o mesmo shape do `/attend`. Emite `conversation.assigned` (com `status`); notifica a
+  pessoa que recebeu, se não for quem chamou.
 
 ### `PATCH /conversations/:id/status`
 `{ "status": "OPEN" | "RESOLVED" | "CLOSED" | "WAITING", "resolution"?: "RESOLVED" | "UNRESOLVED" | "CANCELLED", "resolutionNote"?: "até 500 caracteres" }`.
@@ -209,6 +237,9 @@ encerrar; ignorado/não persistido em qualquer outra transição.
 justificativa do atendente pra cancelar em vez de atender; não existe pra
 `RESOLVED`/`UNRESOLVED`. Emite `conversation.updated`. `409` ao reativar
 (`WAITING`/`OPEN`) quando o contato já tem outra conversa ativa (B-73).
+B-66: o `AGENT` só muda o status das conversas que estão com ele (`403` nas de colegas) — a
+exceção é encerrar uma conversa da fila ("Encerrar sem atender", B-36). Voltar para `WAITING`
+tira o atendente e abre um ciclo de espera novo (`waitingSince` e prazo de SLA).
 
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`. O front chama ao abrir a conversa e quando chega mensagem
@@ -372,7 +403,7 @@ empresa do usuário logado.
 // Mídia vai por upload em POST .../messages/media.
 // Response 201: a mensagem persistida (mesmo shape acima, sem attachments)
 ```
-Regras: conversa não pode estar `CLOSED`; contato não pode estar bloqueado; só o agente atribuído ou `SUPERVISOR+` envia; conexão precisa estar `CONNECTED`. Envio é **síncrono** (Evolution → banco → evento). Se a conversa estava `WAITING`, vira `OPEN` e o remetente assume (`agentId`).
+Regras: conversa não pode estar `CLOSED`; contato não pode estar bloqueado; só o agente atribuído ou `SUPERVISOR+` envia; conexão precisa estar `CONNECTED`. Envio é **síncrono** (Evolution → banco → evento). Se a conversa estava `WAITING`, o remetente a atende **antes** de enviar, pela mesma troca do `POST /attend` (B-66): se outro chegou antes ou o remetente está Offline, responde `409` e nada vai para o paciente.
 
 ### `POST .../messages/media` — upload direto (print/anexo)
 `multipart/form-data`: campo `file` (obrigatório, até 16MB) + `caption?` (até 1024).
@@ -522,7 +553,9 @@ Item: `{ id, name, strategy, maxWaitSecs, greetingMsg, departmentId, isActive, c
 
 ### `GET /queues/:id` — mesmo shape do item da lista
 
-### `POST /queues` — `{ name (único na empresa), strategy? (ROUND_ROBIN|MANUAL|LEAST_BUSY, default ROUND_ROBIN), maxWaitSecs? (segundos, default 300), greetingMsg?, departmentId? }`
+### `POST /queues` — `{ name (único na empresa), strategy? (só MANUAL — B-66), maxWaitSecs? (segundos, default 300), greetingMsg?, departmentId? }`
+B-66 (ADR-0019, M-21): a fila é compartilhada — `ROUND_ROBIN` e `LEAST_BUSY`, que eram gravadas e
+nunca aplicadas, respondem `400`. Sem `strategy`, vale `MANUAL`; as filas existentes foram migradas.
 `departmentId`, se informado, precisa pertencer à mesma empresa (404 se não pertencer).
 
 ### `PATCH /queues/:id` — campos parciais (incl. `isActive`) · `DELETE /queues/:id`
@@ -619,9 +652,11 @@ Item: `{ id, companyId, userId, action, entity, entityId, before, after, ip, use
 Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
 
 **Ações registradas na v1 (B1-4)**, decisão consciente de escopo mínimo — sem interceptor global, cada service chama `AuditLogService.record()` explicitamente para a ação que já considera sensível:
-- `user.created`, `user.role_changed` (não loga edição de nome/telefone/avatar), `user.deactivated`
+- `user.created` (com `departmentIds` desde o B-113), `user.role_changed` (não loga edição de nome/telefone/avatar), `user.deactivated`
+- `user.availability_changed` (B-65 — `after.reason`: `self`, `logout` ou `deactivated`)
 - `contact.deleted`
-- `conversation.assigned` (loga a mudança real de `agentId`, incluindo desatribuição)
+- `conversation.assigned` (loga a mudança real de `agentId` numa transferência, incluindo a devolução à fila)
+- `conversation.attended` (B-66 — a conversa saiu da fila com alguém: `after` com `agentId`, `waitSeconds`, `maxWaitSecs` e `breached`)
 - `sla.breached` (já existia antes da B1-4, migrado para usar `AuditLogService`)
 
 ---
@@ -741,7 +776,7 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 | `message.status` | `{ conversationId, companyId, externalId, status }` |
 | `conversation.created` | `{ companyId, conversation: { id, status, channel, contact: {id,name,phone,avatarUrl}, whatsappConnectionId, createdAt } }` |
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |
-| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent }` |
+| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince }` — ao atender (`/attend`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora |
 | `connection.status` | `{ companyId, connectionId, sessionName, status, phone?, profileName? }` |
 | `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` |
 | `user.availability` | `{ companyId, userId, availability: "ONLINE" \| "OFFLINE", changedAt }` — B-65 |

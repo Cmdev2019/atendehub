@@ -51,6 +51,9 @@ export interface ConversationAssignedPayload {
   agentId: string | null;
   departmentId: string | null;
   agent?: { id: string; name: string; avatarUrl?: string | null } | null;
+  // B-66: com o status, a conversa sai (ou volta) da fila de todos na hora
+  status?: string;
+  waitingSince?: Date | string | null;
 }
 
 export interface ConnectionStatusPayload {

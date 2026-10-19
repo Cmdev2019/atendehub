@@ -4,10 +4,12 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
+import { Availability, ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
+import { ScopeUser, seesWholeCompany } from '../../shared/conversation-scope/conversation-scope.service';
 import { loadCompanyTimeZone, resolveTimeZone, startOfDayInZone } from '../../shared/time/company-time';
 import { BusinessHours, isWithinBusinessHours } from '../../shared/time/business-hours';
 import { PrismaService } from '../../shared/prisma/prisma.service';
@@ -59,7 +61,39 @@ const CONVERSATION_LIST_SELECT = {
   _count: {
     select: { messages: true },
   },
+  // B-66 (ADR-0019, regra 15): início da espera atual e prazo do SLA dela —
+  // o "tempo na fila" deixa de partir do createdAt
+  waitingSince: true,
+  waitSlaDueAt: true,
+  slaBreachedAt: true,
 };
+
+// Resposta de atender/transferir (B-66) — sem campos internos
+const ASSIGNMENT_SELECT = {
+  id: true,
+  status: true,
+  waitingSince: true,
+  agent: { select: { id: true, name: true, avatarUrl: true } },
+  department: { select: { id: true, name: true } },
+};
+
+// Ciclo de espera (ADR-0019, regras 13 a 15): entrar ou voltar na fila abre
+// um ciclo novo. `waitSlaDueAt` null = sem SLA (fila sem prazo, conversa aberta
+// pela empresa ou fora do expediente).
+interface WaitCycle {
+  waitingSince: Date;
+  waitSlaDueAt: Date | null;
+  slaBreachedAt: null;
+}
+
+// O que é preciso da conversa para fechar o ciclo ao sair da fila
+interface WaitingConversation {
+  id: string;
+  waitingSince: Date | null;
+  waitSlaDueAt: Date | null;
+  slaBreachedAt: Date | null;
+  queue: { maxWaitSecs: number } | null;
+}
 
 @Injectable()
 export class ConversationService {
@@ -98,16 +132,44 @@ export class ConversationService {
     return `sla-check:${conversationId}`;
   }
 
-  private async scheduleSlaCheck(
+  // B-66: o job vale para o prazo gravado no ciclo (`waitSlaDueAt`). Ciclo
+  // sem prazo cancela o job pendente de um ciclo anterior.
+  private async syncWaitSla(
     conversationId: string,
     companyId: string,
-    maxWaitSecs: number,
+    cycle: WaitCycle,
+    maxWaitSecs?: number,
   ) {
     await this.cancelSlaCheck(conversationId);
+    if (!cycle.waitSlaDueAt || !maxWaitSecs) return;
     await this.slaQueue.add(
-      { conversationId, companyId, maxWaitSecs, queuedAt: new Date() },
-      { jobId: this.slaJobId(conversationId), delay: maxWaitSecs * 1000 },
+      { conversationId, companyId, maxWaitSecs, queuedAt: cycle.waitingSince },
+      {
+        jobId: this.slaJobId(conversationId),
+        delay: Math.max(0, cycle.waitSlaDueAt.getTime() - Date.now()),
+      },
     );
+  }
+
+  private waitCycleData(
+    queue: { maxWaitSecs: number } | null,
+    withSla: boolean,
+    now = new Date(),
+  ): WaitCycle {
+    return {
+      waitingSince: now,
+      waitSlaDueAt: queue && withSla ? new Date(now.getTime() + queue.maxWaitSecs * 1000) : null,
+      slaBreachedAt: null,
+    };
+  }
+
+  // Fila ativa do setor — a mais antiga, se houver mais de uma (B1-2)
+  private activeQueueOf(companyId: string, departmentId: string) {
+    return this.prisma.queue.findFirst({
+      where: { companyId, departmentId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, maxWaitSecs: true, greetingMsg: true },
+    });
   }
 
   private async cancelSlaCheck(conversationId: string) {
@@ -255,6 +317,8 @@ export class ConversationService {
         lastMessageAt: true,
         lastMessagePreview: true,
         slaBreachedAt: true,
+        waitingSince: true, // B-66
+        waitSlaDueAt: true, // B-66
         resolvedAt: true,
         closedAt: true,
         resolution: true,
@@ -279,7 +343,7 @@ export class ConversationService {
           select: { id: true, name: true, color: true },
         },
         queue: {
-          select: { id: true, name: true, strategy: true },
+          select: { id: true, name: true, strategy: true, maxWaitSecs: true },
         },
         whatsapp: {
           select: { id: true, name: true, phone: true, profileName: true },
@@ -304,12 +368,125 @@ export class ConversationService {
     return conversation;
   }
 
-  // ── Atribuir agente / departamento ────────────────────────────────────────
+  // ── Atender: pegar a conversa da fila para si (B-66 / ADR-0019) ──────────
+  // Regras 2, 3 e 10: só quem está Online, e quem chegar primeiro fica com a
+  // conversa. A passagem WAITING → OPEN é uma atualização condicional — com
+  // dois pedidos ao mesmo tempo, o banco deixa passar um só (ADR-0004). Quem
+  // perdeu recebe 409 com o nome de quem está atendendo. É também o caminho
+  // da 1ª resposta de ADMIN/SUPERVISOR numa conversa em espera
+  // (SendMessageService), antes de a mensagem sair.
+  async attend(companyId: string, conversationId: string, requesterId: string) {
+    const requester = await this.prisma.user.findFirst({
+      where: { id: requesterId, companyId },
+      select: { availability: true },
+    });
+    if (!requester) throw new NotFoundException('Usuário não encontrado');
+    if (requester.availability !== Availability.ONLINE) {
+      throw new ConflictException('Fique Online para atender');
+    }
+
+    const before = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+      select: {
+        id: true,
+        waitingSince: true,
+        waitSlaDueAt: true,
+        slaBreachedAt: true,
+        queue: { select: { maxWaitSecs: true } },
+      },
+    });
+    if (!before) throw new NotFoundException('Conversa não encontrada');
+
+    const now = new Date();
+    const { count } = await this.prisma.conversation.updateMany({
+      where: { id: conversationId, companyId, status: ConversationStatus.WAITING, agentId: null },
+      data: {
+        status: ConversationStatus.OPEN,
+        agentId: requesterId,
+        // B-98 (L-10): saiu da espera, a marca de SLA violado não vale mais
+        slaBreachedAt: null,
+        waitSlaDueAt: null,
+      },
+    });
+    if (count === 0) throw await this.notInQueueError(companyId, conversationId);
+
+    await this.closeWaitCycle(companyId, before, requesterId, requesterId, now);
+    return this.emitAssignment(companyId, conversationId);
+  }
+
+  // Por que a conversa não está mais na fila — a mensagem que quem perdeu vê
+  private async notInQueueError(companyId: string, conversationId: string) {
+    const current = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+      select: { status: true, agent: { select: { name: true } } },
+    });
+    if (current?.status === ConversationStatus.CLOSED) {
+      return new BadRequestException('Esta conversa já foi encerrada');
+    }
+    if (current?.agent) return new ConflictException(`${current.agent.name} já está atendendo`);
+    return new ConflictException('Esta conversa não está na fila');
+  }
+
+  // Saiu da fila com alguém (regras 13 e 16): o SLA da espera termina — o job
+  // pendente é cancelado — e o ciclo vai para a auditoria
+  private async closeWaitCycle(
+    companyId: string,
+    conversation: WaitingConversation,
+    agentId: string,
+    actorId: string,
+    now: Date,
+  ) {
+    await this.cancelSlaCheck(conversation.id);
+    await this.auditLog.record({
+      companyId,
+      userId: actorId,
+      action: 'conversation.attended',
+      entity: 'Conversation',
+      entityId: conversation.id,
+      after: {
+        agentId,
+        waitSeconds: conversation.waitingSince
+          ? Math.round((now.getTime() - conversation.waitingSince.getTime()) / 1000)
+          : null,
+        maxWaitSecs: conversation.queue?.maxWaitSecs ?? null,
+        breached:
+          !!conversation.slaBreachedAt || (!!conversation.waitSlaDueAt && now > conversation.waitSlaDueAt),
+      },
+    });
+  }
+
+  // Lê o estado novo, avisa em tempo real e devolve a resposta. Com o status
+  // no evento, a conversa sai (ou volta) da fila de todos na hora.
+  private async emitAssignment(companyId: string, conversationId: string) {
+    const updated = await this.prisma.conversation.findFirstOrThrow({
+      where: { id: conversationId, companyId },
+      select: ASSIGNMENT_SELECT,
+    });
+
+    void this.eventsService.emitConversationAssigned({
+      companyId,
+      conversationId,
+      agentId: updated.agent?.id ?? null,
+      departmentId: updated.department?.id ?? null,
+      agent: updated.agent,
+      status: updated.status,
+      waitingSince: updated.waitingSince,
+    });
+
+    return updated;
+  }
+
+  // ── Transferir (B-66 / ADR-0019, regra 4) ─────────────────────────────────
+  // Para uma pessoa — que precisa estar Online — ou para um setor. O atendente
+  // transfere as conversas que estão com ele; supervisor e admin transferem
+  // qualquer uma e puxam para si a de outro atendente (regra do responsável,
+  // 2026-10-19). Sem pessoa, a conversa volta para a fila do setor com espera
+  // e SLA novos — antes ficava OPEN sem ninguém.
   async assign(
     companyId: string,
     id: string,
     dto: AssignConversationDto,
-    requesterId: string,
+    requester: ScopeUser,
   ) {
     const before = await this.findOne(companyId, id);
 
@@ -320,12 +497,24 @@ export class ConversationService {
       throw new BadRequestException('Não é possível atribuir uma conversa encerrada');
     }
 
-    // Valida agente se informado
-    if (dto.agentId) {
-      const agent = await this.prisma.user.findFirst({
-        where: { id: dto.agentId, companyId, isActive: true },
+    const previousAgentId = before.agent?.id ?? null;
+    if (!seesWholeCompany(requester) && previousAgentId !== requester.id) {
+      throw new ForbiddenException('Você só transfere as conversas que estão com você');
+    }
+
+    const targetAgentId = dto.agentId ?? null;
+    if (targetAgentId) {
+      const target = await this.prisma.user.findFirst({
+        where: { id: targetAgentId, companyId, isActive: true },
+        select: { id: true, name: true, availability: true },
       });
-      if (!agent) throw new NotFoundException('Agente não encontrado nesta empresa');
+      if (!target) throw new NotFoundException('Agente não encontrado nesta empresa');
+      // Regra 10: Offline não recebe conversa nova, nem por transferência
+      if (target.availability !== Availability.ONLINE) {
+        throw new ConflictException(
+          target.id === requester.id ? 'Fique Online para atender' : `${target.name} está Offline`,
+        );
+      }
     }
 
     // Valida departamento se informado
@@ -336,110 +525,99 @@ export class ConversationService {
       if (!dept) throw new NotFoundException('Departamento não encontrado');
     }
 
-    const updated = await this.prisma.conversation
-      .update({
-        where: { id },
-        data: {
-          agentId: dto.agentId ?? null,
-          departmentId: dto.departmentId,
-          // Se atribuiu um agente e a conversa estava em espera, move para OPEN.
-          // B-98 (L-10): saiu da espera, a violação de SLA anterior não vale
-          // mais — senão uma 2ª espera nunca era alertada.
-          ...(dto.agentId && { status: ConversationStatus.OPEN, slaBreachedAt: null }),
-        },
-        select: {
-          id: true,
-          status: true,
-          companyId: true,
-          agentId: true,
-          departmentId: true,
-          agent: { select: { id: true, name: true, avatarUrl: true } },
-          department: { select: { id: true, name: true } },
-        },
-      })
-      .catch(rethrowActiveConversationConflict);
+    const departmentId = dto.departmentId ?? before.department?.id ?? null;
+    const now = new Date();
+    let queue: { id: string; maxWaitSecs: number } | null = null;
+    let cycle: WaitCycle | null = null;
+    let data: Prisma.ConversationUncheckedUpdateManyInput;
 
-    // Atribuir agente tira a conversa da espera — cancela a checagem de SLA
-    // pendente (se não cancelar, o processor ainda reconsulta o status e não
-    // dispara o alerta, mas cancelar evita um job fantasma rodando à toa)
-    if (dto.agentId) {
-      await this.cancelSlaCheck(updated.id);
-    } else if (
-      dto.departmentId &&
-      dto.departmentId !== before.department?.id &&
-      updated.status === ConversationStatus.WAITING
-    ) {
-      // Reatribuição só de departamento (sem agente) numa conversa que segue
-      // em espera: o prazo antigo era da fila do departamento anterior, então
-      // reagenda para a fila ativa do departamento novo — senão o SLA seguiria
-      // contando com o `maxWaitSecs` errado (ou nenhum, se a fila antiga nem
-      // pertencia a este departamento).
-      const queue = await this.prisma.queue.findFirst({
-        where: { companyId, departmentId: dto.departmentId, isActive: true },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, maxWaitSecs: true },
-      });
-
-      await this.prisma.conversation.update({
-        where: { id: updated.id },
-        data: { queueId: queue?.id ?? null },
-      });
-
-      if (queue) {
-        await this.scheduleSlaCheck(updated.id, companyId, queue.maxWaitSecs);
-      } else {
-        // Departamento novo não tem fila ativa — não há mais em cima do que
-        // alertar com esse prazo antigo
-        await this.cancelSlaCheck(updated.id);
-      }
+    if (targetAgentId) {
+      data = {
+        agentId: targetAgentId,
+        departmentId,
+        status: ConversationStatus.OPEN,
+        slaBreachedAt: null,
+        waitSlaDueAt: null,
+      };
+    } else {
+      queue = departmentId ? await this.activeQueueOf(companyId, departmentId) : null;
+      const withSla = !!queue && (await this.isWithinCompanyBusinessHours(companyId));
+      cycle = this.waitCycleData(queue, withSla, now);
+      data = {
+        agentId: null,
+        departmentId,
+        queueId: queue?.id ?? null,
+        status: ConversationStatus.WAITING,
+        ...cycle,
+      };
     }
 
-    // Auditoria (B1-4): compara o agentId de fato antes/depois da mutação —
-    // não o dto bruto, porque omitir `agentId` no body também desatribui
-    // (`dto.agentId ?? null` lá em cima), e a auditoria tem que refletir o
-    // que realmente aconteceu no banco, não só o que veio na requisição.
-    const previousAgentId = before.agent?.id ?? null;
-    if (updated.agentId !== previousAgentId) {
+    // Troca condicional: só vale se a conversa segue como foi lida. Se alguém
+    // atendeu ou transferiu no meio, quem chegou depois recebe 409.
+    const { count } = await this.prisma.conversation
+      .updateMany({ where: { id, companyId, status: before.status, agentId: previousAgentId }, data })
+      .catch(rethrowActiveConversationConflict);
+    if (count === 0) {
+      throw new ConflictException('A conversa mudou de mãos agora há pouco. Atualize a tela e tente de novo');
+    }
+
+    if (cycle) {
+      // Voltou para a fila: SLA do ciclo novo (ou nenhum, sem prazo)
+      await this.syncWaitSla(id, companyId, cycle, queue?.maxWaitSecs);
+    } else if (targetAgentId && before.status === ConversationStatus.WAITING) {
+      await this.closeWaitCycle(companyId, before, targetAgentId, requester.id, now);
+    }
+
+    // Auditoria (B1-4): mudança real de agentId — desatribuir também conta
+    if (targetAgentId !== previousAgentId) {
       await this.auditLog.record({
         companyId,
-        userId: requesterId,
+        userId: requester.id,
         action: 'conversation.assigned',
         entity: 'Conversation',
-        entityId: updated.id,
+        entityId: id,
         before: { agentId: previousAgentId },
-        after: { agentId: updated.agentId },
+        after: { agentId: targetAgentId },
       });
     }
 
-    // Notifica o agente recém-atribuído (B1-3)
-    if (updated.agentId && updated.agentId !== previousAgentId) {
+    // Notifica quem recebeu a conversa (B1-3) — não quem a puxou para si
+    if (targetAgentId && targetAgentId !== previousAgentId && targetAgentId !== requester.id) {
       await this.notificationService.create({
         companyId,
-        userId: updated.agentId,
+        userId: targetAgentId,
         type: 'conversation_assigned',
         title: 'Nova conversa atribuída a você',
         body: before.contact?.name ?? before.contact?.phone ?? undefined,
-        data: { conversationId: updated.id },
+        data: { conversationId: id },
       });
     }
 
-    // Emite evento em tempo real
-    this.eventsService.emitConversationAssigned({
-      companyId: updated.companyId,
-      conversationId: updated.id,
-      agentId: updated.agentId,
-      departmentId: updated.departmentId,
-      agent: updated.agent,
-    });
-
-    // Retorna sem expor campos internos
-    const { companyId: _c, agentId: _a, departmentId: _d, ...response } = updated;
-    return response;
+    return this.emitAssignment(companyId, id);
   }
 
   // ── Atualizar status da conversa ──────────────────────────────────────────
-  async updateStatus(companyId: string, id: string, dto: UpdateConversationStatusDto) {
+  // `requester` ausente = o próprio sistema (auto-atendimento).
+  async updateStatus(
+    companyId: string,
+    id: string,
+    dto: UpdateConversationStatusDto,
+    requester?: ScopeUser,
+  ) {
     const conversation = await this.findOne(companyId, id);
+
+    // B-66 (ADR-0019, regra 4): o atendente comum só mexe no status das
+    // conversas que estão com ele — senão devolver a de um colega para a fila
+    // e atendê-la seria um atalho para "puxar" conversa. Encerrar uma da fila
+    // ("Encerrar sem atender", B-36) continua liberado.
+    if (requester && !seesWholeCompany(requester)) {
+      const own = conversation.agent?.id === requester.id;
+      const closingFromQueue =
+        conversation.status === ConversationStatus.WAITING && dto.status === ConversationStatus.CLOSED;
+      if (!own && !closingFromQueue) {
+        throw new ForbiddenException('Você só muda o status das conversas que estão com você');
+      }
+    }
 
     // Regras de transição de status
     const invalidTransitions: Partial<Record<ConversationStatus, ConversationStatus[]>> = {
@@ -458,15 +636,27 @@ export class ConversationService {
     }
 
     const wasWaiting = conversation.status === ConversationStatus.WAITING;
+    const entersQueue = !wasWaiting && dto.status === ConversationStatus.WAITING;
 
     const now = new Date();
+    // Voltar para a fila abre um ciclo novo (regra 14) — e na fila ninguém
+    // está com a conversa (regra 1)
+    const cycle = entersQueue
+      ? this.waitCycleData(
+          conversation.queue,
+          !!conversation.queue && (await this.isWithinCompanyBusinessHours(companyId)),
+          now,
+        )
+      : null;
+
     const updated = await this.prisma.conversation
       .update({
         where: { id },
         data: {
           status: dto.status,
+          ...(cycle && { agentId: null, ...cycle }),
           // B-98 (L-10): fora da espera, a marca de SLA violado é zerada
-          ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null }),
+          ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null, waitSlaDueAt: null }),
           ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
           ...(dto.status === ConversationStatus.CLOSED && {
             closedAt: now,
@@ -483,21 +673,14 @@ export class ConversationService {
           resolution: true,
           resolutionNote: true,
           updatedAt: true,
-          queueId: true,
         },
       })
       .catch(rethrowActiveConversationConflict);
 
-    // Reentrada em WAITING (ex.: reaberta) agenda um novo prazo de SLA; sair
-    // de WAITING por qualquer outro caminho que não o assign() cancela o job
-    if (!wasWaiting && updated.status === ConversationStatus.WAITING && updated.queueId) {
-      const queue = await this.prisma.queue.findUnique({
-        where: { id: updated.queueId },
-        select: { maxWaitSecs: true },
-      });
-      if (queue) {
-        await this.scheduleSlaCheck(updated.id, updated.companyId, queue.maxWaitSecs);
-      }
+    // Reentrada em WAITING (ex.: reaberta) agenda o SLA do ciclo novo; sair
+    // de WAITING por aqui cancela o job
+    if (cycle) {
+      await this.syncWaitSla(updated.id, updated.companyId, cycle, conversation.queue?.maxWaitSecs);
     } else if (wasWaiting && updated.status !== ConversationStatus.WAITING) {
       await this.cancelSlaCheck(updated.id);
     }
@@ -506,11 +689,14 @@ export class ConversationService {
     this.eventsService.emitConversationUpdated({
       companyId: updated.companyId,
       conversationId: updated.id,
-      changes: { status: updated.status },
+      changes: {
+        status: updated.status,
+        ...(cycle && { agentId: null, agent: null, waitingSince: cycle.waitingSince }),
+      },
     });
 
     // Retorna sem expor campos internos
-    const { companyId: _c, queueId: _q, ...response } = updated;
+    const { companyId: _c, ...response } = updated;
     return response;
   }
 
@@ -528,8 +714,8 @@ export class ConversationService {
   // ── Roteamento pelo menu de auto-atendimento (B-35) ───────────────────────
   // Deliberadamente separado de assign(): não atribui agente nem gera
   // auditoria/notificação "conversa atribuída a você" (ninguém foi atribuído
-  // ainda, só encaminhada) — só reposiciona departamento/fila e realinha o
-  // prazo de SLA para o da fila de destino.
+  // ainda, só encaminhada) — só reposiciona departamento/fila e abre a espera
+  // na fila de destino (B-66: ciclo novo, com o prazo da fila do setor).
   async routeAutoAttendance(
     companyId: string,
     conversationId: string,
@@ -550,22 +736,36 @@ export class ConversationService {
       });
     }
 
+    // Se alguém já atendeu enquanto o paciente escolhia, não há espera a abrir
+    const current = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, companyId },
+      select: { status: true, agentId: true },
+    });
+    const stillWaiting = current?.status === ConversationStatus.WAITING && !current.agentId;
+    const cycle = stillWaiting
+      ? this.waitCycleData(queue, !!queue && (await this.isWithinCompanyBusinessHours(companyId)))
+      : null;
+
+    const departmentId = target.departmentId ?? queue?.departmentId ?? null;
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {
-        departmentId: target.departmentId ?? queue?.departmentId ?? undefined,
+        departmentId: departmentId ?? undefined,
         queueId: queue?.id ?? undefined,
+        ...cycle,
       },
     });
 
-    if (queue) {
-      await this.scheduleSlaCheck(conversationId, companyId, queue.maxWaitSecs);
-    }
+    if (cycle) await this.syncWaitSla(conversationId, companyId, cycle, queue?.maxWaitSecs);
 
     this.eventsService.emitConversationUpdated({
       companyId,
       conversationId,
-      changes: { departmentId: target.departmentId ?? queue?.departmentId ?? null, queueId: queue?.id ?? null },
+      changes: {
+        departmentId,
+        queueId: queue?.id ?? null,
+        ...(cycle && { waitingSince: cycle.waitingSince }),
+      },
     });
   }
 
@@ -628,6 +828,16 @@ export class ConversationService {
       });
     }
 
+    // Produtor de SLA (B2-3): só há prazo quando há fila ativa resolvida —
+    // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
+    // B-98 (L-10): nem para conversa aberta pela empresa, nem fora do
+    // expediente configurado no auto-atendimento. B-66: o ciclo de espera
+    // (início e prazo) vai gravado na própria conversa.
+    const cycle = this.waitCycleData(
+      queue,
+      !!queue && !startedByCompany && (await this.isWithinCompanyBusinessHours(companyId)),
+    );
+
     try {
       const created = await this.prisma.conversation.create({
         data: {
@@ -638,15 +848,13 @@ export class ConversationService {
           status: ConversationStatus.WAITING,
           departmentId: departmentId ?? undefined,
           queueId: queue?.id,
+          waitingSince: cycle.waitingSince,
+          waitSlaDueAt: cycle.waitSlaDueAt,
         },
       });
 
-      // Produtor de SLA (B2-3): só agenda quando há fila ativa resolvida —
-      // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
-      // B-98 (L-10): nem para conversa aberta pela empresa, nem fora do
-      // expediente configurado no auto-atendimento.
-      if (queue && !startedByCompany && (await this.isWithinCompanyBusinessHours(companyId))) {
-        await this.scheduleSlaCheck(created.id, companyId, queue.maxWaitSecs);
+      if (cycle.waitSlaDueAt) {
+        await this.syncWaitSla(created.id, companyId, cycle, queue?.maxWaitSecs);
       }
 
       return { conversation: created, isNew: true, queue };

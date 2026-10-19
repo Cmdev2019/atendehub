@@ -533,11 +533,11 @@ export function useConversations(currentUserId) {
       scheduleStatsRefresh();
     };
 
-    // Payload: { companyId, conversationId, agentId, departmentId, agent }
-    // Emitido por PATCH /conversations/:id/assign — distinto de
-    // conversation.updated (o backend usa um evento próprio pra atribuição).
+    // Payload: { companyId, conversationId, agentId, departmentId, agent, status, waitingSince }
+    // Emitido ao atender (POST /attend) e ao transferir (PATCH /assign) —
+    // distinto de conversation.updated (o backend usa um evento próprio).
     const handleConversationAssigned = (payload) => {
-      const { conversationId, agentId, agent } = payload ?? {};
+      const { conversationId, agentId, agent, status, waitingSince } = payload ?? {};
       if (!conversationId) return;
 
       setConversations((prev) =>
@@ -547,9 +547,12 @@ export function useConversations(currentUserId) {
                 ...conv,
                 agent: agent?.name || null,
                 agentId: agentId || null,
+                // B-66: com o status, quem atendeu tira a conversa da Fila de
+                // todos na hora; devolvida à fila, ela volta
+                ...(status && { status }),
+                ...(waitingSince !== undefined && { waitingSince }),
                 // Atribuir agente sempre encerra a espera — o backend já
-                // cancela o job de SLA pendente nesse momento
-                // (ConversationService#assign).
+                // cancela o job de SLA pendente nesse momento.
                 slaBreached: agentId ? false : conv.slaBreached,
               }
             : conv,
@@ -709,13 +712,14 @@ export function useConversations(currentUserId) {
     conversations.find((c) => c.id === activeId) ??
     closedConversations.find((c) => c.id === activeId);
 
-  // Atender (B-31): assume a conversa da fila — atribui a quem clicou e o
-  // backend já move pro status OPEN sozinho (ConversationService#assign).
-  // A confirmação otimista aqui evita esperar o round-trip do socket só pra
-  // a conversa sumir da aba "Fila de atendimento".
+  // Atender (B-31; atômico desde o B-66): pega a conversa da fila para quem
+  // clicou. Quem chegar primeiro fica com ela — o backend recusa os outros com
+  // o motivo ("Fulano já está atendendo", "Fique Online para atender"), que
+  // volta em `error` para a tela mostrar. A confirmação otimista evita esperar
+  // o round-trip do socket só pra a conversa sumir da aba "Fila".
   const attendConversation = useCallback(async (conversationId, agent) => {
     try {
-      const updated = await apiClient.assignConversation(conversationId, { agentId: agent.id });
+      const updated = await apiClient.attendConversation(conversationId);
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === conversationId
@@ -729,10 +733,9 @@ export function useConversations(currentUserId) {
         ),
       );
       fetchStats();
-      return true;
+      return { ok: true };
     } catch (error) {
-      console.warn('⚠️ Erro ao assumir conversa:', error.message);
-      return false;
+      return { ok: false, error: error?.message || 'Não foi possível atender esta conversa' };
     }
   }, [fetchStats]);
 

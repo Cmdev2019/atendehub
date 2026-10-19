@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bull';
-import { ConversationStatus } from '@prisma/client';
+import { ConversationStatus, Role } from '@prisma/client';
 import { ConversationService } from './conversation.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
@@ -12,13 +12,22 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 // que o E2E da B2-5 já testa (agendar → delay real → processor). Aqui a fila
 // é mockada; o que importa é que ConversationService chame slaQueue.add/
 // getJob/job.remove com o jobId e delay certos, nos momentos certos.
-describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaCheck)', () => {
+// B-66: o prazo do ciclo vai gravado na conversa (`waitSlaDueAt`) e o delay
+// do job é calculado a partir dele.
+describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
   let service: ConversationService;
   const companyId = 'company-1';
+  const supervisor = { id: 'sup-1', role: Role.SUPERVISOR };
 
   const mockPrisma = {
-    conversation: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
-    queue: { findFirst: jest.fn(), findUnique: jest.fn() },
+    conversation: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      findFirstOrThrow: jest.fn(),
+    },
+    queue: { findFirst: jest.fn() },
     // B-98: expediente do auto-atendimento (sem fluxo = sempre dentro)
     autoAttendanceFlow: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findFirst: jest.fn() },
@@ -35,10 +44,25 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
   const fakeExistingJob = { remove: jest.fn().mockResolvedValue(undefined) };
   const mockSlaQueue = { add: jest.fn(), getJob: jest.fn() };
 
+  // O delay sai de `waitSlaDueAt - agora`: alguns ms abaixo do prazo cheio
+  const expectDelayAbout = (call: number, ms: number) => {
+    const { delay } = mockSlaQueue.add.mock.calls[call][1];
+    expect(delay).toBeGreaterThan(ms - 1000);
+    expect(delay).toBeLessThanOrEqual(ms);
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     fakeExistingJob.remove.mockClear().mockResolvedValue(undefined);
     mockSlaQueue.getJob.mockResolvedValue(null); // por padrão, nenhum job pendente
+    mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.conversation.findFirstOrThrow.mockResolvedValue({
+      id: 'conv',
+      status: ConversationStatus.OPEN,
+      waitingSince: null,
+      agent: null,
+      department: null,
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -54,22 +78,21 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
     service = module.get<ConversationService>(ConversationService);
   });
 
-  describe('upsertFromWebhook — agenda ao criar conversa nova em WAITING', () => {
-    it('agenda o SLA com o jobId e delay corretos quando o departamento tem fila ativa', async () => {
+  describe('upsertFromWebhook — abre o ciclo ao criar conversa nova em WAITING', () => {
+    it('grava o início e o prazo da espera e agenda o SLA para o prazo', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce(null); // não existe conversa aberta
       mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 120 });
       mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-novo', companyId });
 
       await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1');
 
+      const { data } = mockPrisma.conversation.create.mock.calls[0][0];
+      expect(data.waitSlaDueAt.getTime() - data.waitingSince.getTime()).toBe(120_000);
       expect(mockSlaQueue.add).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conversationId: 'conv-novo',
-          companyId,
-          maxWaitSecs: 120,
-        }),
-        { jobId: 'sla-check:conv-novo', delay: 120_000 },
+        expect.objectContaining({ conversationId: 'conv-novo', companyId, maxWaitSecs: 120 }),
+        expect.objectContaining({ jobId: 'sla-check:conv-novo' }),
       );
+      expectDelayAbout(0, 120_000);
     });
 
     it('NÃO agenda SLA quando o departamento não tem fila ativa configurada', async () => {
@@ -79,6 +102,10 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
 
       await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1');
 
+      // Está na fila (tem início de espera), mas sem prazo
+      const { data } = mockPrisma.conversation.create.mock.calls[0][0];
+      expect(data.waitingSince).toBeInstanceOf(Date);
+      expect(data.waitSlaDueAt).toBeNull();
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
     });
 
@@ -100,6 +127,7 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
 
       await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1', true);
 
+      expect(mockPrisma.conversation.create.mock.calls[0][0].data.waitSlaDueAt).toBeNull();
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
     });
 
@@ -120,115 +148,84 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
     });
   });
 
-  describe('assign — cancela o SLA ao atribuir um agente', () => {
-    const conversationBase = {
+  describe('assign — tirar da fila para uma pessoa cancela o SLA', () => {
+    const waiting = {
       id: 'conv-1',
       status: ConversationStatus.WAITING,
-      companyId,
-      agentId: null,
-      departmentId: 'dept-1',
       contact: { name: 'Fulano' },
       agent: null,
       department: { id: 'dept-1' },
+      queue: { id: 'queue-1', maxWaitSecs: 300 },
+      waitingSince: new Date(),
+      waitSlaDueAt: new Date(Date.now() + 300_000),
+      slaBreachedAt: null,
     };
 
-    it('remove o job pendente (jobId determinístico) quando um agente é atribuído', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conversationBase); // findOne interno
-      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1' });
+    it('remove o job pendente (jobId determinístico) e nunca reagenda', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(waiting); // findOne interno
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1', name: 'Agente', availability: 'ONLINE' });
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
-      mockPrisma.conversation.update.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.OPEN,
-        companyId,
-        agentId: 'agent-1',
-        departmentId: 'dept-1',
-        agent: { id: 'agent-1', name: 'Agente', avatarUrl: null },
-        department: null,
-      });
 
-      await service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, 'requester-1');
+      await service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, supervisor);
 
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(fakeExistingJob.remove).toHaveBeenCalled();
-      expect(mockSlaQueue.add).not.toHaveBeenCalled(); // atribuir agente só cancela, nunca reagenda
+      expect(mockSlaQueue.add).not.toHaveBeenCalled();
     });
 
     it('não quebra quando não há job pendente para cancelar (getJob retorna null)', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conversationBase);
-      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1' });
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(waiting);
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'agent-1', name: 'Agente', availability: 'ONLINE' });
       mockSlaQueue.getJob.mockResolvedValueOnce(null);
-      mockPrisma.conversation.update.mockResolvedValueOnce({
-        id: 'conv-1',
-        status: ConversationStatus.OPEN,
-        companyId,
-        agentId: 'agent-1',
-        departmentId: 'dept-1',
-        agent: { id: 'agent-1', name: 'Agente', avatarUrl: null },
-        department: null,
-      });
 
       await expect(
-        service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, 'requester-1'),
+        service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, supervisor),
       ).resolves.toBeDefined();
       expect(fakeExistingJob.remove).not.toHaveBeenCalled();
     });
   });
 
-  describe('assign — reatribuição só de departamento (conversa segue WAITING)', () => {
-    const conversationBase = {
+  describe('assign — mandar para outro setor sem pessoa (volta para a fila)', () => {
+    const waitingOld = {
       id: 'conv-2',
       status: ConversationStatus.WAITING,
-      companyId,
-      agentId: null,
-      departmentId: 'dept-old',
       contact: { name: 'Ciclana' },
       agent: null,
       department: { id: 'dept-old' },
+      queue: { id: 'queue-old', maxWaitSecs: 300 },
+      waitingSince: new Date(),
+      waitSlaDueAt: new Date(Date.now() + 300_000),
+      slaBreachedAt: null,
     };
 
-    it('reagenda o SLA para a fila do departamento novo (cancela o antigo antes de agendar)', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conversationBase);
+    it('abre o ciclo na fila do setor novo (cancela o job antigo antes de agendar)', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingOld);
       mockPrisma.department.findFirst.mockResolvedValueOnce({ id: 'dept-new' });
-      mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob); // job antigo (fila do dept-old)
-      mockPrisma.conversation.update.mockResolvedValueOnce({
-        id: 'conv-2',
-        status: ConversationStatus.WAITING,
-        companyId,
-        agentId: null,
-        departmentId: 'dept-new',
-        agent: null,
-        department: { id: 'dept-new', name: 'Novo Depto' },
-      });
       mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-new', maxWaitSecs: 90 });
-      mockPrisma.conversation.update.mockResolvedValueOnce({}); // update do queueId
+      mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob); // job antigo (fila do dept-old)
 
-      await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, 'requester-1');
+      await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, supervisor);
 
-      // cancela o job antigo antes de agendar o novo (scheduleSlaCheck chama cancelSlaCheck internamente)
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ departmentId: 'dept-new', queueId: 'queue-new', status: ConversationStatus.WAITING }),
+        }),
+      );
       expect(fakeExistingJob.remove).toHaveBeenCalled();
       expect(mockSlaQueue.add).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'conv-2', maxWaitSecs: 90 }),
-        { jobId: 'sla-check:conv-2', delay: 90_000 },
+        expect.objectContaining({ jobId: 'sla-check:conv-2' }),
       );
+      expectDelayAbout(0, 90_000);
     });
 
-    it('cancela o SLA (sem reagendar) quando o departamento novo não tem fila ativa', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce(conversationBase);
+    it('cancela o SLA (sem reagendar) quando o setor novo não tem fila ativa', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingOld);
       mockPrisma.department.findFirst.mockResolvedValueOnce({ id: 'dept-new' });
-      mockPrisma.conversation.update.mockResolvedValueOnce({
-        id: 'conv-2',
-        status: ConversationStatus.WAITING,
-        companyId,
-        agentId: null,
-        departmentId: 'dept-new',
-        agent: null,
-        department: { id: 'dept-new', name: 'Novo Depto' },
-      });
-      mockPrisma.queue.findFirst.mockResolvedValueOnce(null); // sem fila ativa no depto novo
-      mockPrisma.conversation.update.mockResolvedValueOnce({});
+      mockPrisma.queue.findFirst.mockResolvedValueOnce(null); // sem fila ativa no setor novo
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
 
-      await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, 'requester-1');
+      await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, supervisor);
 
       expect(fakeExistingJob.remove).toHaveBeenCalled();
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
@@ -236,45 +233,36 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
   });
 
   describe('updateStatus — agenda/cancela ao entrar/sair de WAITING', () => {
-    it('agenda o SLA ao reentrar em WAITING (ex.: reabertura) quando a conversa tem queueId', async () => {
+    it('agenda o SLA do ciclo novo ao reentrar em WAITING (ex.: reabertura)', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-3',
         status: ConversationStatus.RESOLVED, // não estava WAITING
-        companyId,
+        queue: { id: 'queue-1', maxWaitSecs: 60 },
       });
       mockPrisma.conversation.update.mockResolvedValueOnce({
         id: 'conv-3',
         status: ConversationStatus.WAITING,
         companyId,
-        resolvedAt: null,
-        closedAt: null,
-        updatedAt: new Date(),
-        queueId: 'queue-1',
       });
-      mockPrisma.queue.findUnique.mockResolvedValueOnce({ maxWaitSecs: 60 });
 
       await service.updateStatus(companyId, 'conv-3', { status: ConversationStatus.WAITING } as any);
 
       expect(mockSlaQueue.add).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'conv-3', maxWaitSecs: 60 }),
-        { jobId: 'sla-check:conv-3', delay: 60_000 },
+        expect.objectContaining({ jobId: 'sla-check:conv-3' }),
       );
+      expectDelayAbout(0, 60_000);
     });
 
     it('cancela o SLA ao sair de WAITING por qualquer caminho fora do assign (ex.: RESOLVED direto)', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-4',
         status: ConversationStatus.WAITING,
-        companyId,
       });
       mockPrisma.conversation.update.mockResolvedValueOnce({
         id: 'conv-4',
         status: ConversationStatus.RESOLVED,
         companyId,
-        resolvedAt: new Date(),
-        closedAt: null,
-        updatedAt: new Date(),
-        queueId: 'queue-1',
       });
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
 
@@ -288,16 +276,11 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-5',
         status: ConversationStatus.OPEN,
-        companyId,
       });
       mockPrisma.conversation.update.mockResolvedValueOnce({
         id: 'conv-5',
         status: ConversationStatus.RESOLVED,
         companyId,
-        resolvedAt: new Date(),
-        closedAt: null,
-        updatedAt: new Date(),
-        queueId: 'queue-1',
       });
 
       await service.updateStatus(companyId, 'conv-5', { status: ConversationStatus.RESOLVED } as any);
@@ -308,7 +291,7 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
   });
 
   describe('idempotência do jobId (B2-4)', () => {
-    it('scheduleSlaCheck sempre usa o mesmo jobId determinístico para a mesma conversa', async () => {
+    it('sempre usa o mesmo jobId determinístico para a mesma conversa', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
       mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 30 });
       mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-idem', companyId });
@@ -318,25 +301,20 @@ describe('ConversationService — produtor de SLA (scheduleSlaCheck/cancelSlaChe
       const [, options] = mockSlaQueue.add.mock.calls[0];
       expect(options.jobId).toBe('sla-check:conv-idem');
 
-      // Uma 2ª chamada de scheduleSlaCheck para a MESMA conversa (ex.: reentrada em
-      // WAITING) sempre cancela o job anterior antes — nunca deixa dois jobs
-      // pendentes com jobs diferentes para a mesma conversa.
+      // Um 2º agendamento para a MESMA conversa (ex.: reentrada em WAITING)
+      // sempre cancela o job anterior antes — nunca deixa dois jobs pendentes
+      // com ids diferentes para a mesma conversa.
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-idem',
         status: ConversationStatus.RESOLVED,
-        companyId,
+        queue: { id: 'queue-1', maxWaitSecs: 30 },
       });
       mockPrisma.conversation.update.mockResolvedValueOnce({
         id: 'conv-idem',
         status: ConversationStatus.WAITING,
         companyId,
-        resolvedAt: null,
-        closedAt: null,
-        updatedAt: new Date(),
-        queueId: 'queue-1',
       });
-      mockPrisma.queue.findUnique.mockResolvedValueOnce({ maxWaitSecs: 30 });
 
       await service.updateStatus(companyId, 'conv-idem', { status: ConversationStatus.WAITING } as any);
 

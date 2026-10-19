@@ -109,10 +109,14 @@ enum MessageStatus {
   FAILED       // falhou
 }
 
+// B-66 (ADR-0019, M-21): a fila é compartilhada — só MANUAL é aplicada e
+// aceita pela API ("quem atender primeiro"). ROUND_ROBIN e LEAST_BUSY ficam
+// no enum só por histórico; se a distribuição automática voltar, vem com uma
+// ADR nova.
 enum QueueStrategy {
-  ROUND_ROBIN  // distribui igualmente entre atendentes
-  MANUAL       // atendente pega da fila manualmente
-  LEAST_BUSY   // vai para quem tem menos conversas abertas
+  ROUND_ROBIN  // não aplicada (B-66)
+  MANUAL       // fila compartilhada: os atendentes do setor pegam da fila
+  LEAST_BUSY   // não aplicada (B-66)
 }
 
 // B-35: o que uma opção do menu de auto-atendimento faz quando o contato
@@ -251,7 +255,7 @@ model Queue {
   companyId    String
   departmentId String?
   name         String
-  strategy     QueueStrategy @default(ROUND_ROBIN)
+  strategy     QueueStrategy @default(MANUAL)
   maxWaitSecs  Int           @default(300)    // SLA: tempo máximo na fila
   greetingMsg  String?                        // mensagem automática ao entrar
   isActive     Boolean       @default(true)
@@ -394,7 +398,11 @@ model Conversation {
   unreadCount          Int                @default(0)
   lastMessageAt        DateTime?
   lastMessagePreview   String?            // preview para a lista
-  slaBreachedAt        DateTime?          // quando o SLA foi violado
+  slaBreachedAt        DateTime?          // quando o SLA da espera foi violado
+  // B-66 (ADR-0019, regra 15): o ciclo de espera atual — início (o "tempo na
+  // fila" e a ordem do "Pegar próxima") e prazo do SLA (null = sem SLA)
+  waitingSince         DateTime?
+  waitSlaDueAt         DateTime?
   resolvedAt           DateTime?
   closedAt             DateTime?
   resolution           ConversationResolution? // motivo do encerramento (B-32) — null em conversas encerradas antes deste campo existir

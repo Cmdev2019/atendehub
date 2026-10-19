@@ -55,6 +55,8 @@ export class SlaCheckProcessor {
           id: true,
           status: true,
           slaBreachedAt: true,
+          waitingSince: true,
+          waitSlaDueAt: true,
           agentId: true,
           queueId: true,
           contact: {
@@ -87,9 +89,21 @@ export class SlaCheckProcessor {
         return;
       }
 
+      // ── B-66: o prazo vale o da conversa ─────────────────────────────────
+      // Um job de um ciclo anterior (que não pôde ser removido a tempo) não
+      // alerta o ciclo novo antes da hora. Sem prazo gravado (job antigo),
+      // vale o agendamento do próprio job.
+      if (conversation.waitSlaDueAt && conversation.waitSlaDueAt.getTime() > Date.now() + 1000) {
+        this.logger.debug(
+          `Conversa ${conversationId}: prazo atual ${conversation.waitSlaDueAt.toISOString()} ainda não venceu (job de outro ciclo)`,
+        );
+        return;
+      }
+
       // ── SLA VIOLADO: marca timestamp e registra ───────────────────────────
       const now = new Date();
-      const waitTimeSeconds = Math.floor((now.getTime() - new Date(queuedAt).getTime()) / 1000);
+      const waitStart = conversation.waitingSince ?? new Date(queuedAt);
+      const waitTimeSeconds = Math.floor((now.getTime() - waitStart.getTime()) / 1000);
 
       await this.prisma.conversation.update({
         where: { id: conversationId },

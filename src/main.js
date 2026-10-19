@@ -86,9 +86,13 @@ function Dashboard() {
 
   // Atender (B-31): assume a conversa da fila em nome do usuário logado e já
   // abre ela — atendimento começa direto, sem precisar de um segundo clique.
+  // B-66: quando outro chegou antes (ou o atendente está Offline), o motivo
+  // aparece no topo da fila.
+  const [attendNotice, setAttendNotice] = useState(null);
   const handleAttend = async (conversationId) => {
     if (!user) return;
-    const ok = await attendConversation(conversationId, { id: user.id, name: user.name });
+    const { ok, error } = await attendConversation(conversationId, { id: user.id, name: user.name });
+    setAttendNotice(ok ? null : error);
     if (ok) setActiveId(conversationId);
   };
 
@@ -142,6 +146,8 @@ function Dashboard() {
                   onSearch: searchConversations,
                   currentUserId: user?.id,
                   onAttend: handleAttend,
+                  attendNotice,
+                  onDismissAttendNotice: () => setAttendNotice(null),
                 }),
               ),
               h(
