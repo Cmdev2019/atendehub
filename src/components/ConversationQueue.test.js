@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { createElement as h } from 'react';
 import { ConversationQueue } from './ConversationQueue';
 
@@ -173,5 +173,52 @@ describe('ConversationQueue — mensagens novas (B-60)', () => {
     render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
 
     expect(screen.getByText('Áudio')).toBeInTheDocument();
+  });
+});
+
+// B-104 (L-09): busca no servidor e tempo de espera
+describe('ConversationQueue — busca no servidor e tempo na fila (B-104)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('com 2+ caracteres, busca no servidor (com a aba) e mostra o resultado, mesmo fora do que está carregado', async () => {
+    const onSearch = jest.fn().mockResolvedValue([
+      { id: '99', contact: 'Paula Remota', messages: [], summary: '', status: 'WAITING' },
+    ]);
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn(), onSearch }));
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Pau' } });
+    expect(onSearch).not.toHaveBeenCalled(); // espera a digitação parar
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+    });
+
+    expect(onSearch).toHaveBeenCalledWith('Pau', 'queue');
+    expect(screen.getByText('Paula Remota')).toBeInTheDocument();
+    expect(screen.queryByText('Maria Silva')).not.toBeInTheDocument();
+  });
+
+  it('com 1 caractere, só filtra o que está carregado', async () => {
+    const onSearch = jest.fn();
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn(), onSearch }));
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'M' } });
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onSearch).not.toHaveBeenCalled();
+    expect(screen.getByText('Maria Silva')).toBeInTheDocument();
+  });
+
+  it('mostra há quanto tempo a conversa espera na fila', () => {
+    jest.setSystemTime(new Date('2026-10-18T12:00:00Z'));
+    render(h(ConversationQueue, {
+      activeId: null,
+      conversations: [{ id: '1', contact: 'Maria', messages: [], status: 'WAITING', createdAt: '2026-10-18T11:48:00Z' }],
+      onSelect: jest.fn(),
+    }));
+
+    expect(screen.getByTitle('Tempo na fila')).toHaveTextContent('12 min');
   });
 });
