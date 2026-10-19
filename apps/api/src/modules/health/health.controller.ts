@@ -4,7 +4,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
+import { Role } from '@prisma/client';
 import { Public } from '../auth/decorators/public.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { HealthService } from './health.service';
 
 @Controller('health')
@@ -48,5 +50,14 @@ export class HealthController {
     }
 
     return body;
+  }
+
+  // GET /api/v1/health/dependencies (B-102 / L-16) — requer ADMIN
+  // Estado de cada dependência (banco, Redis, storage, Evolution) com o tempo
+  // de resposta. Sempre 200: é diagnóstico, não decide tráfego.
+  @Roles(Role.ADMIN)
+  @Get('dependencies')
+  async dependencies() {
+    return { checks: await this.healthService.checkDependencies(), timestamp: new Date().toISOString() };
   }
 }

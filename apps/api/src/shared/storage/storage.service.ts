@@ -183,6 +183,12 @@ export class StorageService implements OnModuleInit {
       Number.isFinite(configuredExpiry) && configuredExpiry > 0 ? configuredExpiry : 600;
   }
 
+  // B-102 (L-16): o bucket responde? Usado pelo diagnóstico de dependências
+  // (/health/dependencies), não pelo readiness.
+  async ping(): Promise<void> {
+    await this.client.bucketExists(this.bucket);
+  }
+
   async onModuleInit() {
     try {
       const exists = await this.client.bucketExists(this.bucket);

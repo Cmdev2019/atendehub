@@ -192,6 +192,17 @@ describe('Autorização HTTP — papéis, dono do recurso, empresa e escopo (E2E
     expect(await call('GET', `/whatsapp/${conv.conexaoA}/status`, 'adminA')).toBe(404);
   });
 
+  // B-102 (L-16): diagnóstico de dependências só para ADMIN
+  it('diagnóstico de dependências: ADMIN vê as 4 checagens, AGENT recebe 403', async () => {
+    expect(await call('GET', '/health/dependencies', 'agentJur')).toBe(403);
+    const res = await axios.get(`${base}/api/v1/health/dependencies`, {
+      headers: { authorization: `Bearer ${users.adminA.token}` },
+      httpAgent: agent,
+    });
+    expect(Object.keys(res.data.checks).sort()).toEqual(['database', 'evolution', 'redis', 'storage']);
+    expect(res.data.checks.database.status).toBe('up');
+  });
+
   it('validação global: campo fora do DTO responde 400', async () => {
     expect(await call('PATCH', '/users/me', 'agentJur', { name: 'Novo nome', campoQueNaoExiste: 1 })).toBe(400);
   });

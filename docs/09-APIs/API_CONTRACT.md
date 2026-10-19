@@ -628,6 +628,12 @@ detalhando qual dependência caiu) caso contrário. Pensado pra orquestração/
 nginx decidirem se a instância deve receber tráfego — o `GET /health` acima
 não serve pra isso (não checa nada além do processo estar de pé).
 
+### `GET /health/dependencies` (B-102) — requer `ADMIN`
+Diagnóstico, não decide tráfego (sempre `200`): `{ checks: { database, redis, storage, evolution }, timestamp }`,
+cada um `{ status: "up" | "down", latencyMs, error? }`, com timeout de 2 s por checagem. Storage e Evolution
+ficam fora do `/health/ready` de propósito: com eles fora do ar, mídia e WhatsApp degradam, mas a API
+continua atendendo o painel.
+
 ## Webhooks — `/webhooks/evolution` (público com apikey)
 `POST` consumido pela Evolution API (webhook **global** da Evolution — B-82). Autenticação
 (B-88, conferido em `webhook.controller.ts`): a chave vem do header **`x-evolution-signature`**

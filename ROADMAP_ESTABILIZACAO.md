@@ -183,6 +183,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-99 | L-11 | Auto-atendimento: businessHours validado; todo id da opção conferido contra a empresa; order repetido vira 409 | ✅ 2026-10-18 |
 | B-100 | L-12 | Conexão de WhatsApp só aceita departamento da própria empresa; sincronizar status virou POST restrito a ADMIN | ✅ 2026-10-18 |
 | B-101 | L-15 | Retenção: notificações lidas expiram em 90 dias (configurável); purga de auditoria pronta, desligada até a decisão de LGPD; sai o log de query sem ouvinte | ✅ 2026-10-18 (mecanismo — prazos de auditoria e conversas em espera) |
+| B-102 | L-16 | Diagnóstico de dependências (GET /health/dependencies, ADMIN): banco, Redis, storage e Evolution com timeout de 2 s | ✅ 2026-10-18 |
 
 ## 📖 Regras do documento vivo
 
