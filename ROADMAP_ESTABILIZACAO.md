@@ -13,19 +13,24 @@
   vale com deploy real fica **em espera**, não como bloqueio.
 - **Auditoria de 2026-10-16 — Fases 0 e 1 concluídas.** Em espera: B-43 (certificado/SSL Labs) e
   B-64 (conta do Cloudflare R2).
-- **Fase 2 (estabilização) concluída** em 2026-10-18: B-69 a B-89 — segurança (sessões,
+- **Fase 2 (estabilização) concluída** em 2026-10-18: B-69 a B-90 — segurança (sessões,
   WebSocket, SSRF, CSV), webhook e mídia (retry por etapa, filas próprias, shards por contato,
   tipos de mensagem, webhook único), RLS no Postgres, amplificação de requisições, cadastro
   público, processo de Git, contrato da API e documentação. Em espera: verificação de e-mail e
   CAPTCHA no cadastro (B-85), validação dos tipos de mensagem com número real (B-81).
+- **Fase 3 (higiene) concluída** em 2026-10-18: B-91 a B-106 — Dependabot, CORS e token do
+  WebSocket, `x-request-id`, guards duplicados, robustez do login, blacklist por hash, SLA,
+  validação do auto-atendimento e do WhatsApp, retenção, diagnóstico de dependências, lint do
+  front (B-47), busca da fila, limites de relatório e divisão do bundle. **Plano de ação da
+  auditoria de 2026-10-16 encerrado** (tags `v0.1.0` e `v0.2.0`).
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
-1. **Fase 3 da auditoria** — itens baixos L-01 a L-17 (higiene contínua).
-2. **Evolução: filas de atendimento** — ADR-0019, B-65 (disponibilidade), B-66 (distribuição
+1. **Evolução: filas de atendimento** — ADR-0019, B-65 (disponibilidade), B-66 (distribuição
    automática), B-67 ("pegar próxima"), B-68 (painel, com os prints de referência do responsável).
-3. **Atualização de majors** (B-86) — um PR por major; os do Dependabot já estão abertos.
+2. **Atualização de majors** (B-86) — um PR por major; os do Dependabot já estão abertos.
+3. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
 
 ## 📊 Painel de status
 
@@ -49,7 +54,7 @@
 | Fase 0 | Imediato (C-01, C-02, C-05, C-06, C-08, C-12) | B-50 a B-54 | ✅ Concluída |
 | Fase 1 | Bloqueadores de go-live | B-55 a B-64, B-40, B-43, B-44 | ✅ Concluída (B-43 e B-64 parciais, em espera) |
 | **Fase 2** | **Estabilização:** M-01, M-02, M-03, M-05 a M-11, M-13, M-14, M-16, M-19, M-20, M-21, M-23, M-25, M-26, M-27 e revisão da documentação (M-24) | B-69 em diante (M-16 resolvido no B-64; M-21 registrado como B-66) | ✅ Concluída 2026-10-18 (B-69 a B-90; em espera: e-mail/CAPTCHA do B-85, número real no B-81) |
-| Fase 3 | Higiene contínua: itens baixos L-01 a L-17 | — | ⬜ Pendente — próxima |
+| Fase 3 | Higiene contínua: itens baixos L-01 a L-17 | — | ✅ Concluída 2026-10-18 (B-91 a B-106; L-01 no B-89; recomendações antigas registradas como B-107 a B-111) |
 | Evolução | **Filas de atendimento** — fora do plano da auditoria, depois da Fase 2 (decisão de 2026-10-17) | ADR-0019, B-65 a B-68 | ⬜ Pendente |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
@@ -68,6 +73,11 @@
 | B-67 | — | O atendente não consegue "pegar a próxima" conversa | ⬜ Pendente |
 | B-68 | L-09 | Não há painel de fila | ⬜ Pendente |
 | B-86 | M-23 | Versões major pendentes, cada uma com migração própria | ⬜ Pendente |
+| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | ⬜ Pendente |
+| B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
+| B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
+| B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
+| B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
 
 **Concluídos em parte** (o resto em espera):
 
@@ -186,6 +196,12 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-103 | L-14 | Front ganha ESLint (React, hooks, no-console) na CI; os 10 console.log de produção saíram — resolve o B-47 | ✅ 2026-10-18 |
 | B-104 | L-09 | Busca da fila no servidor (com o filtro da aba) e tempo na fila / última atividade em cada conversa | ✅ 2026-10-18 |
 | B-105 | L-13 | Relatórios com limite de período (366 dias) e de linhas (5.000); front carrega Dashboard, Relatórios, Contatos e Configurações sob demanda (856 → 462 kB no carregamento inicial) | ✅ 2026-10-18 |
+| B-106 | L-17 | Recomendações abertas dos relatórios em PDF registradas como itens B-107 a B-111 | ✅ 2026-10-18 |
+| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | ⬜ Pendente |
+| B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
+| B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
+| B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
+| B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
 
 ## 📖 Regras do documento vivo
 
