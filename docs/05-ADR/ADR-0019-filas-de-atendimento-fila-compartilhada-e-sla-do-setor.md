@@ -1,10 +1,10 @@
 # ADR-0019 — Filas de atendimento: fila compartilhada por setor, atendente Online/Offline e SLAs de espera e de atendimento
 
-- **Status:** Proposta
+- **Status:** Aprovada (2026-10-19, PR #104) — implementação pelos itens B-65 a B-68 e B-112 a B-114
 - **Data de criação:** 2026-10-19
 - **Última revisão:** 2026-10-19
 - **Autor:** Engenharia (Claude Code), a partir das regras ditadas pelo responsável do projeto
-- **Revisores:** —
+- **Revisores:** responsável do projeto (PR #104)
 - **Versão:** 1.0
 - **Decisores:** responsável do projeto
 - **Contexto técnico:** `apps/api/src/modules/conversation`, `apps/api/src/modules/sla`,
@@ -14,7 +14,7 @@
 
 > Ciclo de vida conforme `README.md` desta pasta. Esta ADR abre a trilha de evolução das filas
 > de atendimento (B-65 a B-68 e B-112 a B-114). As regras de produto são do responsável do
-> projeto (2026-10-19); o resto é proposta técnica, para revisão no PR.
+> projeto (2026-10-19); o resto é a proposta técnica, revisada e aprovada por ele no PR #104.
 
 ## Contexto
 
@@ -184,7 +184,7 @@ setor **recomeça** com o prazo do setor novo.
 ## Regras
 
 O que muda na prática. Vêm do responsável as regras 1 a 3, 8 a 10, 13 e 18 a 23 e, na regra 4,
-quem pode transferir; as demais são a proposta técnica que as implementa.
+quem pode transferir; as demais são a proposta técnica que as implementa, aprovada por ele.
 
 ```mermaid
 stateDiagram-v2
@@ -414,7 +414,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
   `user/dto/create-user.dto.ts` e `update-user.dto.ts` (sem setores); `ConversationQueue.jsx`
   (aba Fila e botão Atender); `useConversations.js#attendConversation`; `SettingsPanel.jsx`
   (tela de Filas com a escolha de estratégia; tela de Usuários sem os setores)
-- **Commits:** — (ADR proposta; os commits de cada item entram no Histórico)
+- **Commits:** — (os commits de cada item entram no Histórico, à medida que forem implementados)
 - **Testes:** a criar nos itens — concorrência do atender e do "Pegar próxima" contra o Postgres
   real no job `api-e2e`; função pura do relógio no expediente com fuso
 - **Pipelines:** `api-ci.yml` (jobs `api` e `api-e2e`), `web-ci.yml`
@@ -458,6 +458,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-10-19 | Criação — regras do responsável (fila compartilhada, Online/Offline, quem pode transferir, SLA da espera e SLA do atendimento por setor, setores no cadastro do atendente) e proposta técnica (rotas, campos, relógio no expediente, plano por item) | 1.0 |
+| 2026-10-19 | Aprovada pelo responsável no PR #104 | 1.0 |
 
 ## Referências
 

@@ -2,18 +2,20 @@
 
 ## Dashboard executivo
 
-Medido por contagem direta desta pasta em 2026-08-05 (não estimado):
+Medido por contagem direta desta pasta em 2026-08-05 e atualizado a cada ADR nova (a última,
+0019, em 2026-10-19), sem estimativa:
 
 | Indicador | Valor |
 |---|---|
-| Total de ADRs | 18 (0001–0018) |
-| ADRs por domínio | Estrutura/repo: 1 · Concorrência/idempotência/erros/observabilidade: 6 · Multi-tenant/autorização: 3 · Infraestrutura (Docker/Nginx/Redis): 3 · Storage: 1 · WebSocket: 1 · Testes: 1 · Segurança/autenticação: 1 · Modular Monolith: 1 |
+| Total de ADRs | 19 (0001–0019) |
+| ADRs por domínio | Estrutura/repo: 1 · Concorrência/idempotência/erros/observabilidade: 6 · Multi-tenant/autorização: 3 · Infraestrutura (Docker/Nginx/Redis): 3 · Storage: 1 · WebSocket: 1 · Testes: 1 · Segurança/autenticação: 1 · Modular Monolith: 1 · Produto/atendimento: 1 |
 | Aceitas/Implementadas por inteiro | 14 — 0001–0011, 0013, 0014, 0017 (revisado no B-89, 2026-10-18; a contagem anterior, "10", não batia com a própria lista) |
+| Aprovadas, implementação pendente | 1 — 0019 (trilha das filas: B-65 a B-68, B-112 a B-114) |
 | Com parte ainda em proposta | 4 — 0012, 0015, 0016, 0018 (ver o status composto de cada uma) |
 | Substituídas (Superseded) | 0 |
 | Arquivadas | 0 |
 | Revisadas depois da criação | 0010 (v1.1, B-83), 0011 (v1.2, B-64), 0014 (v1.1, B-80), 0017 (v1.1, B-74) |
-| Vinculadas a item de roadmap (`B-XX`) | 9 de 18 (0009 sem item — decisão estrutural; 0010→B-41; 0011→B-38; 0012→B-40; 0013→B-19/B-43; 0014→B-46; 0015→B-44; 0016→B-43; 0017→sem ID, sugestão AGR; 0018→sem ID, sugestão AGR; 0002–0008→B-38/B-39/B-48/B-49) |
+| Vinculadas a item de roadmap (`B-XX`) | 15 de 19 (0001 e 0009 sem item — decisões estruturais; 0010→B-41; 0011→B-38; 0012→B-40; 0013→B-19/B-43; 0014→B-46; 0015→B-44; 0016→B-43; 0017→sem ID, sugestão AGR; 0018→sem ID, sugestão AGR; 0002–0008→B-38/B-39/B-48/B-49; 0019→B-65 a B-68, B-112 a B-114). Recontado em 2026-10-19: a contagem anterior, "9 de 18", não batia com a própria lista |
 | Com validação automatizada real | 1 (`ADR-0002`/idempotência — via teste tripwire do `ConversationStatus`, mesmo mecanismo citado em `AER-019` da Constituição) — as demais dependem de validação manual documentada |
 
 ## ADRs 0001–0008 — formato de status curto (histórico, não migrado retroativamente)
@@ -33,11 +35,12 @@ ADRs 0002 a 0008 escritas na Architecture Consolidation Review de 2026-08-01, fo
 implementadas nas correções B-38/B-39/B-48/B-49. O relatório completo da revisão
 (`ARQUITETURA_CONSOLIDADA_ATENDEHUB.pdf`) saiu do repositório público no B-89 e fica com o responsável.
 
-## ADRs 0009–0018 — formato de ciclo de vida estendido (2026-08-05, ver `README.md`)
+## ADRs 0009 em diante — formato de ciclo de vida estendido (ver `README.md`)
 
-Escritas na Architecture Decision Records review de 2026-08-05, que sucede ACR → ABR → AGR → AER →
-ASNF → ATM. Cada uma referencia a matriz de rastreabilidade
+As ADRs 0009 a 0018 foram escritas na Architecture Decision Records review de 2026-08-05, que
+sucede ACR → ABR → AGR → AER → ASNF → ATM. Cada uma referencia a matriz de rastreabilidade
 (`MATRIZ-DE-RASTREABILIDADE-ARQUITETURAL.md`) e a Constituição (`CONSTITUICAO-ARQUITETURAL.md`).
+Da 0019 em diante, as ADRs nascem junto com os itens do roadmap que as implementam.
 
 | # | Título | Status | Componentes afetados | Docs. relacionados | Revisão prevista |
 |---|---|---|---|---|---|
@@ -51,6 +54,7 @@ ASNF → ATM. Cada uma referencia a matriz de rastreabilidade
 | [0016](ADR-0016-nginx-como-borda-sem-hardening-proprio.md) | Nginx como borda única; hardening pendente | Implementada (topologia) / **Proposta** (hardening) | Nginx, WebSocket | AGR §6/§9 | Obrigatória ao implementar **B-43** |
 | [0017](ADR-0017-websocket-autenticado-por-handshake-jwt.md) | WebSocket por handshake JWT, com paridade de revogação | ✅ Implementada (v1.1, B-74) | WebSocket, Redis | AGR §9.1 | — |
 | [0018](ADR-0018-estrategia-de-testes-unitario-mockado-e2e-dirigido.md) | Testes: unitário mockado, e2e dirigido, gate pendente | Implementada (gate de cobertura e e2e na CI — B-63, 2026-10-17) | Todos (via CI) | ABR §10, AGR §10.1 | Subir o piso quando a cobertura subir |
+| [0019](ADR-0019-filas-de-atendimento-fila-compartilhada-e-sla-do-setor.md) | Filas de atendimento: fila compartilhada por setor, atendente Online/Offline, SLAs de espera e de atendimento | Aprovada (2026-10-19, PR #104) | Conversas, SLA, Usuários, Filas, WebSocket, front | Roadmap B-65 a B-68, B-112 a B-114 | A cada item da trilha; ADR nova se voltar a distribuição automática |
 
 ## ADRs previstas (v1.1 em diante — ainda pendentes)
 
@@ -67,7 +71,7 @@ Itens de v1.0 (Modular Monolith, RLS, Storage) foram formalizados acima como ADR
 | Abstração de LLM provider-agnostic | v3.0 |
 | Estratégia de multi-região e residência de dados | v4.0 |
 
-Ao formalizar qualquer uma destas, numerar sequencialmente a partir do maior número já usado (0019 em
+Ao formalizar qualquer uma destas, numerar sequencialmente a partir do maior número já usado (0020 em
 diante) no momento em que for escrita — não reservar número com antecedência.
 
 ## Decisões históricas ainda não convertidas em ADR
