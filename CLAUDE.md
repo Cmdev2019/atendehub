@@ -51,6 +51,7 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
 ```bash
 # Front (na raiz)
 npm run dev          # dev server porta 3000
+npm run lint         # ESLint do front (sem console.log fora de teste — B-103)
 npm test             # Jest (contagens: node scripts/project-stats.mjs)
 npm run build        # vite build
 

@@ -138,11 +138,6 @@ export function useConversations(currentUserId) {
         // F2-1/F2-2 (mock nunca fica em pé silenciosamente com backend ok).
         if (response.data) {
           const normalized = response.data.map(toUiConversation);
-          console.log(
-            normalized.length > 0
-              ? '✅ Conversas reais carregadas do backend'
-              : '✅ Backend conectado — nenhuma conversa ainda',
-          );
           setConversations(normalized);
           setActiveId(normalized[0]?.id);
           setLoadedFromApi(true);
@@ -383,7 +378,6 @@ export function useConversations(currentUserId) {
       const conv = toUiConversation(payload?.conversation);
       if (!conv?.id) return;
 
-      console.log('🆕 Nova conversa na fila', conv.id);
       setConversations((prev) =>
         prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
       );
@@ -396,7 +390,6 @@ export function useConversations(currentUserId) {
       const message = toUiMessage(payload?.message);
       if (!conversationId || !message) return;
 
-      console.log('📬 Nova mensagem na conversa', conversationId);
       if (!conversationsRef.current.some((c) => c.id === conversationId)) {
         fetchMissingConversation(conversationId);
         return;
@@ -492,7 +485,6 @@ export function useConversations(currentUserId) {
       const { conversationId, changes } = payload ?? {};
       if (!conversationId) return;
 
-      console.log('🔄 Conversa atualizada', conversationId);
       let closedElsewhere = null;
       setConversations((prev) =>
         prev
@@ -557,7 +549,6 @@ export function useConversations(currentUserId) {
       const conversationId = payload?.conversationId;
       if (!conversationId) return;
 
-      console.log('⚠️ SLA estourado na conversa', conversationId);
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === conversationId

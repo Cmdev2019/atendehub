@@ -79,6 +79,7 @@ Siga o [`README.md`](README.md#como-executar). Se algo não funcionar seguindo a
 
 ```bash
 # Frontend (na raiz)
+npm run lint                      # sem erros (avisos de hooks são aceitos)
 npm test                          # todos devem passar
 npm run build                     # deve concluir
 
