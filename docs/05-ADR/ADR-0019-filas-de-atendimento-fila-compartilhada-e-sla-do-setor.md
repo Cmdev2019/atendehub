@@ -148,8 +148,8 @@ não pelo atendente; quem atender primeiro zera a SLA".
 
 ## Regras
 
-O que muda na prática. As regras 1 a 3, 8 a 10 e 13 vêm do responsável; as demais são a
-proposta técnica que as implementa.
+O que muda na prática. Vêm do responsável as regras 1 a 3, 8 a 10 e 13 e, na regra 4, quem
+pode transferir; as demais são a proposta técnica que as implementa.
 
 ```mermaid
 stateDiagram-v2
@@ -176,18 +176,29 @@ stateDiagram-v2
    depois recebe `409` com o nome de quem atendeu, e a conversa sai da fila de todos pelo evento
    em tempo real. É a linha do ADR-0004: a garantia fica no banco e é validada com concorrência
    real.
-4. Atender ganha rota própria (`POST /conversations/:id/attend`, sempre para quem chama). O
-   `PATCH /conversations/:id/assign` fica para transferir — para uma pessoa, que precisa estar
-   Online, ou para um setor. Desatribuir, ou mandar para um setor sem indicar pessoa, **devolve a
-   conversa para a fila** (`WAITING`) com SLA novo. Acaba a conversa `OPEN` sem atendente.
+4. **Atender e transferir são ações diferentes.** Atender ganha rota própria
+   (`POST /conversations/:id/attend`: só conversa na fila, sempre para quem chama). O
+   `PATCH /conversations/:id/assign` fica só para **transferir**, para uma pessoa que esteja Online
+   ou para um setor. Quem pode o quê (regra do responsável, 2026-10-19):
+   - o **atendente** transfere as conversas que estão com ele, para outro atendente ou para outro
+     setor. Não transfere a conversa de um colega nem puxa para si uma conversa que já está com
+     outra pessoa (`403`);
+   - **supervisor e admin** transferem qualquer conversa e **puxam para si** a de outro atendente
+     (precisam estar Online, como em todo atender).
+
+   Desatribuir, ou mandar para um setor sem indicar pessoa, **devolve a conversa para a fila**
+   (`WAITING`) com SLA novo — acaba a conversa `OPEN` sem atendente. A troca confere no banco quem
+   estava com a conversa naquele instante: se mudou no meio (o atendente transferiu enquanto o
+   supervisor puxava), quem chegou depois recebe `409`.
 5. **Pegar próxima** entrega a conversa em espera mais antiga (pelo início da espera) dos setores
    de quem pede, numa instrução só no Postgres (`FOR UPDATE SKIP LOCKED`): dois pedidos ao mesmo
    tempo recebem conversas diferentes. Conversa sem setor fica de fora do "Pegar próxima", mas
    continua visível e pode ser atendida pelo botão.
 6. A fila tem um comportamento só: compartilhada (`MANUAL`). A API deixa de aceitar
-   `ROUND_ROBIN` e `LEAST_BUSY`, e as filas existentes passam para `MANUAL`, que vira o padrão —
-   o campo para de prometer o que não existe (M-21). Continua sem limite de conversas por
-   atendente (decisão de 2026-10-18).
+   `ROUND_ROBIN` e `LEAST_BUSY`, as filas existentes passam para `MANUAL`, que vira o padrão, e a
+   tela Configurações → Filas deixa de oferecer a escolha (hoje ela mostra "Round-robin",
+   "Manual" e "Menos ocupado primeiro", com Round-robin já marcado). O campo para de prometer o
+   que não existe (M-21). Continua sem limite de conversas por atendente (decisão de 2026-10-18).
 7. O seed de demonstração cria os 13 setores, cada um com a sua fila (decisão de 2026-10-17).
 
 ### Estado do atendente
@@ -230,7 +241,7 @@ stateDiagram-v2
 | Item | Entrega | Regras |
 |---|---|---|
 | B-65 | Estado Online/Offline: campos, `PATCH /users/me/availability`, logout e desativação põem Offline, evento, auditoria, estado no `GET /users` e **seletor no painel** (sem ele, ninguém conseguiria atender depois do B-66) | 8–12 |
-| B-66 (M-21) | Atender atômico (rota própria, `409`, Online obrigatório) e a 1ª resposta pelo mesmo caminho; transferência que devolve à fila; `waitingSince`, `slaDueAt` e auditoria do ciclo; estratégia `MANUAL` com migração das filas; seed com os 13 setores | 1–4, 6, 7, 13–16 |
+| B-66 (M-21) | Atender atômico (rota própria, `409`, Online obrigatório) e a 1ª resposta pelo mesmo caminho; transferência com as permissões da regra 4 (o atendente só as dele; supervisor e admin puxam) e que devolve à fila; `waitingSince`, `slaDueAt` e auditoria do ciclo; estratégia `MANUAL` com migração das filas e sem a escolha na tela de Filas; seed com os 13 setores | 1–4, 6, 7, 13–16 |
 | B-67 | Pegar próxima | 5 |
 | B-112 | Relógio do SLA só no expediente (função pura ao lado de `isWithinBusinessHours`) | 17 |
 | B-68 (L-09) | Painel: fila com tempo e SLA, "Pegar próxima", aviso de conversa nova só para quem está Online, recusa `409` explicada, visão do supervisor (setores × atendentes) com destaque para conversa de atendente Offline aguardando resposta. Layout pelos prints do responsável | todas (front) |
@@ -269,6 +280,8 @@ stateDiagram-v2
 
 ### Positivas
 - "Atender" com vencedor definido e mensagem clara para quem perdeu.
+- Atendente não toma conversa de colega; supervisor e admin conseguem intervir puxando a conversa
+  para si.
 - Tempo na fila correto também para conversa transferida e reaberta.
 - M-21 resolvido: a estratégia gravada é a que funciona.
 - A conversa que chega à noite passa a ter SLA a partir da abertura.
@@ -286,8 +299,6 @@ stateDiagram-v2
 - Conversa ainda no menu do robô, numa conexão sem setor, aparece na fila como "sem setor" e pode
   ser atendida antes de o paciente escolher a opção. É o comportamento atual e fica fora desta
   ADR.
-- O `assign` continua sem restrição de papel: um atendente pode transferir a conversa de um colega
-  do mesmo setor. Se virar problema, restringir num item próprio.
 - Mudar o horário do expediente não recalcula o prazo de quem já está esperando.
 
 ## Componentes Afetados
@@ -297,7 +308,8 @@ stateDiagram-v2
 - [x] Prisma (`users.availability`, `conversations.waitingSince`/`slaDueAt`, padrão da fila)
 - [ ] Redis · [x] Bull (`sla-check` agendado pelo prazo) · [ ] Storage · [ ] Docker · [ ] Nginx
 - [x] WebSocket (`user.availability`) · [x] Banco (migração das filas para `MANUAL`)
-- [x] Outros: front (`ConversationQueue.jsx`, `useConversations.js`, seletor de estado, painel)
+- [x] Outros: front (`ConversationQueue.jsx`, `useConversations.js`, `SettingsPanel.jsx` — tela de
+  Filas —, seletor de estado, painel)
 
 ## Relação com Governança
 
@@ -332,6 +344,9 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
   nenhuma fora dos setores de quem pediu.
 - Atendente Offline: Atender e "Pegar próxima" respondem `409`; responder uma conversa própria
   continua funcionando.
+- Atendente que tenta transferir a conversa de um colega, ou puxá-la para si, recebe `403`;
+  supervisor e admin puxam e transferem qualquer conversa; transferência e puxada ao mesmo tempo:
+  uma vence, a outra recebe `409`.
 - Logout e desativação põem Offline; queda do socket não muda o estado.
 - SLA: conversa sem atendimento estoura no prazo mesmo com o setor todo Offline; atendida antes,
   não estoura; transferida de setor, ganha o prazo da fila nova; chegada fora do expediente ganha
@@ -351,7 +366,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
 
 | Data | Mudança | Versão |
 |---|---|---|
-| 2026-10-19 | Criação — regras do responsável (fila compartilhada, Online/Offline, SLA do setor) e proposta técnica (rotas, campos, relógio no expediente, plano por item) | 1.0 |
+| 2026-10-19 | Criação — regras do responsável (fila compartilhada, Online/Offline, SLA do setor e quem pode transferir) e proposta técnica (rotas, campos, relógio no expediente, plano por item) | 1.0 |
 
 ## Referências
 
