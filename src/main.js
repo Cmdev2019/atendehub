@@ -29,6 +29,7 @@ const named = (load, name) => lazy(() => load().then((m) => ({ default: m[name] 
 const DashboardView = named(() => import("./components/DashboardView"), "DashboardView");
 const ReportsView = named(() => import("./components/ReportsView"), "ReportsView");
 const ContactsView = named(() => import("./components/ContactsView"), "ContactsView");
+const QueueMonitorView = named(() => import("./components/QueueMonitorView"), "QueueMonitorView");
 const SettingsPanel = named(() => import("./components/settings/SettingsPanel"), "SettingsPanel");
 const lazyView = (component) =>
   h(Suspense, { fallback: h("div", { className: "loading-screen" }, h("div", { className: "spinner" })) }, h(component));
@@ -40,6 +41,7 @@ const h = createElement;
 const VIEW_TITLES = {
   dashboard: "Dashboard",
   inbox: "Caixa de Entrada",
+  monitor: "Painel da fila",
   contacts: "Contatos",
   reports: "Relatórios",
   settings: "Configurações",
@@ -138,6 +140,8 @@ function Dashboard() {
         ? h("div", { className: "workspace workspace-reports" }, lazyView(ReportsView))
         : view === "contacts"
         ? h("div", { className: "workspace workspace-contacts" }, lazyView(ContactsView))
+        : view === "monitor"
+        ? h("div", { className: "workspace workspace-monitor" }, lazyView(QueueMonitorView))
         : h(
             "div",
             { className: "workspace-inbox" },

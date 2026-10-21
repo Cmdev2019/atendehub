@@ -199,6 +199,34 @@ interpretado como `:id` senão.
 }
 ```
 
+### `GET /conversations/overview` (B-68) — visão do supervisor: setores × atendentes
+Só `SUPERVISOR` e acima (`403` para `AGENT`); os números são da empresa toda. Declarada antes de
+`GET /:id`, como o `/stats`. "Estourado" = marcado pelo job do SLA **ou** com o prazo já vencido.
+```jsonc
+{
+  "generatedAt": "2026-10-21T13:00:00.000Z",
+  "totals": {
+    "waiting": 3, "oldestWaitingSince": "..." | null, "waitSlaBreached": 1,
+    "inService": 3, "serviceSlaBreached": 1, "agentsOnline": 2, "agentsTotal": 3
+  },
+  // Um item por setor (ordem alfabética) e, se houver conversa sem setor, a linha
+  // { "id": null, "name": "Sem setor" } no fim
+  "departments": [{
+    "id": "...", "name": "Receitas", "color": "#0f766e", "isActive": true,
+    "waiting": 2, "oldestWaitingSince": "...", "waitSlaBreached": 1,
+    "inService": 1, "serviceSlaBreached": 0,
+    "agentsOnline": 1, "agentsTotal": 2          // membros ativos do setor
+  }],
+  // Usuários ativos (inclui supervisor e admin, que também atendem)
+  "agents": [{
+    "id": "...", "name": "Ana", "avatarUrl": null, "role": "AGENT",
+    "availability": "ONLINE", "availabilityChangedAt": "..." | null, "departmentIds": ["..."],
+    "inService": 2, "serviceSlaBreached": 0,
+    "awaitingReply": 1                           // em atendimento com a última mensagem do paciente
+  }]
+}
+```
+
 ### `GET /conversations/:id`
 Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos. `queue` traz `maxWaitSecs` (B-66) e `maxServiceSecs` (B-114).
 

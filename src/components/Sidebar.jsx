@@ -10,6 +10,8 @@ import { Icon } from './icons';
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: 'chart', badge: '' },
   { id: 'inbox', label: 'Caixa de Entrada', shortLabel: 'Mensagens', icon: 'chat', badge: '' },
+  // B-68: a visão do supervisor — a API responde 403 para AGENT
+  { id: 'monitor', label: 'Painel da fila', shortLabel: 'Painel', icon: 'eye', badge: '', hideForAgent: true },
   { id: 'contacts', label: 'Contatos', shortLabel: 'Contatos', icon: 'users', badge: '' },
   // B-40: relatórios cobrem a empresa toda — a API responde 403 para AGENT
   { id: 'reports', label: 'Relatórios', shortLabel: 'Relatórios', icon: 'clipboard', badge: '', hideForAgent: true },
@@ -17,7 +19,7 @@ const menuItems = [
 ];
 
 // Itens que já possuem uma tela correspondente
-const NAVIGABLE = new Set(['dashboard', 'inbox', 'contacts', 'reports', 'settings']);
+const NAVIGABLE = new Set(['dashboard', 'inbox', 'monitor', 'contacts', 'reports', 'settings']);
 
 export function Sidebar({ activeView = 'inbox', onNavigate }) {
   const { logout, user } = useAuth();

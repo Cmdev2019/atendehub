@@ -431,6 +431,138 @@ export class ConversationService {
     };
   }
 
+  // ── Visão do supervisor (B-68, parte 2 / ADR-0019) ─────────────────────────
+  // Setores × atendentes, como as centrais mostram ao supervisor: por setor,
+  // quantas esperam, a maior espera, quantas estão em atendimento e os SLAs
+  // estourados; por atendente, o estado, quantas atende, os estouros e quantas
+  // esperam resposta dele. "Estourado" = marcado pelo job do SLA ou com o
+  // prazo já vencido (o job pode estar a segundos de rodar).
+  async getOverview(companyId: string) {
+    const now = new Date();
+    const waitBreached = { OR: [{ slaBreachedAt: { not: null } }, { waitSlaDueAt: { lt: now } }] };
+    const serviceBreached = {
+      OR: [{ serviceSlaBreachedAt: { not: null } }, { serviceSlaDueAt: { lt: now } }],
+    };
+    const waiting = { companyId, status: ConversationStatus.WAITING };
+    const inService = { companyId, status: ConversationStatus.OPEN };
+
+    const [
+      departments,
+      users,
+      waitingByDept,
+      waitBreachedByDept,
+      inServiceByDept,
+      serviceBreachedByDept,
+      inServiceByAgent,
+      serviceBreachedByAgent,
+      openWithLastMessage,
+    ] = await Promise.all([
+      this.prisma.department.findMany({
+        where: { companyId },
+        select: { id: true, name: true, color: true, isActive: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.user.findMany({
+        where: { companyId, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+          role: true,
+          availability: true,
+          availabilityChangedAt: true,
+          departments: { select: { id: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.conversation.groupBy({
+        by: ['departmentId'],
+        where: waiting,
+        _count: { _all: true },
+        _min: { waitingSince: true },
+      }),
+      this.prisma.conversation.groupBy({ by: ['departmentId'], where: { ...waiting, ...waitBreached }, _count: { _all: true } }),
+      this.prisma.conversation.groupBy({ by: ['departmentId'], where: inService, _count: { _all: true } }),
+      this.prisma.conversation.groupBy({ by: ['departmentId'], where: { ...inService, ...serviceBreached }, _count: { _all: true } }),
+      this.prisma.conversation.groupBy({ by: ['agentId'], where: inService, _count: { _all: true } }),
+      this.prisma.conversation.groupBy({ by: ['agentId'], where: { ...inService, ...serviceBreached }, _count: { _all: true } }),
+      // "Aguardando resposta" = a última mensagem é do paciente (como no
+      // getStats, B-32): um lateral join por conversa, sem N+1
+      this.prisma.conversation.findMany({
+        where: inService,
+        select: { agentId: true, messages: { take: 1, orderBy: { sentAt: 'desc' }, select: { senderType: true } } },
+      }),
+    ]);
+
+    const countOf = (rows: { _count: { _all: number } }[], match: (row: any) => boolean) =>
+      rows.find(match)?._count._all ?? 0;
+    const awaitingByAgent = new Map<string, number>();
+    for (const conv of openWithLastMessage) {
+      if (conv.agentId && conv.messages[0]?.senderType === SenderType.CLIENT) {
+        awaitingByAgent.set(conv.agentId, (awaitingByAgent.get(conv.agentId) ?? 0) + 1);
+      }
+    }
+
+    const sectorRow = (departmentId: string | null) => {
+      const byDept = (row: { departmentId: string | null }) => row.departmentId === departmentId;
+      const members = departmentId ? users.filter((u) => u.departments.some((d) => d.id === departmentId)) : [];
+      return {
+        waiting: countOf(waitingByDept, byDept),
+        oldestWaitingSince: waitingByDept.find(byDept)?._min.waitingSince ?? null,
+        waitSlaBreached: countOf(waitBreachedByDept, byDept),
+        inService: countOf(inServiceByDept, byDept),
+        serviceSlaBreached: countOf(serviceBreachedByDept, byDept),
+        agentsOnline: members.filter((u) => u.availability === Availability.ONLINE).length,
+        agentsTotal: members.length,
+      };
+    };
+
+    const sectors = departments.map((dept) => ({ ...dept, ...sectorRow(dept.id) }));
+    // Conversa sem setor também espera e é atendida: entra como uma linha à
+    // parte, só quando há alguma
+    const noSector = sectorRow(null);
+    const sectorsWithNone =
+      noSector.waiting + noSector.inService > 0
+        ? [...sectors, { id: null, name: 'Sem setor', color: null, isActive: true, ...noSector }]
+        : sectors;
+
+    const agents = users.map((user) => {
+      const byAgent = (row: { agentId: string | null }) => row.agentId === user.id;
+      return {
+        id: user.id,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+        availability: user.availability,
+        availabilityChangedAt: user.availabilityChangedAt,
+        departmentIds: user.departments.map((d) => d.id),
+        inService: countOf(inServiceByAgent, byAgent),
+        serviceSlaBreached: countOf(serviceBreachedByAgent, byAgent),
+        awaitingReply: awaitingByAgent.get(user.id) ?? 0,
+      };
+    });
+
+    const oldest = waitingByDept
+      .map((row) => row._min.waitingSince)
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+
+    return {
+      generatedAt: now,
+      totals: {
+        waiting: waitingByDept.reduce((sum, row) => sum + row._count._all, 0),
+        oldestWaitingSince: oldest ?? null,
+        waitSlaBreached: waitBreachedByDept.reduce((sum, row) => sum + row._count._all, 0),
+        inService: inServiceByDept.reduce((sum, row) => sum + row._count._all, 0),
+        serviceSlaBreached: serviceBreachedByDept.reduce((sum, row) => sum + row._count._all, 0),
+        agentsOnline: users.filter((u) => u.availability === Availability.ONLINE).length,
+        agentsTotal: users.length,
+      },
+      departments: sectorsWithNone,
+      agents,
+    };
+  }
+
   // ── Buscar conversa por ID com detalhes completos ─────────────────────────
   async findOne(companyId: string, id: string) {
     const conversation = await this.prisma.conversation.findFirst({

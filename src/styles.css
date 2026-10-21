@@ -3162,3 +3162,159 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* Texto só para leitor de tela (legenda de tabela, por exemplo) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── B-68 (parte 2): painel da fila — a visão do supervisor ─────────────── */
+.workspace-monitor {
+  overflow-y: auto;
+}
+
+.monitor-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.monitor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.monitor-updated {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.monitor-error {
+  margin: 12px 20px 0;
+}
+
+.monitor-card-note {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.metric-card.monitor-card-alert {
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.metric-card.monitor-card-alert strong {
+  color: #b91c1c;
+}
+
+.monitor-section {
+  padding: 16px 20px 4px;
+}
+
+.monitor-section h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+/* A tabela rola na horizontal em tela estreita, sem quebrar a página */
+.monitor-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.monitor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.monitor-table th,
+.monitor-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.monitor-table thead th {
+  background: var(--panel-soft);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.monitor-table tbody tr:last-child th,
+.monitor-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.monitor-table tbody th {
+  font-weight: 600;
+}
+
+.monitor-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.monitor-alert {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.monitor-attention {
+  font-weight: 700;
+}
+
+.monitor-role {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.monitor-inline-badge {
+  margin-left: 6px;
+}
+
+.monitor-row-muted {
+  opacity: 0.6;
+}
+
+/* Atendente Offline com paciente esperando resposta: precisa de ação */
+.monitor-row-warning {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.monitor-stranded {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .monitor-alert,
+:root.dark-mode .monitor-alert,
+:root[data-theme="dark"] .metric-card.monitor-card-alert strong,
+:root.dark-mode .metric-card.monitor-card-alert strong {
+  color: #fca5a5;
+}
+
+:root[data-theme="dark"] .monitor-stranded,
+:root.dark-mode .monitor-stranded {
+  color: #fcd34d;
+}

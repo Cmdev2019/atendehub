@@ -127,3 +127,26 @@ describe('Sidebar — Relatórios por papel (B-40)', () => {
     expect(screen.getByTitle('Relatórios')).toBeInTheDocument();
   });
 });
+
+// B-68: a visão do supervisor — a API responde 403 para AGENT
+describe('Sidebar — Painel da fila por papel (B-68)', () => {
+  afterEach(() => {
+    mockUser = null;
+  });
+
+  it('esconde o Painel da fila para AGENT', () => {
+    mockUser = { role: 'AGENT' };
+    render(h(ConfirmProvider, null, h(Sidebar)));
+    expect(screen.queryByTitle('Painel da fila')).not.toBeInTheDocument();
+  });
+
+  it.each(['SUPERVISOR', 'ADMIN'])('mostra o Painel da fila para %s, e ele navega', (role) => {
+    mockUser = { role };
+    const onNavigate = jest.fn();
+    render(h(ConfirmProvider, null, h(Sidebar, { activeView: 'inbox', onNavigate })));
+
+    fireEvent.click(screen.getByTitle('Painel da fila'));
+
+    expect(onNavigate).toHaveBeenCalledWith('monitor');
+  });
+});
