@@ -21,6 +21,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
 ### Alterado
+- **B-116 (2026-10-21):** os setores são criados pelo admin conforme a necessidade, até 20 ativos por empresa — a tela de Grupos mostra quantos estão ativos, trava o "Criar" no limite e ganhou o botão de desativar/reativar (desativar libera a vaga). O seed não cria mais os 13 setores de exemplo.
 - **B-112 (2026-10-20):** o prazo do SLA da espera só corre no horário de expediente do auto-atendimento, no fuso da empresa. A conversa que chega com a clínica fechada passa a ter prazo, contado a partir da abertura (antes ficava sem SLA nenhum), e a espera que atravessa o fechamento, o almoço ou o fim de semana continua na abertura seguinte. Sem horário configurado, nada muda: o relógio anda o dia todo.
 
 ### Segurança

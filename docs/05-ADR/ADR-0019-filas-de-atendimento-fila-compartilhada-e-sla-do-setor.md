@@ -5,7 +5,7 @@
 - **Última revisão:** 2026-10-21
 - **Autor:** Engenharia (Claude Code), a partir das regras ditadas pelo responsável do projeto
 - **Revisores:** responsável do projeto (PR #104)
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Decisores:** responsável do projeto
 - **Contexto técnico:** `apps/api/src/modules/conversation`, `apps/api/src/modules/sla`,
   `apps/api/src/modules/user`, `apps/api/src/modules/queue`, `apps/api/src/modules/events`,
@@ -234,8 +234,10 @@ stateDiagram-v2
    `ROUND_ROBIN` e `LEAST_BUSY`, as filas existentes passam para `MANUAL`, que vira o padrão, e a
    tela Configurações → Filas deixa de oferecer a escolha. O campo para de prometer o que não
    existe (M-21). Continua sem limite de conversas por atendente (decisão de 2026-10-18).
-7. O seed de demonstração cria os 13 setores, cada um com a sua fila (decisão de 2026-10-17), e o
-   menu do auto-atendimento com uma opção por setor.
+7. Os setores são criados pelo admin conforme a necessidade, até 20 ativos por empresa por
+   enquanto, e o seed de demonstração não cria nenhum (revista pelo responsável em 2026-10-21,
+   B-116: os 13 setores de 2026-10-17 eram só exemplos). Cada setor tem a sua fila, e o menu do
+   auto-atendimento ganha uma opção por setor quando o admin o configura.
 
 ### Estado do atendente
 
@@ -308,7 +310,7 @@ Na ordem da tabela:
 |---|---|---|
 | B-65 | Estado Online/Offline: campos, `PATCH /users/me/availability`, logout e desativação põem Offline, evento, auditoria, estado no `GET /users` e **seletor no painel** (sem ele, ninguém conseguiria atender depois do B-66) | 8–12 |
 | B-113 | Setores no cadastro e na edição do atendente (um ou vários), na API e na tela de Usuários | 22 |
-| B-66 (M-21) | Atender atômico (rota própria, `409`, Online obrigatório) e a 1ª resposta pelo mesmo caminho; transferência com as permissões da regra 4 (o atendente só as dele; supervisor e admin puxam) e que devolve à fila; `waitingSince`, `waitSlaDueAt` e auditoria do ciclo; estratégia `MANUAL` com migração das filas e sem a escolha na tela de Filas; seed com os 13 setores e o menu com uma opção por setor | 1–4, 6, 7, 13–16, 23 |
+| B-66 (M-21) | Atender atômico (rota própria, `409`, Online obrigatório) e a 1ª resposta pelo mesmo caminho; transferência com as permissões da regra 4 (o atendente só as dele; supervisor e admin puxam) e que devolve à fila; `waitingSince`, `waitSlaDueAt` e auditoria do ciclo; estratégia `MANUAL` com migração das filas e sem a escolha na tela de Filas; seed com os 13 setores e o menu com uma opção por setor (revisto no B-116: o seed não cria setores) | 1–4, 6, 7, 13–16, 23 |
 | B-67 | Pegar próxima | 5 |
 | B-112 | Relógio dos SLAs só no expediente (função pura ao lado de `isWithinBusinessHours`) | 17 |
 | B-114 | SLA do atendimento: prazo por setor na tela de Filas, relógio do Atender ao Encerrar, alerta para quem atende e para supervisor e admin, regra de transferência | 18–21 |
@@ -465,6 +467,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
 | 2026-10-20 | **B-67 implementado** (PR #110, regra 5): `POST /conversations/next` escolhe e atende numa instrução só (CTE com `FOR UPDATE SKIP LOCKED`), pela ordem do `waitingSince`, só nos setores de que quem pede é membro — supervisor e admin inclusive; fila vazia responde `204`. Depois da troca, o mesmo caminho do Atender (SLA cancelado, `conversation.attended`, evento). Validado por e2e com Postgres real (`queue-next.e2e-spec.ts`: 5 pedidos simultâneos, 5 conversas diferentes; sem a trava, o teste falha) | 1.0 |
 | 2026-10-20 | **B-112 implementado** (PR #112, regra 17): função pura `addBusinessTime` ao lado de `isWithinBusinessHours`, que soma o prazo só no expediente do auto-atendimento ativo, no fuso da empresa (faixas do dia em ordem, as que se cruzam contam uma vez); todos os caminhos de entrada na fila gravam o `waitSlaDueAt` por ela, e o job do SLA vai para esse instante. A conversa que chega com o expediente fechado deixa de ficar sem SLA (era a regra do B-98). Validado por unitários da função (chegada fora do expediente, espera que atravessa o fechamento e o almoço, fim de semana, fuso) e e2e com Postgres e Bull reais (`sla-business-hours.e2e-spec.ts`: prazo = abertura + prazo da fila, e o job agendado para ele; sem o relógio, o teste falha) | 1.0 |
 | 2026-10-21 | **B-114 implementado** (PR #113, regras 18 a 21): `queues.maxServiceSecs` (prazo por setor, campo "Tempo máx. de atendimento" na tela de Filas) e, na conversa, `attendedAt`, `serviceSlaDueAt` e `serviceSlaBreachedAt`. O ciclo abre no Atender, no Pegar próxima, na 1ª resposta e na transferência para uma pessoa — com o prazo contado no expediente (`addBusinessTime`, B-112) — e fecha ao encerrar ou resolver, com a auditoria `conversation.service_closed`. Transferir no mesmo setor mantém o relógio; mudar de setor recomeça com o prazo e a fila do setor novo; devolver à fila fecha o ciclo. Job próprio na fila do SLA (`kind: 'service'`, jobId `service-sla:<id>`); ao estourar, `serviceSlaBreachedAt` por troca condicional, evento `sla.service_breached`, auditoria `sla.service_breached` e notificação para quem atende e para supervisores e admins, uma vez por pessoa. Validado por e2e com Postgres e Bull reais (`service-sla.e2e-spec.ts`: estoura no prazo de 2 s e avisa a atendente e a supervisora; mesmo setor mantém o prazo; outro setor recomeça; o Pegar próxima grava o prazo do setor da conversa escolhida; encerrada antes não estoura) | 1.0 |
+| 2026-10-21 | **Regra 7 revista pelo responsável (B-116):** os 13 setores de 2026-10-17 eram só exemplos — o admin cria os setores conforme a necessidade, até 20 ativos por empresa por enquanto, e o seed de demonstração não cria nenhum. O limite vale na API (trava na linha da empresa, validado com concorrência real) e na tela de Grupos | 1.1 |
 
 ## Referências
 

@@ -1,33 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Seed inicial — cria empresa demo + admin
 // Uso: npm run db:seed (pode rodar de novo: só cria o que falta)
+//
+// B-116 (decisão do responsável em 2026-10-21): o seed não cria setores. O
+// admin cria os setores conforme a necessidade (até 20 ativos por empresa) —
+// os 13 setores do B-66 eram só exemplos.
 // ─────────────────────────────────────────────────────────────────────────────
-import { PrismaClient, Role, Plan, AutoAttendanceAction } from "@prisma/client";
+import { PrismaClient, Role, Plan } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
 import { writeFileSync } from "fs";
 
 const prisma = new PrismaClient();
-
-// B-66 (ADR-0019, regra 7): cada setor de atendimento é um departamento com a
-// sua fila — os 13 setores definidos pelo responsável em 2026-10-17
-const SECTORS = [
-  "AGENDAMENTO DE CONSULTAS COM ESPECIALISTAS",
-  "AGENDAMENTO DE EXAMES OU PROCEDIMENTOS",
-  "CONFIRMAÇÃO DE AGENDAMENTO",
-  "ENDOSC/COLONO - ORÇAM/AGEND DE EXAMES/PROC",
-  "EXAMES OFTALMOLÓGICOS",
-  "OUTROS - ATENDIMENTO",
-  "OUTROS EXAMES - ORÇAM/AGEND DE EXAMES/PROC",
-  "PROCED CIRURGICO - ORÇAM/AGEND DE EXAMES/PROC",
-  "RECEITAS",
-  "PEDIDOS MÉDICOS",
-  "OUTRAS INFORMAÇÕES",
-  "RESULTADOS DE EXAMES",
-  "ULTRASSOM - ORÇAM/AGEND DE EXAMES/PROC",
-];
-
-const SECTOR_COLORS = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#db2777", "#059669", "#dc2626"];
 
 async function main() {
   console.log("🌱 Iniciando seed...");
@@ -71,29 +55,10 @@ async function main() {
     console.log(`✓ Admin criado: ${admin.email}`);
   }
 
-  // ── Setores (departamentos), cada um com a sua fila ──────────────────────────
-  const sectors: { id: string; name: string }[] = [];
-  for (const [index, name] of SECTORS.entries()) {
-    const department = await prisma.department.upsert({
-      where: { companyId_name: { companyId: company.id, name } },
-      update: {},
-      create: { companyId: company.id, name, color: SECTOR_COLORS[index % SECTOR_COLORS.length] },
-    });
-    // Fila compartilhada (MANUAL, o padrão do schema): quem atender primeiro fica
-    await prisma.queue.upsert({
-      where: { companyId_name: { companyId: company.id, name: `Fila ${name}` } },
-      update: {},
-      create: { companyId: company.id, departmentId: department.id, name: `Fila ${name}`, maxWaitSecs: 300 },
-    });
-    sectors.push(department);
-  }
-
-  console.log(`✓ ${sectors.length} setores criados, cada um com a sua fila`);
-
-  // ── Menu do auto-atendimento: uma opção por setor (ADR-0019, regra 23) ───────
-  // Fica desligado: ligar em Configurações → Auto-atendimento, quando quiser que
-  // o paciente receba o menu
-  const flow = await prisma.autoAttendanceFlow.upsert({
+  // ── Auto-atendimento desligado, ainda sem menu ─────────────────────────────────
+  // As opções do menu levam aos setores (ADR-0019, regra 23): o admin as cria
+  // em Configurações → Auto-atendimento depois de criar os setores
+  await prisma.autoAttendanceFlow.upsert({
     where: { companyId: company.id },
     update: {},
     create: {
@@ -103,23 +68,7 @@ async function main() {
     },
   });
 
-  // Menu que já tem opções fica como está — completar só as posições vazias
-  // misturaria o menu configurado com os setores do seed
-  const existingOptions = await prisma.autoAttendanceMenuOption.count({ where: { flowId: flow.id } });
-  if (existingOptions > 0) {
-    console.log(`✓ Menu do auto-atendimento já configurado (${existingOptions} opções) — mantido`);
-  } else {
-    await prisma.autoAttendanceMenuOption.createMany({
-      data: sectors.map((sector, index) => ({
-        flowId: flow.id,
-        order: index + 1,
-        label: sector.name,
-        action: AutoAttendanceAction.ROUTE_TO_DEPARTMENT,
-        departmentId: sector.id,
-      })),
-    });
-    console.log("✓ Menu do auto-atendimento com uma opção por setor (desligado)");
-  }
+  console.log("✓ Auto-atendimento criado (desligado, sem opções — os setores vêm do admin)");
 
   // ── Tags padrão ──────────────────────────────────────────────────────────────
   const tagData = [

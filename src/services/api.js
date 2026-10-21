@@ -391,6 +391,7 @@ class ApiClient {
         return mockApiClient.removeUserFromDepartment(id, subId);
       }
       if (id && method === 'GET') return mockApiClient.getDepartment(id);
+      if (id && method === 'PATCH') return mockApiClient.updateDepartment(id, body); // B-116
       if (id && method === 'DELETE') return mockApiClient.deleteDepartment(id);
     }
 

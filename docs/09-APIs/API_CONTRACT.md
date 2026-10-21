@@ -574,6 +574,11 @@ Item: `{ id, name, description, color, isActive, createdAt, _count: { users, con
 
 ### `POST /departments` — `{ name (único na empresa), description?, color? }`
 ### `PATCH /departments/:id` · `DELETE /departments/:id`
+Só `ADMIN`. **B-116 (decisão do responsável em 2026-10-21):** os setores são criados conforme a
+necessidade, até **20 ativos por empresa** — criar o 21º, ou reativar (`isActive: true`) com 20
+ativos, responde `400` `"Limite de 20 setores ativos atingido. Desative ou exclua um setor para
+abrir outro"`. Desativar libera a vaga. A contagem roda sob uma trava na linha da empresa: pedidos
+simultâneos não passam do limite. `DELETE` continua recusando setor com conversas (`400`).
 ### `POST /departments/:id/users` — `{ userId }` → retorna o department com `users[]` atualizado
 ### `DELETE /departments/:id/users/:userId` — idem
 É o mesmo vínculo do `departmentIds` de `/users`. Desde o B-113, as duas rotas conferem se o usuário
