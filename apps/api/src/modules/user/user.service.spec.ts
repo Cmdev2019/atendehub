@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { Availability, Role } from '@prisma/client';
+import { Availability, Role } from '../../generated/prisma/client';
 import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';

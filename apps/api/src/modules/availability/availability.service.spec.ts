@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { Availability } from '@prisma/client';
+import { Availability } from '../../generated/prisma/client';
 import { AvailabilityService } from './availability.service';
 
 // B-65 (ADR-0019): a troca é condicional — só quando o estado muda de fato há

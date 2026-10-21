@@ -86,7 +86,7 @@ Padrões e decisões de arquitetura em [`docs/04-Arquitetura/`](docs/04-Arquitet
 | **Frontend** | Vite · React (JavaScript) | 6 · 19 |
 | | Socket.IO Client · Recharts · Sentry | — |
 | **Backend** | NestJS · TypeScript | 11 · 5.7 |
-| | Prisma ORM · Passport JWT · class-validator | 5.22 |
+| | Prisma ORM · Passport JWT · class-validator | 7.10 |
 | | Bull (filas) · Socket.IO · Winston · Helmet | — |
 | **Dados** | PostgreSQL · Redis | 16 · 7 |
 | **Storage** | S3: MinIO em dev/CI · Cloudflare R2 em produção (B-64) | — |

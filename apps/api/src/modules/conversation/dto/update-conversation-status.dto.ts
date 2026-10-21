@@ -1,5 +1,5 @@
 import { IsEnum, IsNotEmpty, IsString, MaxLength, ValidateIf } from 'class-validator';
-import { ConversationStatus, ConversationResolution } from '@prisma/client';
+import { ConversationStatus, ConversationResolution } from '../../../generated/prisma/client';
 
 export class UpdateConversationStatusDto {
   @IsEnum(ConversationStatus)

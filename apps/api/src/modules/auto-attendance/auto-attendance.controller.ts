@@ -10,7 +10,7 @@ import {
   Post,
   } from '@nestjs/common';
 import { IsArray, IsString } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { AutoAttendanceService } from './auto-attendance.service';
 import { UpdateAutoAttendanceFlowDto } from './dto/update-auto-attendance-flow.dto';
 import { CreateMenuOptionDto } from './dto/create-menu-option.dto';

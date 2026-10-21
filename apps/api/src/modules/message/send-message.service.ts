@@ -5,7 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { MessageType, MessageStatus, SenderType, Role, ConversationStatus } from '@prisma/client';
+import { MessageType, MessageStatus, SenderType, Role, ConversationStatus } from '../../generated/prisma/client';
 import { buildMessagePreview } from '../conversation/message-preview';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../../shared/storage/storage.service';

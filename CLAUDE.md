@@ -42,6 +42,9 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
     usam `runAsSystem` (e precisam de `await` dentro — a consulta do Prisma é
     preguiçosa)
   - `ValidationPipe` com `forbidNonWhitelisted` — campo extra no body = 400
+  - Prisma 7 (B-86): o cliente é gerado em `src/generated/prisma` (fora do git; o
+    `npm install` gera) e fala com o banco pelo `pg` (`shared/prisma/pg-adapter.ts`).
+    Tipos e enums vêm de lá, nunca de `@prisma/client`
 - **Evolution API** (Docker, porta 8080) faz a ponte com o WhatsApp; fala com
   a API pelo webhook global da Evolution (`/api/v1/webhooks/evolution`; chave no
   campo `apikey` do corpo ou no header `x-evolution-signature` — B-82/B-88).
@@ -58,7 +61,8 @@ npm run build        # vite build
 # Back (apps/api)
 npm run start:dev    # watch | npm run start = dist
 npm run build        # nest build
-npm run db:migrate   # prisma migrate dev
+npm run db:migrate   # prisma migrate dev + generate
+npm run db:generate  # regera o cliente do Prisma (o npm install já gera)
 npm run db:seed      # seed (só cria o que falta: empresa demo, admin, auto-atendimento
                      # desligado e tags — sem setores: o admin cria até 20 ativos, B-116;
                      # senha do admin ALEATÓRIA só ao criá-lo → .seed-credentials-*.txt)
@@ -92,7 +96,9 @@ docker compose up -d         # postgres, redis, evolution + minio (só dev; port
    Abrir conexão nova por `localhost` passa do prazo de 2 s do Prisma:
    transações interativas simultâneas falham com P2028 ("Unable to start a
    transaction in the given time") — 5 ao mesmo tempo, só 1 passava. A CI
-   (Linux) não sofre, então o erro só aparece em dev.
+   (Linux) não sofre, então o erro só aparece em dev. Com o Prisma 7 (B-86) a
+   conexão passa pelo `pg`, que tenta IPv4 e IPv6 juntos, e o `localhost` voltou
+   a funcionar (5 de 5); o `127.0.0.1` continua por ser onde o Postgres escuta.
 
 ## Convenções
 

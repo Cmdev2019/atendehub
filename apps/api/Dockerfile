@@ -7,25 +7,25 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 
-# OpenSSL também no build: o `prisma generate` escolhe o engine pela versão do
-# OpenSSL que encontra. Sem ele, gera para openssl-1.1 e o runtime (que tem
-# OpenSSL 3) não sobe — era por isso que o runtime gerava o client de novo.
+# OpenSSL também no build: o `npm ci` baixa o schema engine do Prisma (o das
+# migrations) pela versão do OpenSSL que encontra. Sem ele, baixa o de
+# openssl-1.1, e o runtime (que tem OpenSSL 3) não migra.
 RUN apt-get update   && apt-get install -y --no-install-recommends openssl   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json ./
-RUN npm ci
-
+# B-86 (Prisma 7): o `npm ci` já gera o cliente do Prisma (postinstall), em
+# src/generated/prisma — por isso o schema e o prisma.config.ts entram antes
+COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npm ci
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-# Só as dependências de produção seguem para o runtime — o client do Prisma
-# já gerado acima vai junto (B-44: antes o runtime fazia um segundo npm ci e
-# um segundo prisma generate). O CLI `prisma` continua presente: o
-# @prisma/client 5 o instala como dependência, e o deploy usa para migrar.
+# Só as dependências de produção seguem para o runtime — o cliente do Prisma
+# vai dentro do dist (B-86; B-44: antes o runtime fazia um segundo npm ci e um
+# segundo prisma generate). O CLI `prisma` continua presente: o
+# @prisma/client o declara como peer, e o deploy usa para migrar.
 RUN npm prune --omit=dev
 
 # ── Runtime ────────────────────────────────────────────────────────────────────
@@ -33,14 +33,16 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Prisma engine precisa de OpenSSL em runtime. tini (B-44) vira o PID 1:
-# repassa o SIGTERM ao node e recolhe processos órfãos — com o node como PID 1
-# o sinal era ignorado e o `docker stop` acabava em SIGKILL (exit 137).
+# O schema engine do Prisma (migrations) precisa de OpenSSL em runtime. tini
+# (B-44) vira o PID 1: repassa o SIGTERM ao node e recolhe processos órfãos —
+# com o node como PID 1 o sinal era ignorado e o `docker stop` acabava em
+# SIGKILL (exit 137).
 RUN apt-get update   && apt-get install -y --no-install-recommends openssl tini   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/prisma ./prisma
+COPY --from=build --chown=node:node /app/prisma.config.ts ./
 COPY --from=build --chown=node:node /app/dist ./dist
 
 # B-44: nada de root em produção — o usuário `node` já existe na imagem base.

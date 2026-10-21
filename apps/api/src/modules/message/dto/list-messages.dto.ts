@@ -1,6 +1,6 @@
 import { IsOptional, IsEnum, IsInt, Min, Max, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
-import { MessageType, SenderType } from '@prisma/client';
+import { MessageType, SenderType } from '../../../generated/prisma/client';
 
 export class ListMessagesDto {
   @IsOptional()

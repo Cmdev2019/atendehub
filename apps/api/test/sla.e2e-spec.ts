@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule, getQueueToken } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { ConversationStatus } from '@prisma/client';
+import { ConversationStatus } from '../src/generated/prisma/client';
 import {
   SlaCheckProcessor,
   SlaCheckJobData,

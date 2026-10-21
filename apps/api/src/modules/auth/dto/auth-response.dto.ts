@@ -1,4 +1,4 @@
-import { Availability, Role } from '@prisma/client';
+import { Availability, Role } from '../../../generated/prisma/client';
 
 export class AuthUserDto {
   id: string;

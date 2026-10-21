@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ConversationStatus, ConversationResolution } from '@prisma/client';
+import { ConversationStatus, ConversationResolution } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { loadCompanyTimeZone, parsePeriodBoundary } from '../../shared/time/company-time';
 import type { ExportRow } from './report-export.util';

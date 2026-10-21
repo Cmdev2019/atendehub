@@ -5,7 +5,8 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
+    // B-86: src/generated é o cliente do Prisma, gerado (e ignorado pelo git)
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'src/generated/**'],
   },
   js.configs.recommended,
   {

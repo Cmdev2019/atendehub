@@ -1,6 +1,6 @@
 import { IsOptional, IsString, IsEnum, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ConversationStatus, Channel } from '@prisma/client';
+import { ConversationStatus, Channel } from '../../../generated/prisma/client';
 
 export class ListConversationsDto {
   @IsOptional()

@@ -6,3 +6,6 @@ coverage
 !.env.example
 *.log
 .seed-credentials-*.txt
+
+# B-86: cliente do Prisma gerado — a imagem gera o dela
+src/generated

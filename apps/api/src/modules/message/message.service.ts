@@ -4,7 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { MessageType, MessageStatus, SenderType, Prisma } from '@prisma/client';
+import { MessageType, MessageStatus, SenderType, Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { formatStructuredLog } from '../../shared/logging/structured-log.util';

@@ -9,7 +9,7 @@ import { TokenBlacklistService } from './token-blacklist.service';
 import { EventsService } from '../events/events.service';
 import { AvailabilityService } from '../availability/availability.service';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
-import { Availability, Role } from '@prisma/client';
+import { Availability, Role } from '../../generated/prisma/client';
 
 jest.mock('bcrypt');
 

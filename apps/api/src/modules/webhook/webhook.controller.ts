@@ -17,7 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { webhookInstanceTracker } from '../../shared/rate-limit/rate-limit-trackers';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { timingSafeEqual, createHash } from 'crypto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';

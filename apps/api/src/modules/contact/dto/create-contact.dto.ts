@@ -8,7 +8,7 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
-import { Channel } from '@prisma/client';
+import { Channel } from '../../../generated/prisma/client';
 
 export class CreateContactDto {
   @IsString()

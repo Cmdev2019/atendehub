@@ -1,16 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // AtendeHub — Prisma Schema
 // Banco: PostgreSQL 16
-// ORM:   Prisma 5+
+// ORM:   Prisma 7 — o cliente é gerado em src/generated/prisma (B-86)
 // ─────────────────────────────────────────────────────────────────────────────
 
 generator client {
-  provider = "prisma-client-js"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  // Imports sem extensão (CommonJS). Sem isto o gerador deduz pelo ambiente: no
+  // build da imagem, sem o tsconfig.json ainda, gerava "./internal/class.ts",
+  // que o Node não acha no dist
+  importFileExtension = ""
 }
 
+// B-86: a URL do banco fica no prisma.config.ts (Prisma 7)
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

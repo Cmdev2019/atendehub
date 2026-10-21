@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { Availability, ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
+import { Availability, ConversationStatus, Channel, SenderType, Prisma } from '../../generated/prisma/client';
 import { ScopeUser, seesWholeCompany } from '../../shared/conversation-scope/conversation-scope.service';
 import { loadCompanyTimeZone, resolveTimeZone, startOfDayInZone } from '../../shared/time/company-time';
 import { addBusinessTime, BusinessHours } from '../../shared/time/business-hours';

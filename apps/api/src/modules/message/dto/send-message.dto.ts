@@ -6,7 +6,7 @@ import {
   MinLength,
   IsNotEmpty,
 } from 'class-validator';
-import { MessageType } from '@prisma/client';
+import { MessageType } from '../../../generated/prisma/client';
 
 // B-75 (M-11): esta rota é só para texto. Mídia vai por upload
 // (`POST .../messages/media`), que é o que o painel usa. O envio de mídia por

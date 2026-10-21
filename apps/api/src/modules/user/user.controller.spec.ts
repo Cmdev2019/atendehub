@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { UserController } from './user.controller';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 

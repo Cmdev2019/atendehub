@@ -6,12 +6,14 @@
 // admin cria os setores conforme a necessidade (até 20 ativos por empresa) —
 // os 13 setores do B-66 eram só exemplos.
 // ─────────────────────────────────────────────────────────────────────────────
-import { PrismaClient, Role, Plan } from "@prisma/client";
+import { PrismaClient, Role, Plan } from "../src/generated/prisma/client";
+import { createPgAdapter } from "../src/shared/prisma/pg-adapter";
 import * as bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
 import { writeFileSync } from "fs";
 
-const prisma = new PrismaClient();
+// B-86: o Prisma 7 fala com o banco pelo `pg` (ver src/shared/prisma/pg-adapter.ts)
+const prisma = new PrismaClient({ adapter: createPgAdapter() });
 
 async function main() {
   console.log("🌱 Iniciando seed...");

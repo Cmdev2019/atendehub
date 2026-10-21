@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Role } from '@prisma/client';
+import { Role } from '../src/generated/prisma/client';
 import { randomUUID } from 'crypto';
 import { ConversationScopeService } from '../src/shared/conversation-scope/conversation-scope.service';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
