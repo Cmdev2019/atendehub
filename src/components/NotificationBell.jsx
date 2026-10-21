@@ -5,6 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 
 const TYPE_ICON = {
   sla_breach: 'warning',
+  service_sla_breach: 'warning', // B-114: atendimento além do prazo
   conversation_assigned: 'chat',
 };
 

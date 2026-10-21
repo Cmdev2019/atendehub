@@ -22,7 +22,7 @@ import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
-import { SlaCheckJobData } from '../sla/sla-check.processor';
+import { ServiceSlaJobData, SlaCheckJobData } from '../sla/sla-check.processor';
 
 // B-73 (M-07): o índice único parcial do B-49 permite uma só conversa ativa
 // (WAITING/OPEN) por contato. Reativar uma RESOLVED quando o contato já abriu
@@ -66,6 +66,10 @@ const CONVERSATION_LIST_SELECT = {
   waitingSince: true,
   waitSlaDueAt: true,
   slaBreachedAt: true,
+  // B-114 (regras 18 a 21): o atendimento atual — início, prazo e estouro
+  attendedAt: true,
+  serviceSlaDueAt: true,
+  serviceSlaBreachedAt: true,
 };
 
 // Resposta de atender/transferir (B-66) — sem campos internos
@@ -73,6 +77,8 @@ const ASSIGNMENT_SELECT = {
   id: true,
   status: true,
   waitingSince: true,
+  attendedAt: true, // B-114
+  serviceSlaDueAt: true, // B-114
   agent: { select: { id: true, name: true, avatarUrl: true } },
   department: { select: { id: true, name: true } },
 };
@@ -93,6 +99,28 @@ interface SlaClock {
   timeZone: string;
 }
 
+// Ciclo do atendimento (B-114, regras 18 a 21): abre quando a conversa sai da
+// fila com alguém e fecha ao encerrar. `serviceSlaDueAt` null = sem SLA do
+// atendimento (setor sem prazo ou expediente que nunca abre).
+interface ServiceCycle {
+  attendedAt: Date;
+  serviceSlaDueAt: Date | null;
+  serviceSlaBreachedAt: null;
+}
+
+// Na fila (ou reaberta sem ninguém atender) não há atendimento em curso
+const NO_SERVICE_CYCLE = { attendedAt: null, serviceSlaDueAt: null, serviceSlaBreachedAt: null };
+
+// O que é preciso da conversa para fechar o ciclo do atendimento ao encerrar
+interface ServicedConversation {
+  id: string;
+  agent: { id: string } | null;
+  attendedAt: Date | null;
+  serviceSlaDueAt: Date | null;
+  serviceSlaBreachedAt: Date | null;
+  queue: { maxServiceSecs: number | null } | null;
+}
+
 // O que é preciso da conversa para fechar o ciclo ao sair da fila
 interface WaitingConversation {
   id: string;
@@ -103,13 +131,16 @@ interface WaitingConversation {
 }
 
 // Linha que o "Pegar próxima" (B-67) devolve do SQL cru: a conversa já
-// atendida, com o prazo e a marca de violação de antes da troca
+// atendida, com o prazo e a marca de violação de antes da troca e os prazos
+// do setor dela
 interface PickedConversation {
   id: string;
   waitingSince: Date | null;
   waitSlaDueAt: Date | null;
   slaBreachedAt: Date | null;
+  attendedAt: Date;
   maxWaitSecs: number | null;
+  maxServiceSecs: number | null;
 }
 
 @Injectable()
@@ -121,7 +152,8 @@ export class ConversationService {
     private readonly eventsService: EventsService,
     private readonly auditLog: AuditLogService,
     private readonly notificationService: NotificationService,
-    @InjectQueue(QUEUE_NAMES.SLA_CHECK) private readonly slaQueue: Queue<SlaCheckJobData>,
+    @InjectQueue(QUEUE_NAMES.SLA_CHECK)
+    private readonly slaQueue: Queue<SlaCheckJobData | ServiceSlaJobData>,
   ) {}
 
   // B-112 (ADR-0019, regra 17): o relógio dos SLAs só anda no expediente do
@@ -187,16 +219,91 @@ export class ConversationService {
     return this.prisma.queue.findFirst({
       where: { companyId, departmentId, isActive: true },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, maxWaitSecs: true, greetingMsg: true },
+      select: { id: true, maxWaitSecs: true, maxServiceSecs: true, greetingMsg: true },
     });
   }
 
-  private async cancelSlaCheck(conversationId: string) {
-    const job = await this.slaQueue.getJob(this.slaJobId(conversationId));
+  private cancelSlaCheck(conversationId: string) {
+    return this.removeSlaJob(this.slaJobId(conversationId));
+  }
+
+  private async removeSlaJob(jobId: string) {
+    const job = await this.slaQueue.getJob(jobId);
     if (!job) return;
     // Job já em execução não pode ser removido (Bull lança erro) — sem problema,
-    // o processor reconsulta o status e não faz nada se não estiver mais WAITING
+    // o processor reconsulta a conversa e não faz nada se o ciclo já fechou
     await job.remove().catch(() => undefined);
+  }
+
+  // ── SLA do atendimento (B-114 / ADR-0019, regras 18 a 21) ─────────────────
+  // Mesma fila do SLA da espera, com jobId próprio por conversa
+  private serviceSlaJobId(conversationId: string) {
+    return `service-sla:${conversationId}`;
+  }
+
+  private cancelServiceSla(conversationId: string) {
+    return this.removeSlaJob(this.serviceSlaJobId(conversationId));
+  }
+
+  // O prazo é o do setor (`maxServiceSecs` da fila), contado só no
+  // expediente, como o da espera (B-112, regra 17)
+  private async serviceCycleData(
+    companyId: string,
+    queue: { maxServiceSecs: number | null } | null,
+    now: Date,
+  ): Promise<ServiceCycle> {
+    let serviceSlaDueAt: Date | null = null;
+    if (queue?.maxServiceSecs) {
+      const clock = await this.loadSlaClock(companyId);
+      serviceSlaDueAt = addBusinessTime(now, queue.maxServiceSecs, clock.hours, clock.timeZone);
+    }
+    return { attendedAt: now, serviceSlaDueAt, serviceSlaBreachedAt: null };
+  }
+
+  // O job vale para o prazo gravado no ciclo; sem prazo, só cancela o de um
+  // ciclo anterior
+  private async syncServiceSla(
+    conversationId: string,
+    companyId: string,
+    cycle: ServiceCycle,
+    maxServiceSecs?: number | null,
+  ) {
+    await this.cancelServiceSla(conversationId);
+    if (!cycle.serviceSlaDueAt || !maxServiceSecs) return;
+    await this.slaQueue.add(
+      { kind: 'service', conversationId, companyId, maxServiceSecs, attendedAt: cycle.attendedAt },
+      {
+        jobId: this.serviceSlaJobId(conversationId),
+        delay: Math.max(0, cycle.serviceSlaDueAt.getTime() - Date.now()),
+      },
+    );
+  }
+
+  // Encerrou (regra 21): o ciclo do atendimento fecha, e a auditoria registra
+  // quanto durou e se estourou
+  private async closeServiceCycle(
+    companyId: string,
+    conversation: ServicedConversation,
+    actorId: string | undefined,
+    now: Date,
+  ) {
+    await this.cancelServiceSla(conversation.id);
+    if (!conversation.attendedAt) return;
+    await this.auditLog.record({
+      companyId,
+      userId: actorId,
+      action: 'conversation.service_closed',
+      entity: 'Conversation',
+      entityId: conversation.id,
+      after: {
+        agentId: conversation.agent?.id ?? null,
+        serviceSeconds: Math.round((now.getTime() - conversation.attendedAt.getTime()) / 1000),
+        maxServiceSecs: conversation.queue?.maxServiceSecs ?? null,
+        breached:
+          !!conversation.serviceSlaBreachedAt ||
+          (!!conversation.serviceSlaDueAt && now > conversation.serviceSlaDueAt),
+      },
+    });
   }
 
   // ── Listar conversas com filtros e paginação ──────────────────────────────
@@ -338,6 +445,9 @@ export class ConversationService {
         slaBreachedAt: true,
         waitingSince: true, // B-66
         waitSlaDueAt: true, // B-66
+        attendedAt: true, // B-114
+        serviceSlaDueAt: true, // B-114
+        serviceSlaBreachedAt: true, // B-114
         resolvedAt: true,
         closedAt: true,
         resolution: true,
@@ -362,7 +472,7 @@ export class ConversationService {
           select: { id: true, name: true, color: true },
         },
         queue: {
-          select: { id: true, name: true, strategy: true, maxWaitSecs: true },
+          select: { id: true, name: true, strategy: true, maxWaitSecs: true, maxServiceSecs: true },
         },
         whatsapp: {
           select: { id: true, name: true, phone: true, profileName: true },
@@ -411,12 +521,15 @@ export class ConversationService {
         waitingSince: true,
         waitSlaDueAt: true,
         slaBreachedAt: true,
-        queue: { select: { maxWaitSecs: true } },
+        queue: { select: { maxWaitSecs: true, maxServiceSecs: true } },
       },
     });
     if (!before) throw new NotFoundException('Conversa não encontrada');
 
     const now = new Date();
+    // B-114 (regra 18): sair da fila com alguém abre o ciclo do atendimento,
+    // no mesmo instante em que o da espera termina
+    const service = await this.serviceCycleData(companyId, before.queue, now);
     const { count } = await this.prisma.conversation.updateMany({
       where: { id: conversationId, companyId, status: ConversationStatus.WAITING, agentId: null },
       data: {
@@ -425,11 +538,13 @@ export class ConversationService {
         // B-98 (L-10): saiu da espera, a marca de SLA violado não vale mais
         slaBreachedAt: null,
         waitSlaDueAt: null,
+        ...service,
       },
     });
     if (count === 0) throw await this.notInQueueError(companyId, conversationId);
 
     await this.closeWaitCycle(companyId, before, requesterId, requesterId, now);
+    await this.syncServiceSla(conversationId, companyId, service, before.queue?.maxServiceSecs);
     return this.emitAssignment(companyId, conversationId);
   }
 
@@ -457,7 +572,7 @@ export class ConversationService {
     // RLS (B-83): o companyId do WHERE é o que separa as empresas. O CTE
     // guarda o prazo e a marca de violação de antes da troca, para a
     // auditoria do ciclo. Sem waitingSince (a migração do B-66 preencheu),
-    // vale o createdAt.
+    // vale o createdAt. B-114: a mesma troca abre o ciclo do atendimento.
     const now = new Date();
     const [picked] = await this.prisma.$queryRaw<PickedConversation[]>`
       WITH next AS (
@@ -476,14 +591,18 @@ export class ConversationService {
           "agentId" = ${requesterId},
           "slaBreachedAt" = NULL,
           "waitSlaDueAt" = NULL,
+          "attendedAt" = NOW() AT TIME ZONE 'UTC',
+          "serviceSlaDueAt" = NULL,
+          "serviceSlaBreachedAt" = NULL,
           "updatedAt" = NOW() AT TIME ZONE 'UTC'
       FROM next
       WHERE c."id" = next."id"
-      RETURNING c."id", c."waitingSince", next."waitSlaDueAt", next."slaBreachedAt",
-        (SELECT q."maxWaitSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxWaitSecs"`;
+      RETURNING c."id", c."waitingSince", c."attendedAt", next."waitSlaDueAt", next."slaBreachedAt",
+        (SELECT q."maxWaitSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxWaitSecs",
+        (SELECT q."maxServiceSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxServiceSecs"`;
     if (!picked) return null;
 
-    const { maxWaitSecs, ...cycle } = picked;
+    const { maxWaitSecs, maxServiceSecs, attendedAt, ...cycle } = picked;
     await this.closeWaitCycle(
       companyId,
       { ...cycle, queue: maxWaitSecs === null ? null : { maxWaitSecs } },
@@ -491,6 +610,18 @@ export class ConversationService {
       requesterId,
       now,
     );
+
+    // O prazo do atendimento é o do setor da conversa escolhida, que só se
+    // conhece agora. A troca confere o início do ciclo: se ele mudou no meio
+    // (transferida de setor), o prazo deste já não vale.
+    const service = await this.serviceCycleData(companyId, { maxServiceSecs }, attendedAt);
+    if (service.serviceSlaDueAt) {
+      const { count } = await this.prisma.conversation.updateMany({
+        where: { id: picked.id, companyId, agentId: requesterId, attendedAt },
+        data: { serviceSlaDueAt: service.serviceSlaDueAt },
+      });
+      if (count === 1) await this.syncServiceSla(picked.id, companyId, service, maxServiceSecs);
+    }
     return this.emitAssignment(companyId, picked.id);
   }
 
@@ -551,6 +682,8 @@ export class ConversationService {
       agent: updated.agent,
       status: updated.status,
       waitingSince: updated.waitingSince,
+      attendedAt: updated.attendedAt,
+      serviceSlaDueAt: updated.serviceSlaDueAt,
     });
 
     return updated;
@@ -609,15 +742,32 @@ export class ConversationService {
     const now = new Date();
     let queue: { id: string; maxWaitSecs: number } | null = null;
     let cycle: WaitCycle | null = null;
+    let serviceQueue: { id: string; maxServiceSecs: number | null } | null = null;
+    let service: ServiceCycle | null = null;
     let data: Prisma.ConversationUncheckedUpdateManyInput;
 
     if (targetAgentId) {
+      // B-114 (regras 18 e 20): tirar da fila para uma pessoa abre o ciclo do
+      // atendimento. Já em atendimento, no mesmo setor o relógio continua (o
+      // SLA é do setor, não do atendente); mudou de setor, recomeça com o
+      // prazo do setor novo, cuja fila passa a ser a da conversa.
+      const sectorChanged = departmentId !== (before.department?.id ?? null);
+      if (sectorChanged) {
+        serviceQueue = departmentId ? await this.activeQueueOf(companyId, departmentId) : null;
+      } else {
+        serviceQueue = before.queue;
+      }
+      if (sectorChanged || before.status !== ConversationStatus.OPEN) {
+        service = await this.serviceCycleData(companyId, serviceQueue, now);
+      }
       data = {
         agentId: targetAgentId,
         departmentId,
         status: ConversationStatus.OPEN,
         slaBreachedAt: null,
         waitSlaDueAt: null,
+        ...(sectorChanged && { queueId: serviceQueue?.id ?? null }),
+        ...service,
       };
     } else {
       queue = departmentId ? await this.activeQueueOf(companyId, departmentId) : null;
@@ -628,6 +778,8 @@ export class ConversationService {
         queueId: queue?.id ?? null,
         status: ConversationStatus.WAITING,
         ...cycle,
+        // Regra 20: devolver para a fila fecha o ciclo do atendimento
+        ...NO_SERVICE_CYCLE,
       };
     }
 
@@ -643,9 +795,11 @@ export class ConversationService {
     if (cycle) {
       // Voltou para a fila: SLA do ciclo novo (ou nenhum, sem prazo)
       await this.syncWaitSla(id, companyId, cycle, queue?.maxWaitSecs);
+      await this.cancelServiceSla(id);
     } else if (targetAgentId && before.status === ConversationStatus.WAITING) {
       await this.closeWaitCycle(companyId, before, targetAgentId, requester.id, now);
     }
+    if (service) await this.syncServiceSla(id, companyId, service, serviceQueue?.maxServiceSecs);
 
     // Auditoria (B1-4): mudança real de agentId — desatribuir também conta
     if (targetAgentId !== previousAgentId) {
@@ -716,6 +870,13 @@ export class ConversationService {
 
     const wasWaiting = conversation.status === ConversationStatus.WAITING;
     const entersQueue = !wasWaiting && dto.status === ConversationStatus.WAITING;
+    // B-114 (regras 18 e 21): o atendimento termina ao encerrar (ou resolver).
+    // Voltar para a fila fecha o ciclo sem registrar duração, e reabrir sem
+    // ninguém atender não abre ciclo novo.
+    const wasOpen = conversation.status === ConversationStatus.OPEN;
+    const endsService =
+      wasOpen && (dto.status === ConversationStatus.RESOLVED || dto.status === ConversationStatus.CLOSED);
+    const reopens = !wasOpen && dto.status === ConversationStatus.OPEN;
 
     const now = new Date();
     // Voltar para a fila abre um ciclo novo (regra 14) — e na fila ninguém
@@ -729,7 +890,8 @@ export class ConversationService {
         where: { id },
         data: {
           status: dto.status,
-          ...(cycle && { agentId: null, ...cycle }),
+          ...(cycle && { agentId: null, ...cycle, ...NO_SERVICE_CYCLE }),
+          ...(reopens && NO_SERVICE_CYCLE),
           // B-98 (L-10): fora da espera, a marca de SLA violado é zerada
           ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null, waitSlaDueAt: null }),
           ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
@@ -758,6 +920,11 @@ export class ConversationService {
       await this.syncWaitSla(updated.id, updated.companyId, cycle, conversation.queue?.maxWaitSecs);
     } else if (wasWaiting && updated.status !== ConversationStatus.WAITING) {
       await this.cancelSlaCheck(updated.id);
+    }
+    if (endsService) {
+      await this.closeServiceCycle(updated.companyId, conversation, requester?.id, now);
+    } else if (entersQueue) {
+      await this.cancelServiceSla(updated.id);
     }
 
     // Emite evento em tempo real

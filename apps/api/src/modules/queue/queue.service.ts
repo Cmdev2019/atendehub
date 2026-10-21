@@ -13,6 +13,7 @@ const SELECT_FIELDS = {
   name: true,
   strategy: true,
   maxWaitSecs: true,
+  maxServiceSecs: true, // B-114
   greetingMsg: true,
   departmentId: true,
   isActive: true,

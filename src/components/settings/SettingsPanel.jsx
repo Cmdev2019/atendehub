@@ -749,8 +749,9 @@ function QueuesSection() {
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  // B-66 (ADR-0019): sem escolha de estratégia — a fila é compartilhada
-  const emptyForm = { name: '', maxWaitSecs: 300, greetingMsg: '', departmentId: '' };
+  // B-66 (ADR-0019): sem escolha de estratégia — a fila é compartilhada.
+  // B-114: prazo do atendimento vazio = setor sem SLA do atendimento.
+  const emptyForm = { name: '', maxWaitSecs: 300, maxServiceSecs: '', greetingMsg: '', departmentId: '' };
   const [form, setForm] = useState(emptyForm);
   // Fila sendo editada (null = formulário de criação)
   const [editingId, setEditingId] = useState(null);
@@ -783,6 +784,7 @@ function QueuesSection() {
     setForm({
       name: queue.name,
       maxWaitSecs: queue.maxWaitSecs,
+      maxServiceSecs: queue.maxServiceSecs ?? '',
       greetingMsg: queue.greetingMsg || '',
       departmentId: queue.departmentId || '',
     });
@@ -796,6 +798,8 @@ function QueuesSection() {
     const payload = {
       name: form.name.trim(),
       maxWaitSecs: Number(form.maxWaitSecs) || 300,
+      // Vazio manda null: na edição, é assim que o setor deixa de ter o prazo
+      maxServiceSecs: form.maxServiceSecs === '' ? null : Number(form.maxServiceSecs),
       greetingMsg: form.greetingMsg.trim() || undefined,
       departmentId: form.departmentId || undefined,
     };
@@ -841,7 +845,10 @@ function QueuesSection() {
     h('h3', null, h(Icon, { name: 'clock', size: 17 }), ' Filas de distribuição'),
     h('p', { className: 'settings-hint' },
       'As conversas ficam na fila do setor até alguém atender — quem pegar primeiro fica com ' +
-      'a conversa. O tempo máximo de espera é o prazo do SLA: passou dele, o supervisor é avisado.'),
+      'a conversa. O tempo máximo de espera é o prazo do SLA: passou dele, o supervisor é avisado. ' +
+      'O tempo máximo de atendimento vai do Atender ao Encerrar: passou dele, quem atende e o ' +
+      'supervisor são avisados (vazio = sem prazo). Os dois só contam no horário de expediente ' +
+      'do auto-atendimento.'),
     error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     h(
@@ -854,6 +861,11 @@ function QueuesSection() {
       h('input', {
         className: 'settings-input', type: 'number', min: 1, placeholder: 'Tempo máx. de espera (segundos)',
         value: form.maxWaitSecs, onChange: setField('maxWaitSecs'),
+      }),
+      h('input', {
+        className: 'settings-input', type: 'number', min: 1,
+        placeholder: 'Tempo máx. de atendimento (segundos, opcional)',
+        value: form.maxServiceSecs, onChange: setField('maxServiceSecs'),
       }),
       h(
         'select',
@@ -889,7 +901,9 @@ function QueuesSection() {
                 { className: 'settings-item-main' },
                 h('div', { className: 'settings-row-title' }, queue.name),
                 h('div', { className: 'settings-hint' },
-                  `Fila compartilhada · espera máx. ${queue.maxWaitSecs}s · ${queue.department?.name ?? 'sem setor'}`),
+                  `Fila compartilhada · espera máx. ${queue.maxWaitSecs}s · ` +
+                  (queue.maxServiceSecs ? `atendimento máx. ${queue.maxServiceSecs}s` : 'atendimento sem prazo') +
+                  ` · ${queue.department?.name ?? 'sem setor'}`),
               ),
               h('span', { className: `settings-badge ${queue.isActive === false ? 'off' : 'ok'}` },
                 queue.isActive === false ? 'Inativa' : 'Ativa'),

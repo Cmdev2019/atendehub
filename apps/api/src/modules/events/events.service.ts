@@ -54,6 +54,9 @@ export interface ConversationAssignedPayload {
   // B-66: com o status, a conversa sai (ou volta) da fila de todos na hora
   status?: string;
   waitingSince?: Date | string | null;
+  // B-114: o ciclo do atendimento (início e prazo), para o painel
+  attendedAt?: Date | string | null;
+  serviceSlaDueAt?: Date | string | null;
 }
 
 export interface ConnectionStatusPayload {
@@ -72,6 +75,18 @@ export interface SlaBreachedPayload {
   queue: { id: string; name: string; maxWaitSecs: number } | null;
   waitTimeSeconds: number;
   maxWaitSecs: number;
+  breachedAt: Date | string;
+}
+
+// B-114: o atendimento passou do prazo do setor
+export interface ServiceSlaBreachedPayload {
+  companyId: string;
+  conversationId: string;
+  agentId: string | null;
+  contact: { id: string; name: string; phone: string };
+  queue: { id: string; name: string; maxServiceSecs: number | null } | null;
+  serviceTimeSeconds: number;
+  maxServiceSecs: number;
   breachedAt: Date | string;
 }
 
@@ -258,6 +273,18 @@ export class EventsService {
 
     this.logger.warn(
       `sla.breached → ${conversationId} | aguardando ${payload.waitTimeSeconds}s (limite: ${payload.maxWaitSecs}s)`,
+    );
+  }
+
+  // ── SLA do atendimento violado (B-114) ────────────────────────────────────
+  // As mesmas salas do SLA da espera: supervisores, o setor e quem atende
+  emitServiceSlaBreached(payload: ServiceSlaBreachedPayload): void {
+    const { companyId, conversationId } = payload;
+
+    void this.emitToConversation(companyId, conversationId, 'sla.service_breached', payload);
+
+    this.logger.warn(
+      `sla.service_breached → ${conversationId} | em atendimento há ${payload.serviceTimeSeconds}s (limite: ${payload.maxServiceSecs}s)`,
     );
   }
 }

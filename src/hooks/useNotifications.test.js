@@ -111,6 +111,21 @@ describe('useNotifications (B-8)', () => {
     expect(mockWsClient.off).toHaveBeenCalledWith('conversation.assigned', assignedCall[1]);
   });
 
+  // B-114: o aviso do atendimento fora do prazo chega ao sino na hora
+  it('ouve sla.service_breached e desinscreve ao desmontar', async () => {
+    mockApiClient.getNotifications.mockResolvedValue({ data: [], meta: {} });
+
+    const { unmount } = renderHook(() => useNotifications());
+    await waitFor(() => expect(mockApiClient.getNotifications).toHaveBeenCalledTimes(1));
+
+    const serviceCall = mockWsClient.on.mock.calls.find((call) => call[0] === 'sla.service_breached');
+    expect(serviceCall).toBeTruthy();
+
+    unmount();
+
+    expect(mockWsClient.off).toHaveBeenCalledWith('sla.service_breached', serviceCall[1]);
+  });
+
   // B-84 (M-10): antes, toda atribuição fazia todo navegador recarregar
   describe('recarga a partir de eventos (B-84)', () => {
     const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
