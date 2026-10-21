@@ -97,7 +97,6 @@
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
-| B-117 | — | No Windows, o localhost do DATABASE_URL faz transações simultâneas do Prisma falharem (P2028) | ⬜ Pendente |
 
 **Concluídos em parte** (o resto em espera):
 
@@ -227,7 +226,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-114 | — | SLA do atendimento do Atender ao Encerrar, prazo por setor e no expediente; ao estourar, avisa quem atende e o supervisor | ✅ 2026-10-21 |
 | B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |
 | B-116 | — | Setores criados pelo admin conforme a necessidade, até 20 ativos por empresa; o seed não cria mais os 13 setores de exemplo | ✅ 2026-10-21 |
-| B-117 | — | No Windows, o localhost do DATABASE_URL faz transações simultâneas do Prisma falharem (P2028) | ⬜ Pendente |
+| B-117 | — | No Windows, o localhost do DATABASE_URL fazia transações simultâneas do Prisma falharem (P2028); exemplo e .env local com 127.0.0.1 | ✅ 2026-10-21 |
 
 ## 📖 Regras do documento vivo
 

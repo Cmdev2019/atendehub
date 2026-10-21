@@ -24,6 +24,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-116 (2026-10-21):** os setores são criados pelo admin conforme a necessidade, até 20 ativos por empresa — a tela de Grupos mostra quantos estão ativos, trava o "Criar" no limite e ganhou o botão de desativar/reativar (desativar libera a vaga). O seed não cria mais os 13 setores de exemplo.
 - **B-112 (2026-10-20):** o prazo do SLA da espera só corre no horário de expediente do auto-atendimento, no fuso da empresa. A conversa que chega com a clínica fechada passa a ter prazo, contado a partir da abertura (antes ficava sem SLA nenhum), e a espera que atravessa o fechamento, o almoço ou o fim de semana continua na abertura seguinte. Sem horário configurado, nada muda: o relógio anda o dia todo.
 
+### Corrigido
+- **B-117 (2026-10-21):** em dev no Windows, o `DATABASE_URL` com `localhost` fazia transações simultâneas falharem (P2028 do Prisma); o `.env.example` passa a usar `127.0.0.1`, e o motivo está nas armadilhas do CLAUDE.md.
+
 ### Segurança
 - **B-115 (2026-10-20):** `follow-redirects` 1.16.1 na API (era 1.16.0, com um aviso alto novo sobre cabeçalhos de credencial em redirecionamentos); o pacote vem do `axios`, e a mudança é só no lockfile.
 
