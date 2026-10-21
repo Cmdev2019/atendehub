@@ -39,7 +39,8 @@
   Atender ao Encerrar, com prazo por setor na tela de Filas; ao estourar, avisa quem atende e o
   supervisor. Falta só o painel da fila (B-68). **B-116 concluído** (2026-10-21): os 13 setores
   eram exemplos — o admin cria os setores conforme a necessidade, até 20 ativos por empresa, e o
-  seed não cria nenhum.
+  seed não cria nenhum. **B-68, parte 1** (2026-10-21): painel do atendente — "Pegar próxima" na
+  Fila, prazo de SLA em cada conversa e aviso de conversa nova só para quem está Online.
 - **B-115 concluído** (2026-10-20): um aviso alto novo no `follow-redirects`, que a API usa por
   meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
   só no lockfile.
@@ -50,7 +51,7 @@
 1. **Evolução: filas de atendimento** (ADR-0019), nesta ordem: B-65 (Online/Offline) ✅, B-113
    (setores no cadastro do atendente) ✅, B-66 (Atender atômico e fila compartilhada) ✅, B-67
    ("Pegar próxima") ✅, B-112 (SLA no expediente) ✅, B-114 (SLA do atendimento) ✅ e **B-68**
-   (painel — o próximo, com os prints de referência do responsável).
+   (painel — em andamento: o do atendente pronto; falta a visão do supervisor. Desenho pelas boas práticas e pelo padrão do Tiflux e da MaxBot, decisão do responsável).
 2. **Atualização de majors** (B-86) — um PR por major; os do Dependabot já estão abertos.
 3. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
 
@@ -90,7 +91,7 @@
 | B-43 | — | infra/nginx/nginx.conf não define nenhum header de segurança | 🔄 Parcial 2026-10-17 · em espera (projeto de estudo) |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
-| B-68 | L-09 | Não há painel de fila | ⬜ Pendente |
+| B-68 | L-09 | Não há painel de fila | 🔄 Parte 1 de 2 · 2026-10-21 (painel do atendente; falta a visão do supervisor) |
 | B-86 | M-23 | Versões major pendentes, cada uma com migração própria | ⬜ Pendente |
 | B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | ⬜ Pendente |
 | B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
@@ -177,7 +178,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-65 | — | Atendente Online/Offline: só ele troca (seletor no topo), logout e desativação põem Offline, supervisor vê na hora | ✅ 2026-10-19 |
 | B-66 | M-21 | Fila compartilhada: quem atender primeiro fica com a conversa (409 "Fulano já está atendendo"), Offline não pega, transferência com permissões, estratégia só MANUAL, seed com 13 setores | ✅ 2026-10-19 |
 | B-67 | — | "Pegar próxima": a conversa que espera há mais tempo nos setores de quem pede, nunca a mesma para dois atendentes (FOR UPDATE SKIP LOCKED); Offline 409, fila vazia 204 | ✅ 2026-10-20 |
-| B-68 | L-09 | Não há painel de fila | ⬜ Pendente |
+| B-68 | L-09 | Painel da fila: parte 1 (painel do atendente — Pegar próxima, prazos de SLA, aviso de conversa nova) feita; falta a visão do supervisor | 🔄 Parte 1 de 2 · 2026-10-21 |
 | B-69 | M-14 | Filtros booleanos de query invertidos | ✅ 2026-10-18 |
 | B-70 | — | O e2e storage.e2e-spec.ts era intermitente | ✅ 2026-10-18 |
 | B-71 | M-13 | A exportação de relatório em CSV não neutralizava fórmulas | ✅ 2026-10-18 |
