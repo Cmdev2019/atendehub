@@ -47,7 +47,7 @@
   meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
   só no lockfile.
 - **B-86 em andamento** (2026-10-21): versões major, um PR por major ou família acoplada.
-  **Prisma 5 → 7 concluído** (PR #PR): o cliente é gerado em `apps/api/src/generated/prisma` e fala
+  **Prisma 5 → 7 concluído** (PR #118): o cliente é gerado em `apps/api/src/generated/prisma` e fala
   com o Postgres pelo `pg`; uma migration põe chave primária nas três tabelas de junção N:N.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
