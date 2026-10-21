@@ -31,6 +31,8 @@ const mockPrisma = {
   user: { findFirst: jest.fn() },
   department: { findFirst: jest.fn() },
   queue: { findFirst: jest.fn(), findUnique: jest.fn() },
+  // B-67: o "Pegar próxima" é SQL cru (FOR UPDATE SKIP LOCKED)
+  $queryRaw: jest.fn(),
 };
 
 const mockEventsService = {
@@ -320,6 +322,105 @@ describe('ConversationService — isolamento multi-tenant', () => {
         NotFoundException,
       );
       expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // B-67 (ADR-0019, regra 5): a mais antiga dos setores de quem pede, numa
+  // instrução só — a concorrência real fica no e2e (queue-next)
+  describe('attendNext — pegar próxima', () => {
+    const online = { availability: 'ONLINE', departments: [{ id: 'dep-1' }, { id: 'dep-2' }] };
+    const picked = (over: Record<string, unknown> = {}) => ({
+      id: 'conv-1',
+      waitingSince: new Date(Date.now() - 120_000),
+      waitSlaDueAt: new Date(Date.now() + 180_000),
+      slaBreachedAt: null,
+      maxWaitSecs: 300,
+      ...over,
+    });
+    const attended = {
+      id: 'conv-1',
+      status: ConversationStatus.OPEN,
+      agent: { id: requesterId, name: 'Ana', avatarUrl: null },
+      department: { id: 'dep-1', name: 'Receitas' },
+    };
+    // Tagged template: [partes do SQL, ...valores]
+    const rawCall = () => {
+      const [strings, ...values] = mockPrisma.$queryRaw.mock.calls[0];
+      return { sql: (strings as string[]).join('?'), values };
+    };
+
+    it('atende a mais antiga dos setores de quem pede, cancela o SLA, audita o ciclo e avisa todos', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(online);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([picked()]);
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(attended);
+
+      const result = await service.attendNext(companyA, requesterId);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: requesterId, companyId: companyA } }),
+      );
+      const { sql, values } = rawCall();
+      expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      expect(sql).toContain('ORDER BY COALESCE("waitingSince", "createdAt")');
+      expect(values).toEqual([companyA, ['dep-1', 'dep-2'], requesterId]);
+      expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'conversation.attended',
+          userId: requesterId,
+          entityId: 'conv-1',
+          after: expect.objectContaining({ agentId: requesterId, maxWaitSecs: 300, breached: false }),
+        }),
+      );
+      expect(mockAuditLog.record.mock.calls[0][0].after.waitSeconds).toBeGreaterThanOrEqual(120);
+      expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv-1', agentId: requesterId, status: ConversationStatus.OPEN }),
+      );
+      expect(result).toEqual(attended);
+    });
+
+    it('pegou depois do prazo: a auditoria registra o estouro', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(online);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        picked({ waitSlaDueAt: new Date(Date.now() - 1000), slaBreachedAt: new Date() }),
+      ]);
+      mockPrisma.conversation.findFirstOrThrow.mockResolvedValueOnce(attended);
+
+      await service.attendNext(companyA, requesterId);
+
+      expect(mockAuditLog.record.mock.calls[0][0].after.breached).toBe(true);
+    });
+
+    it('Offline: 409 "Fique Online para atender", sem consultar a fila', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ ...online, availability: 'OFFLINE' });
+
+      await expect(service.attendNext(companyA, requesterId)).rejects.toThrow(
+        new ConflictException('Fique Online para atender'),
+      );
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('quem não é de nenhum setor não tem fila: null, sem consultar', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE', departments: [] });
+
+      await expect(service.attendNext(companyA, requesterId)).resolves.toBeNull();
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('nada esperando nos setores: null, sem auditoria nem evento', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(online);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([]);
+
+      await expect(service.attendNext(companyA, requesterId)).resolves.toBeNull();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+      expect(mockEventsService.emitConversationAssigned).not.toHaveBeenCalled();
+    });
+
+    it('usuário de outra empresa: 404', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.attendNext(companyA, 'user-b')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
     });
   });
 

@@ -212,6 +212,20 @@ atualização condicional no banco, e com pedidos simultâneos só um passa.
 Qualquer papel, desde que a conversa esteja no escopo (B-40; fora dele, 404). Cancela o SLA da
 espera, registra `conversation.attended` na auditoria e emite `conversation.assigned` com `status`.
 
+### `POST /conversations/next` (B-67, ADR-0019 regra 5) — pegar a próxima da fila
+Corpo vazio. Atende, para quem chama, a conversa em espera **mais antiga** (pelo `waitingSince`)
+dos setores de que ele é membro — vale para qualquer papel: supervisor e admin também pegam só
+dos setores deles. Escolher e atender é uma instrução só no Postgres (`FOR UPDATE SKIP LOCKED`):
+pedidos simultâneos recebem conversas diferentes, e o `/attend` não pega a mesma.
+```jsonc
+// Response 200 — o mesmo shape do /attend
+{ "id": "...", "status": "OPEN", "waitingSince": "...", "agent": { "id", "name", "avatarUrl" }, "department": { "id", "name" } }
+// 204 (sem corpo) — nada esperando nos setores de quem chamou, ou ele não é de nenhum setor
+// 409 → { message: "Fique Online para atender" }          — quem chamou está Offline (B-65)
+```
+Conversa sem setor fica de fora (continua no `/attend`). Mesmos efeitos do `/attend`: cancela o
+SLA da espera, registra `conversation.attended` e emite `conversation.assigned` com `status`.
+
 ### `PATCH /conversations/:id/assign` — transferir (B-66, ADR-0019 regra 4)
 `{ "agentId"?: "..." | null, "departmentId"?: "..." }` — para uma pessoa (`agentId`) ou, sem
 `agentId`, **de volta à fila** do setor (o informado ou o atual): `WAITING`, sem atendente, com
@@ -776,7 +790,7 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 | `message.status` | `{ conversationId, companyId, externalId, status }` |
 | `conversation.created` | `{ companyId, conversation: { id, status, channel, contact: {id,name,phone,avatarUrl}, whatsappConnectionId, createdAt } }` |
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |
-| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince }` — ao atender (`/attend`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora |
+| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince }` — ao atender (`/attend` ou `/next`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora |
 | `connection.status` | `{ companyId, connectionId, sessionName, status, phone?, profileName? }` |
 | `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` |
 | `user.availability` | `{ companyId, userId, availability: "ONLINE" \| "OFFLINE", changedAt }` — B-65 |

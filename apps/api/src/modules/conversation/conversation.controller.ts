@@ -10,7 +10,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ConversationService } from './conversation.service';
 import { TagService } from '../tag/tag.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
@@ -66,6 +68,17 @@ export class ConversationController {
   @HttpCode(HttpStatus.OK)
   attend(@CurrentUser() user: AuthUserDto, @Param('id') id: string) {
     return this.conversationService.attend(user.companyId, id, user.id);
+  }
+
+  // POST /api/v1/conversations/next
+  // B-67 (ADR-0019, regra 5): atende a conversa que espera há mais tempo nos
+  // setores de quem chama. Nada esperando: 204, sem corpo.
+  @Post('next')
+  @HttpCode(HttpStatus.OK)
+  async attendNext(@CurrentUser() user: AuthUserDto, @Res({ passthrough: true }) res: Response) {
+    const conversation = await this.conversationService.attendNext(user.companyId, user.id);
+    if (!conversation) res.status(HttpStatus.NO_CONTENT);
+    return conversation ?? undefined;
   }
 
   // PATCH /api/v1/conversations/:id/assign
