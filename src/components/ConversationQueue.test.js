@@ -146,19 +146,39 @@ describe('ConversationQueue — mensagens novas (B-60)', () => {
     expect(screen.getByLabelText('150 mensagens não lidas')).toHaveTextContent('99+');
   });
 
-  it('ordena pela última atividade, mais recente primeiro', () => {
+  // Ordem na tela dos itens com estes títulos
+  const domOrder = (titles) =>
+    titles
+      .map((t) => screen.getByTitle(t))
+      .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map((el) => el.getAttribute('title'));
+
+  it('fora da fila, ordena pela última atividade, mais recente primeiro', () => {
     const convs = [
-      { id: 'a', contact: 'Antiga', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T10:00:00Z' },
-      { id: 'b', contact: 'Recente', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T12:00:00Z' },
-      { id: 'c', contact: 'Meio', messages: [], status: 'WAITING', lastMessageAt: '2026-10-17T11:00:00Z' },
+      { id: 'a', contact: 'Antiga', messages: [], status: 'OPEN', lastMessageAt: '2026-10-17T10:00:00Z' },
+      { id: 'b', contact: 'Recente', messages: [], status: 'OPEN', lastMessageAt: '2026-10-17T12:00:00Z' },
+      { id: 'c', contact: 'Meio', messages: [], status: 'OPEN', lastMessageAt: '2026-10-17T11:00:00Z' },
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'open' } });
+
+    expect(domOrder(['Antiga', 'Recente', 'Meio'])).toEqual(['Recente', 'Meio', 'Antiga']);
+  });
+
+  // B-68: a fila vai por ordem de chegada — a mesma do "Pegar próxima"
+  it('na fila, quem espera há mais tempo vem primeiro, mesmo com mensagem mais nova', () => {
+    const convs = [
+      { id: 'a', contact: 'Chegou por último', messages: [], status: 'WAITING', waitingSince: '2026-10-17T12:00:00Z', lastMessageAt: '2026-10-17T12:01:00Z' },
+      { id: 'b', contact: 'Chegou primeiro', messages: [], status: 'WAITING', waitingSince: '2026-10-17T10:00:00Z', lastMessageAt: '2026-10-17T12:30:00Z' },
+      { id: 'c', contact: 'Chegou no meio', messages: [], status: 'WAITING', waitingSince: '2026-10-17T11:00:00Z', lastMessageAt: '2026-10-17T11:00:00Z' },
     ];
     render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
 
-    const titles = ['Antiga', 'Recente', 'Meio'].map((t) => screen.getByTitle(t));
-    const order = [...titles].sort((x, y) =>
-      x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-    );
-    expect(order.map((el) => el.getAttribute('title'))).toEqual(['Recente', 'Meio', 'Antiga']);
+    expect(domOrder(['Chegou por último', 'Chegou primeiro', 'Chegou no meio'])).toEqual([
+      'Chegou primeiro',
+      'Chegou no meio',
+      'Chegou por último',
+    ]);
   });
 
   it('última mensagem de áudio sem texto aparece como "Áudio" na prévia', () => {
@@ -258,5 +278,104 @@ describe('ConversationQueue — aviso do Atender recusado', () => {
   it('sem aviso, nada aparece', () => {
     render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn() }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// B-68 (ADR-0019): a ação principal da fila e os prazos de SLA visíveis em
+// cada conversa — com texto, não só cor
+describe('ConversationQueue — Pegar próxima e prazos de SLA (B-68)', () => {
+  const NOW = Date.parse('2026-10-21T13:00:00Z');
+  const at = (offsetMs) => new Date(NOW + offsetMs).toISOString();
+
+  beforeEach(() => jest.useFakeTimers().setSystemTime(NOW));
+  afterEach(() => jest.useRealTimers());
+
+  const waiting = (id, contact, startMs, dueMs, extra = {}) => ({
+    id, contact, messages: [], status: 'WAITING', waitingSince: at(startMs), waitSlaDueAt: at(dueMs), ...extra,
+  });
+
+  it('Online: "Pegar próxima" chama a ação', () => {
+    const onAttendNext = jest.fn();
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn(), onAttendNext, canAttend: true }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Pegar próxima/ }));
+
+    expect(onAttendNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('Offline: o botão fica travado, com o motivo na tela', () => {
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn(), onAttendNext: jest.fn(), canAttend: false }));
+
+    const button = screen.getByRole('button', { name: /Pegar próxima/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Fique Online para atender');
+    expect(screen.getByText('Fique Online para atender')).toBeInTheDocument();
+  });
+
+  it('enquanto pega, o botão mostra o andamento e não aceita outro clique', () => {
+    render(h(ConversationQueue, {
+      activeId: null, conversations, onSelect: jest.fn(), onAttendNext: jest.fn(), canAttend: true, attendingNext: true,
+    }));
+
+    expect(screen.getByRole('button', { name: /Pegando…/ })).toBeDisabled();
+  });
+
+  it('o botão só aparece na fila', () => {
+    render(h(ConversationQueue, { activeId: null, conversations, onSelect: jest.fn(), onAttendNext: jest.fn(), canAttend: true }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'mine' } });
+
+    expect(screen.queryByRole('button', { name: /Pegar próxima/ })).not.toBeInTheDocument();
+  });
+
+  it('na fila, cada conversa mostra quanto falta para o SLA da espera — ok, perto de estourar e estourado', () => {
+    const convs = [
+      waiting('ok', 'Com folga', -60_000, 20 * 60_000),
+      waiting('warn', 'Quase', -4 * 60_000, 50_000),
+      waiting('late', 'Atrasada', -10 * 60_000, -5 * 60_000),
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn() }));
+
+    expect(screen.getByTitle('SLA da espera estoura em 20 min')).toHaveClass('sla-ok');
+    expect(screen.getByText(/SLA 20 min/)).toBeInTheDocument();
+    expect(screen.getByTitle('SLA da espera estoura em menos de 1 min')).toHaveClass('sla-warning');
+    expect(screen.getByTitle('SLA da espera estourou há 5 min')).toHaveClass('sla-breached');
+    expect(screen.getByText(/SLA estourado/)).toBeInTheDocument();
+    // A conversa estourada ganha o destaque na lista
+    expect(screen.getByTitle('Atrasada — SLA da espera estourou há 5 min')).toHaveClass('sla-breached');
+  });
+
+  it('setor sem prazo: nenhum selo de SLA', () => {
+    render(h(ConversationQueue, {
+      activeId: null,
+      conversations: [{ id: 'x', contact: 'Sem prazo', messages: [], status: 'WAITING', waitingSince: at(-60_000), waitSlaDueAt: null }],
+      onSelect: jest.fn(),
+    }));
+
+    expect(screen.queryByText(/SLA/)).not.toBeInTheDocument();
+  });
+
+  it('em atendimento, mostra o SLA do atendimento — e o estouro avisado pela API', () => {
+    const convs = [
+      { id: 'm1', contact: 'Dentro do prazo', messages: [], status: 'OPEN', agentId: 'me', attendedAt: at(-5 * 60_000), serviceSlaDueAt: at(25 * 60_000) },
+      { id: 'm2', contact: 'Passou do prazo', messages: [], status: 'OPEN', agentId: 'me', attendedAt: at(-40 * 60_000), serviceSlaDueAt: at(10 * 60_000), serviceSlaBreachedAt: at(-1000) },
+    ];
+    render(h(ConversationQueue, { activeId: null, conversations: convs, onSelect: jest.fn(), currentUserId: 'me' }));
+    fireEvent.change(screen.getByLabelText('Etapa de atendimento'), { target: { value: 'mine' } });
+
+    expect(screen.getByText(/Atendimento 25 min/)).toBeInTheDocument();
+    expect(screen.getByText(/Atendimento estourado/)).toBeInTheDocument();
+  });
+
+  it('o selo acompanha o relógio: de ok para perto de estourar sem recarregar', () => {
+    render(h(ConversationQueue, {
+      activeId: null,
+      conversations: [waiting('t', 'Andando', -60_000, 4 * 60_000)],
+      onSelect: jest.fn(),
+    }));
+    expect(screen.getByText(/SLA 4 min/).closest('.queue-item-sla')).toHaveClass('sla-ok');
+
+    act(() => jest.advanceTimersByTime(3 * 60_000 + 15_000));
+
+    expect(screen.getByText(/SLA menos de 1 min/).closest('.queue-item-sla')).toHaveClass('sla-warning');
   });
 });

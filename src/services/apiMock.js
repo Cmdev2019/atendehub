@@ -430,6 +430,31 @@ export class MockApiClient {
     return { id: conv.id, status: conv.status, agent: conv.agent, department: conv.department ?? null };
   }
 
+  // Pegar próxima (B-68): como o POST /conversations/next — a que espera há
+  // mais tempo; null (o 204 da API) quando não há nenhuma
+  async attendNextConversation() {
+    await this.simulateDelay();
+    const me = await this.getCurrentUser();
+    if (me.availability !== 'ONLINE') throw { status: 409, message: 'Fique Online para atender' };
+    const waitedFrom = (c) => new Date(c.waitingSince || c.createdAt || 0).getTime();
+    const [next] = mockConversationsList
+      .filter((c) => c.status === 'WAITING' && !c.agent)
+      .sort((a, b) => waitedFrom(a) - waitedFrom(b));
+    if (!next) return null;
+    next.agent = { id: me.id, name: me.name, avatarUrl: me.avatarUrl ?? null };
+    next.status = 'OPEN';
+    next.attendedAt = new Date().toISOString();
+    return {
+      id: next.id,
+      status: next.status,
+      waitingSince: next.waitingSince ?? null,
+      attendedAt: next.attendedAt,
+      serviceSlaDueAt: null,
+      agent: next.agent,
+      department: next.department ?? null,
+    };
+  }
+
   // Transferir (B-66): atribui e move pra OPEN (antes era também o Atender, B-31).
   async assignConversation(id, agentId) {
     await this.simulateDelay();

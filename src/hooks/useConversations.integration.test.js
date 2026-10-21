@@ -14,6 +14,7 @@ jest.mock('../services/api', () => ({
     removeConversationTag: jest.fn(),
     assignConversation: jest.fn(),
     attendConversation: jest.fn(),
+    attendNextConversation: jest.fn(),
     updateConversationStatus: jest.fn(),
     markConversationRead: jest.fn().mockResolvedValue({ unreadCount: 0 }),
   },
@@ -1356,6 +1357,111 @@ describe('useConversations Integration Tests', () => {
 
       await waitFor(() => expect(mockApiClient.markConversationRead).toHaveBeenCalledWith('2'));
       expect(result.current.conversations.find((c) => c.id === '2').unreadCount).toBe(0);
+    });
+  });
+});
+
+// B-68: "Pegar próxima" e o ciclo do atendimento (B-114) na lista
+describe('useConversations — Pegar próxima e SLA do atendimento (B-68)', () => {
+  let mockApiClient;
+  let mockWsClient;
+  const me = { id: 'user-1', name: 'Ana' };
+  const handlerOf = (event) => mockWsClient.on.mock.calls.find((call) => call[0] === event)[1];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockApiClient = require('../services/api').apiClient;
+    mockWsClient = require('../services/websocket').wsClient;
+    mockWsClient.isConnected = true;
+  });
+
+  const mountWith = async (data) => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data, pagination: { page: 1, limit: 20, total: data.length } });
+    const hook = renderHook(() => useConversations());
+    await waitFor(() => expect(hook.result.current.conversations).toHaveLength(data.length));
+    return hook;
+  };
+
+  it('pega a próxima que já está na lista: vira atendimento meu, com o prazo do atendimento', async () => {
+    const { result } = await mountWith([{ id: '1', contact: 'João', status: 'WAITING', messages: [] }]);
+    mockApiClient.attendNextConversation.mockResolvedValueOnce({
+      id: '1', status: 'OPEN', agent: { id: 'user-1', name: 'Ana' },
+      attendedAt: '2026-10-21T13:00:00.000Z', serviceSlaDueAt: '2026-10-21T13:30:00.000Z',
+    });
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.attendNextConversation(me);
+    });
+
+    expect(outcome).toEqual({ ok: true, conversationId: '1' });
+    expect(mockApiClient.getConversation).not.toHaveBeenCalled();
+    expect(result.current.conversations[0]).toMatchObject({
+      status: 'OPEN', agent: 'Ana', agentId: 'user-1',
+      attendedAt: '2026-10-21T13:00:00.000Z', serviceSlaDueAt: '2026-10-21T13:30:00.000Z',
+    });
+  });
+
+  it('pegou uma que ainda não estava carregada: busca e põe no topo da lista', async () => {
+    const { result } = await mountWith([{ id: '1', contact: 'João', status: 'WAITING', messages: [] }]);
+    mockApiClient.attendNextConversation.mockResolvedValueOnce({ id: '9', status: 'OPEN', agent: { id: 'user-1', name: 'Ana' } });
+    mockApiClient.getConversation.mockResolvedValueOnce({ id: '9', contact: { name: 'Paciente antigo', phone: '5511' }, status: 'OPEN' });
+
+    await act(async () => {
+      await result.current.attendNextConversation(me);
+    });
+
+    expect(mockApiClient.getConversation).toHaveBeenCalledWith('9');
+    expect(result.current.conversations[0]).toMatchObject({ id: '9', contact: 'Paciente antigo', status: 'OPEN', agentId: 'user-1' });
+  });
+
+  it('nada esperando nos setores: avisa sem mexer na lista', async () => {
+    const { result } = await mountWith([{ id: '1', contact: 'João', status: 'OPEN', messages: [] }]);
+    mockApiClient.attendNextConversation.mockResolvedValueOnce(null);
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.attendNextConversation(me);
+    });
+
+    expect(outcome).toEqual({ ok: false, empty: true, error: 'Nenhuma conversa esperando nos seus setores.' });
+  });
+
+  it('recusado (Offline): devolve o motivo da API', async () => {
+    const { result } = await mountWith([]);
+    mockApiClient.attendNextConversation.mockRejectedValueOnce(
+      Object.assign(new Error('Fique Online para atender'), { status: 409 }),
+    );
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.attendNextConversation(me);
+    });
+
+    expect(outcome).toEqual({ ok: false, error: 'Fique Online para atender' });
+  });
+
+  it('sla.service_breached marca o estouro do atendimento na conversa', async () => {
+    const { result } = await mountWith([{ id: '1', contact: 'João', status: 'OPEN', messages: [] }]);
+
+    act(() => handlerOf('sla.service_breached')({ conversationId: '1', breachedAt: '2026-10-21T13:30:00.000Z' }));
+
+    expect(result.current.conversations[0].serviceSlaBreachedAt).toBe('2026-10-21T13:30:00.000Z');
+  });
+
+  it('transferida de setor (conversation.assigned com ciclo novo): prazo novo e o estouro antigo some', async () => {
+    const { result } = await mountWith([{
+      id: '1', contact: 'João', status: 'OPEN', messages: [],
+      attendedAt: '2026-10-21T12:00:00.000Z', serviceSlaDueAt: '2026-10-21T12:30:00.000Z', serviceSlaBreachedAt: '2026-10-21T12:30:00.000Z',
+    }]);
+
+    act(() => handlerOf('conversation.assigned')({
+      conversationId: '1', agentId: 'user-2', agent: { id: 'user-2', name: 'Bruno' }, status: 'OPEN',
+      attendedAt: '2026-10-21T13:00:00.000Z', serviceSlaDueAt: '2026-10-21T13:20:00.000Z',
+    }));
+
+    expect(result.current.conversations[0]).toMatchObject({
+      agentId: 'user-2', attendedAt: '2026-10-21T13:00:00.000Z', serviceSlaDueAt: '2026-10-21T13:20:00.000Z', serviceSlaBreachedAt: null,
     });
   });
 });

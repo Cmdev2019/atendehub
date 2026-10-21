@@ -19,6 +19,7 @@ import { CustomerPanel } from "./components/CustomerPanel";
 import { DemoBanner } from "./components/DemoBanner";
 import { RealtimeStatusBanner } from "./components/RealtimeStatusBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { QueueArrivalToast } from "./components/QueueArrivalToast";
 import { useConversations } from "./hooks/useConversations";
 
 // B-105 (L-13): telas fora do atendimento carregam sob demanda — o bundle
@@ -81,8 +82,11 @@ function Dashboard() {
     loadMoreClosedConversations,
     searchConversations,
     attendConversation,
+    attendNextConversation,
     closeConversation,
   } = useConversations(user?.id);
+  // B-68 (ADR-0019, regra 10): só quem está Online pega conversa da fila
+  const online = user?.availability === "ONLINE";
 
   // Atender (B-31): assume a conversa da fila em nome do usuário logado e já
   // abre ela — atendimento começa direto, sem precisar de um segundo clique.
@@ -96,9 +100,28 @@ function Dashboard() {
     if (ok) setActiveId(conversationId);
   };
 
+  // Pegar próxima (B-68): a API escolhe a que espera há mais tempo nos setores
+  // do atendente; fila vazia ou recusa aparecem no mesmo aviso do Atender
+  const [attendingNext, setAttendingNext] = useState(false);
+  const handleAttendNext = async () => {
+    if (!user || attendingNext) return;
+    setAttendingNext(true);
+    const { ok, error, conversationId } = await attendNextConversation({ id: user.id, name: user.name });
+    setAttendingNext(false);
+    setAttendNotice(ok ? null : error);
+    if (ok) setActiveId(conversationId);
+  };
+
+  // Atender pelo aviso de conversa nova: abre a Caixa de Entrada nela
+  const handleAttendFromToast = async (conversationId) => {
+    setView("inbox");
+    await handleAttend(conversationId);
+  };
+
   return h(
     "div",
     { className: "app-container" },
+    h(QueueArrivalToast, { online, onAttend: handleAttendFromToast }),
     h(Topbar, {
       title: VIEW_TITLES[view] ?? VIEW_TITLES.inbox,
       onOpenSettings: () => setView("settings"),
@@ -148,6 +171,9 @@ function Dashboard() {
                   onAttend: handleAttend,
                   attendNotice,
                   onDismissAttendNotice: () => setAttendNotice(null),
+                  onAttendNext: handleAttendNext,
+                  canAttend: online,
+                  attendingNext,
                 }),
               ),
               h(
