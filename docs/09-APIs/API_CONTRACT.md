@@ -167,7 +167,11 @@ Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `department
   // B-66 (ADR-0019, regra 15): ciclo de espera atual
   "waitingSince": "2026-10-19T13:00:00.000Z" | null, // início da espera atual (mantido depois de atendida)
   "waitSlaDueAt": "2026-10-19T13:05:00.000Z" | null, // prazo do SLA da espera, contado só no expediente (B-112); null = sem SLA ou fora da fila
-  "slaBreachedAt": null                              // estouro do SLA da espera
+  "slaBreachedAt": null,                             // estouro do SLA da espera
+  // B-114 (ADR-0019, regras 18 a 21): ciclo do atendimento atual — null fora de atendimento
+  "attendedAt": "2026-10-19T13:02:00.000Z" | null,      // início do atendimento (Atender, Pegar próxima, 1ª resposta ou transferência para uma pessoa)
+  "serviceSlaDueAt": "2026-10-19T13:32:00.000Z" | null, // prazo do SLA do atendimento, contado só no expediente; null = setor sem prazo
+  "serviceSlaBreachedAt": null                          // estouro do SLA do atendimento
 }
 // Wrapper: { data, meta: { total, page, limit, totalPages } }
 // Ordenação: lastMessageAt desc, createdAt desc
@@ -196,21 +200,31 @@ interpretado como `:id` senão.
 ```
 
 ### `GET /conversations/:id`
-Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos. `queue` traz `maxWaitSecs` (B-66).
+Tudo da listagem + `slaBreachedAt`, `resolvedAt`, `closedAt`, `resolution`, `resolutionNote` (B-36), `metadata`, `updatedAt` e contato/agente expandidos. `queue` traz `maxWaitSecs` (B-66) e `maxServiceSecs` (B-114).
+
+**SLA do atendimento (B-114, ADR-0019 regras 18 a 21):** o relógio abre quando a conversa sai da
+fila com alguém — `/attend`, `/next`, a 1ª resposta de supervisor/admin ou o `/assign` para uma
+pessoa — e fecha ao encerrar (`RESOLVED` ou `CLOSED`). O prazo é o `maxServiceSecs` da fila do
+setor, contado só no expediente (B-112). Transferir para outra pessoa do **mesmo setor** mantém o
+relógio; **mudar de setor** recomeça com o prazo do setor novo (e a fila da conversa passa a ser a
+dele); devolver à fila fecha o ciclo (`attendedAt`, `serviceSlaDueAt` e `serviceSlaBreachedAt`
+voltam a `null`). Ao estourar, a API grava `serviceSlaBreachedAt`, emite `sla.service_breached` e
+notifica quem atende e os supervisores e admins (`type: "service_sla_breach"`).
 
 ### `POST /conversations/:id/attend` (B-66, ADR-0019) — pegar a conversa da fila para si
 Corpo vazio. **Quem chegar primeiro fica com a conversa:** a passagem `WAITING → OPEN` é uma
 atualização condicional no banco, e com pedidos simultâneos só um passa.
 ```jsonc
 // Response 200
-{ "id": "...", "status": "OPEN", "waitingSince": "...", "agent": { "id", "name", "avatarUrl" }, "department": { "id", "name" } | null }
+{ "id": "...", "status": "OPEN", "waitingSince": "...", "attendedAt": "...", "serviceSlaDueAt": "..." | null, "agent": { "id", "name", "avatarUrl" }, "department": { "id", "name" } | null }
 // 409 → { message: "Fulano já está atendendo" }          — outro chegou antes
 // 409 → { message: "Fique Online para atender" }          — quem chamou está Offline (B-65)
 // 409 → { message: "Esta conversa não está na fila" }
 // 400 → { message: "Esta conversa já foi encerrada" }
 ```
 Qualquer papel, desde que a conversa esteja no escopo (B-40; fora dele, 404). Cancela o SLA da
-espera, registra `conversation.attended` na auditoria e emite `conversation.assigned` com `status`.
+espera, registra `conversation.attended` na auditoria, abre o ciclo do atendimento (B-114) e emite
+`conversation.assigned` com `status`.
 
 ### `POST /conversations/next` (B-67, ADR-0019 regra 5) — pegar a próxima da fila
 Corpo vazio. Atende, para quem chama, a conversa em espera **mais antiga** (pelo `waitingSince`)
@@ -224,7 +238,8 @@ pedidos simultâneos recebem conversas diferentes, e o `/attend` não pega a mes
 // 409 → { message: "Fique Online para atender" }          — quem chamou está Offline (B-65)
 ```
 Conversa sem setor fica de fora (continua no `/attend`). Mesmos efeitos do `/attend`: cancela o
-SLA da espera, registra `conversation.attended` e emite `conversation.assigned` com `status`.
+SLA da espera, registra `conversation.attended`, abre o ciclo do atendimento com o prazo do setor
+da conversa escolhida (B-114) e emite `conversation.assigned` com `status`.
 
 ### `PATCH /conversations/:id/assign` — transferir (B-66, ADR-0019 regra 4)
 `{ "agentId"?: "..." | null, "departmentId"?: "..." }` — para uma pessoa (`agentId`) ou, sem
@@ -239,6 +254,9 @@ SLA da espera, registra `conversation.attended` e emite `conversation.assigned` 
   ou transferiu antes), `409`.
 - Conversa `CLOSED` responde `400` (encerrada não reabre, B-73). `409` se a conversa voltaria a
   ficar ativa e o contato já tem outra conversa `WAITING`/`OPEN` (uma ativa por contato, B-49).
+- **SLA do atendimento (B-114):** tirar da fila para uma pessoa abre o ciclo; já em atendimento,
+  no mesmo setor o relógio continua e, mudando de setor, recomeça com o prazo do setor novo;
+  devolver à fila fecha o ciclo.
 - Resposta: o mesmo shape do `/attend`. Emite `conversation.assigned` (com `status`); notifica a
   pessoa que recebeu, se não for quem chamou.
 
@@ -254,6 +272,9 @@ justificativa do atendente pra cancelar em vez de atender; não existe pra
 B-66: o `AGENT` só muda o status das conversas que estão com ele (`403` nas de colegas) — a
 exceção é encerrar uma conversa da fila ("Encerrar sem atender", B-36). Voltar para `WAITING`
 tira o atendente e abre um ciclo de espera novo (`waitingSince` e prazo de SLA).
+B-114: sair de `OPEN` para `RESOLVED` ou `CLOSED` fecha o ciclo do atendimento e registra
+`conversation.service_closed` na auditoria; voltar para `WAITING` fecha o ciclo sem registrar
+duração; reabrir para `OPEN` sem ninguém atender não abre ciclo.
 
 ### `PATCH /conversations/:id/read`
 Zera `unreadCount`. O front chama ao abrir a conversa e quando chega mensagem
@@ -563,11 +584,15 @@ Item: `{ id, name, description, color, isActive, createdAt, _count: { users, con
 ## Queues (filas de distribuição) — `/queues`
 
 ### `GET /queues` → **array puro**
-Item: `{ id, name, strategy, maxWaitSecs, greetingMsg, departmentId, isActive, createdAt, updatedAt, department: {id,name,color} | null, _count: { conversations } }`
+Item: `{ id, name, strategy, maxWaitSecs, maxServiceSecs, greetingMsg, departmentId, isActive, createdAt, updatedAt, department: {id,name,color} | null, _count: { conversations } }`
 
 ### `GET /queues/:id` — mesmo shape do item da lista
 
-### `POST /queues` — `{ name (único na empresa), strategy? (só MANUAL — B-66), maxWaitSecs? (segundos, default 300), greetingMsg?, departmentId? }`
+### `POST /queues` — `{ name (único na empresa), strategy? (só MANUAL — B-66), maxWaitSecs? (segundos, default 300), maxServiceSecs? (segundos ou null — B-114), greetingMsg?, departmentId? }`
+B-114 (ADR-0019, regra 19): `maxServiceSecs` é o prazo do SLA do atendimento do setor (do
+Atender ao Encerrar, contado no expediente); ausente ou `null` = setor sem SLA do atendimento.
+No `PATCH`, mandar `null` tira o prazo. Mudar o prazo não recalcula o de quem já está em
+atendimento.
 B-66 (ADR-0019, M-21): a fila é compartilhada — `ROUND_ROBIN` e `LEAST_BUSY`, que eram gravadas e
 nunca aplicadas, respondem `400`. Sem `strategy`, vale `MANUAL`; as filas existentes foram migradas.
 `departmentId`, se informado, precisa pertencer à mesma empresa (404 se não pertencer).
@@ -662,7 +687,7 @@ Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
 ### `PATCH /notifications/:id/read` · `PATCH /notifications/read-all`
 Marca uma ou todas as notificações do usuário logado como lidas. 404 se o `id` for de outro usuário (mesmo dentro da empresa).
 
-**Pontos de criação (B1-3):** conversa atribuída a um agente (`type: "conversation_assigned"`) e SLA violado, disparado para todo `SUPERVISOR+` ativo da empresa já que a conversa está sem agente nesse momento (`type: "sla_breach"`).
+**Pontos de criação (B1-3):** conversa atribuída a um agente (`type: "conversation_assigned"`) e SLA violado, disparado para todo `SUPERVISOR+` ativo da empresa já que a conversa está sem agente nesse momento (`type: "sla_breach"`). B-114: SLA do atendimento violado, para quem atende e para todo `SUPERVISOR+` ativo, uma vez por pessoa (`type: "service_sla_breach"`).
 
 ---
 
@@ -678,7 +703,9 @@ Wrapper: `{ data, meta }`. Ordenação: `createdAt desc`.
 - `contact.deleted`
 - `conversation.assigned` (loga a mudança real de `agentId` numa transferência, incluindo a devolução à fila)
 - `conversation.attended` (B-66 — a conversa saiu da fila com alguém: `after` com `agentId`, `waitSeconds`, `maxWaitSecs` e `breached`)
+- `conversation.service_closed` (B-114 — o atendimento terminou ao encerrar ou resolver: `after` com `agentId`, `serviceSeconds`, `maxServiceSecs` e `breached`)
 - `sla.breached` (já existia antes da B1-4, migrado para usar `AuditLogService`)
+- `sla.service_breached` (B-114 — o atendimento passou do prazo do setor: `after` com `serviceTimeSeconds`, `maxServiceSecs`, `agentId` e a fila)
 
 ---
 
@@ -797,9 +824,10 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 | `message.status` | `{ conversationId, companyId, externalId, status }` |
 | `conversation.created` | `{ companyId, conversation: { id, status, channel, contact: {id,name,phone,avatarUrl}, whatsappConnectionId, createdAt } }` |
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |
-| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince }` — ao atender (`/attend` ou `/next`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora |
+| `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince, attendedAt, serviceSlaDueAt }` — ao atender (`/attend` ou `/next`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora; `attendedAt` e `serviceSlaDueAt` são o ciclo do atendimento (B-114) |
 | `connection.status` | `{ companyId, connectionId, sessionName, status, phone?, profileName? }` |
 | `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` — `waitTimeSeconds` é o tempo de relógio desde o início da espera; o limite `maxWaitSecs` conta só o expediente (B-112) |
+| `sla.service_breached` | `{ companyId, conversationId, agentId, contact, queue, serviceTimeSeconds, maxServiceSecs, breachedAt }` — B-114: o atendimento passou do prazo do setor; mesmas salas do `sla.breached` (supervisores, o setor e quem atende) |
 | `user.availability` | `{ companyId, userId, availability: "ONLINE" \| "OFFLINE", changedAt }` — B-65 |
 
 ---

@@ -16,6 +16,19 @@ export interface SlaCheckJobData {
   queuedAt: Date;       // Momento em que entrou na fila
 }
 
+// B-114 (ADR-0019, regras 18 a 21): o SLA do atendimento usa a mesma fila,
+// com `kind: 'service'` e jobId próprio (`service-sla:<id da conversa>`)
+export interface ServiceSlaJobData {
+  kind: 'service';
+  conversationId: string;
+  companyId: string;
+  maxServiceSecs: number; // prazo do setor, contado no expediente
+  attendedAt: Date;       // início do atendimento
+}
+
+// Quem pode intervir numa conversa fora do prazo
+const RESPONDER_ROLES = [Role.SUPERVISOR, Role.ADMIN, Role.SUPER_ADMIN];
+
 /**
  * Processor que monitora violações de SLA.
  *
@@ -40,8 +53,11 @@ export class SlaCheckProcessor {
   ) {}
 
   @Process()
-  async handleSlaCheck(job: Job<SlaCheckJobData>): Promise<void> {
-    const { conversationId, companyId, maxWaitSecs, queuedAt } = job.data;
+  async handleSlaCheck(job: Job<SlaCheckJobData | ServiceSlaJobData>): Promise<void> {
+    if ('kind' in job.data && job.data.kind === 'service') {
+      return this.handleServiceSla(job as Job<ServiceSlaJobData>);
+    }
+    const { conversationId, companyId, maxWaitSecs, queuedAt } = job.data as SlaCheckJobData;
 
     this.logger.debug(
       `Verificando SLA da conversa ${conversationId} (limite: ${maxWaitSecs}s)`,
@@ -145,11 +161,7 @@ export class SlaCheckProcessor {
       // agentId para notificar. Avisa SUPERVISOR/ADMIN/SUPER_ADMIN ativos da
       // empresa, que são quem consegue redistribuir/assumir a conversa.
       const responders = await this.prisma.user.findMany({
-        where: {
-          companyId,
-          isActive: true,
-          role: { in: [Role.SUPERVISOR, Role.ADMIN, Role.SUPER_ADMIN] },
-        },
+        where: { companyId, isActive: true, role: { in: RESPONDER_ROLES } },
         select: { id: true },
       });
 
@@ -182,11 +194,131 @@ export class SlaCheckProcessor {
     }
   }
 
+  // ── SLA do atendimento (B-114 / ADR-0019, regras 18 a 21) ──────────────────
+  // A conversa segue em atendimento depois do prazo do setor: marca o estouro
+  // e avisa quem está atendendo e quem pode intervir (supervisor e admin).
+  private async handleServiceSla(job: Job<ServiceSlaJobData>): Promise<void> {
+    const { conversationId, companyId, maxServiceSecs, attendedAt } = job.data;
+
+    try {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: {
+          id: true,
+          status: true,
+          agentId: true,
+          queueId: true,
+          attendedAt: true,
+          serviceSlaDueAt: true,
+          serviceSlaBreachedAt: true,
+          contact: { select: { id: true, name: true, phone: true } },
+          queue: { select: { id: true, name: true, maxServiceSecs: true } },
+        },
+      });
+
+      if (!conversation) {
+        this.logger.warn(`Conversa ${conversationId} não encontrada (pode ter sido deletada)`);
+        return;
+      }
+
+      // Encerrada, devolvida à fila ou já marcada: nada a alertar
+      if (
+        conversation.status !== ConversationStatus.OPEN ||
+        !conversation.serviceSlaDueAt ||
+        conversation.serviceSlaBreachedAt
+      ) {
+        this.logger.debug(`Conversa ${conversationId}: atendimento sem prazo pendente. SLA do atendimento OK.`);
+        return;
+      }
+
+      // Job de um ciclo anterior (o relógio recomeça ao mudar de setor) não
+      // alerta o ciclo novo antes da hora
+      if (conversation.serviceSlaDueAt.getTime() > Date.now() + 1000) {
+        this.logger.debug(
+          `Conversa ${conversationId}: prazo do atendimento ${conversation.serviceSlaDueAt.toISOString()} ainda não venceu (job de outro ciclo)`,
+        );
+        return;
+      }
+
+      // Troca condicional: um job repetido não marca nem avisa duas vezes
+      const now = new Date();
+      const { count } = await this.prisma.conversation.updateMany({
+        where: { id: conversationId, status: ConversationStatus.OPEN, serviceSlaBreachedAt: null },
+        data: { serviceSlaBreachedAt: now },
+      });
+      if (count === 0) return;
+
+      const serviceStart = conversation.attendedAt ?? new Date(attendedAt);
+      const serviceTimeSeconds = Math.floor((now.getTime() - serviceStart.getTime()) / 1000);
+
+      this.logger.warn(
+        `⚠️  SLA do atendimento violado: conversa ${conversationId} em atendimento há ${serviceTimeSeconds}s (limite: ${maxServiceSecs}s)`,
+      );
+
+      this.eventsService.emitServiceSlaBreached({
+        companyId,
+        conversationId,
+        agentId: conversation.agentId,
+        contact: conversation.contact,
+        queue: conversation.queue,
+        serviceTimeSeconds,
+        maxServiceSecs,
+        breachedAt: now,
+      });
+
+      await this.auditLog.record({
+        companyId,
+        action: 'sla.service_breached',
+        entity: 'Conversation',
+        entityId: conversationId,
+        after: {
+          serviceSlaBreachedAt: now.toISOString(),
+          serviceTimeSeconds,
+          maxServiceSecs,
+          agentId: conversation.agentId,
+          queueId: conversation.queueId,
+          queueName: conversation.queue?.name,
+        },
+      });
+
+      // Regra 21: quem está atendendo e quem pode intervir, cada um uma vez
+      const responders = await this.prisma.user.findMany({
+        where: { companyId, isActive: true, role: { in: RESPONDER_ROLES } },
+        select: { id: true },
+      });
+      const recipients = new Set([
+        ...(conversation.agentId ? [conversation.agentId] : []),
+        ...responders.map((responder) => responder.id),
+      ]);
+
+      await Promise.all(
+        [...recipients].map((userId) =>
+          this.notificationService.create({
+            companyId,
+            userId,
+            type: 'service_sla_breach',
+            title: 'Atendimento além do prazo',
+            body: `${conversation.contact?.name ?? conversation.contact?.phone ?? 'Contato'} está em atendimento há ${serviceTimeSeconds}s (limite: ${maxServiceSecs}s)`,
+            data: { conversationId, queueId: conversation.queueId },
+          }),
+        ),
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `Job ${job.id} falhou ao verificar o SLA do atendimento da conversa ${conversationId} ` +
+          `(tentativa ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`,
+        err.stack,
+      );
+      // Mesmo motivo do SLA da espera: engolir o erro perderia o alerta
+      throw err;
+    }
+  }
+
   // ── Observabilidade (B6-3) ──────────────────────────────────────────────────
   // Aqui importa mais que no webhook: um job de SLA que falha definitivamente
   // é um alerta de SLA que nunca chegou a ninguém — silenciosamente.
   @OnQueueFailed()
-  onFailed(job: Job<SlaCheckJobData>, err: Error): void {
+  onFailed(job: Job<SlaCheckJobData | ServiceSlaJobData>, err: Error): void {
     this.logger.error(
       `Job ${job.id} (conversa ${job.data.conversationId}) falhou definitivamente após ` +
         `${job.attemptsMade} tentativa(s): ${err.message}`,
@@ -194,7 +326,7 @@ export class SlaCheckProcessor {
   }
 
   @OnQueueStalled()
-  onStalled(job: Job<SlaCheckJobData>): void {
+  onStalled(job: Job<SlaCheckJobData | ServiceSlaJobData>): void {
     this.logger.warn(
       `Job ${job.id} (conversa ${job.data.conversationId}) travado (stalled)`,
     );

@@ -28,6 +28,7 @@ const BACKEND_EVENTS = [
   'conversation.assigned',
   'connection.status',
   'sla.breached',
+  'sla.service_breached', // B-114: o atendimento passou do prazo do setor
   'user.availability', // B-65: Online/Offline (supervisor e as outras abas do próprio usuário)
 ];
 

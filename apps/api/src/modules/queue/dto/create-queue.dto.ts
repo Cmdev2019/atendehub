@@ -19,6 +19,13 @@ export class CreateQueueDto {
   @Min(1)
   maxWaitSecs?: number;
 
+  // B-114 (ADR-0019, regra 19): prazo do atendimento do setor, em segundos;
+  // ausente ou null = setor sem SLA do atendimento
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxServiceSecs?: number | null;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

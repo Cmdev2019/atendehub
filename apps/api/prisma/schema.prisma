@@ -257,6 +257,9 @@ model Queue {
   name         String
   strategy     QueueStrategy @default(MANUAL)
   maxWaitSecs  Int           @default(300)    // SLA: tempo máximo na fila
+  // B-114 (ADR-0019, regra 19): SLA do atendimento — tempo máximo do Atender
+  // ao Encerrar, contado no expediente (null = setor sem SLA do atendimento)
+  maxServiceSecs Int?
   greetingMsg  String?                        // mensagem automática ao entrar
   isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
@@ -403,6 +406,12 @@ model Conversation {
   // fila" e a ordem do "Pegar próxima") e prazo do SLA (null = sem SLA)
   waitingSince         DateTime?
   waitSlaDueAt         DateTime?
+  // B-114 (ADR-0019, regras 18 a 21): o ciclo do atendimento atual — início
+  // (a conversa saiu da fila com alguém), prazo (null = sem SLA do
+  // atendimento) e estouro
+  attendedAt           DateTime?
+  serviceSlaDueAt      DateTime?
+  serviceSlaBreachedAt DateTime?
   resolvedAt           DateTime?
   closedAt             DateTime?
   resolution           ConversationResolution? // motivo do encerramento (B-32) — null em conversas encerradas antes deste campo existir

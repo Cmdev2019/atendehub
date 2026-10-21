@@ -44,6 +44,8 @@ export function useNotifications(currentUserId) {
       if (!currentUserId || payload?.agentId === currentUserId) scheduleRefetch();
     };
     wsClient.on('sla.breached', scheduleRefetch);
+    // B-114: o aviso do atendimento fora do prazo também chega na hora
+    wsClient.on('sla.service_breached', scheduleRefetch);
     wsClient.on('conversation.assigned', handleAssigned);
     // B-74: notificações criadas enquanto o socket esteve fora
     wsClient.on('reconnected', handleRefetch);
@@ -51,6 +53,7 @@ export function useNotifications(currentUserId) {
     return () => {
       scheduleRefetch.cancel();
       wsClient.off('sla.breached', scheduleRefetch);
+      wsClient.off('sla.service_breached', scheduleRefetch);
       wsClient.off('conversation.assigned', handleAssigned);
       wsClient.off('reconnected', handleRefetch);
     };

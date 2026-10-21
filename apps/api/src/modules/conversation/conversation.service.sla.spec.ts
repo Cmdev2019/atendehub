@@ -32,6 +32,8 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
     autoAttendanceFlow: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findFirst: jest.fn() },
     department: { findFirst: jest.fn() },
+    // B-67: o "Pegar próxima" é SQL cru
+    $queryRaw: jest.fn(),
   };
   const mockEvents = {
     emitConversationAssigned: jest.fn(),
@@ -308,7 +310,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       expect(fakeExistingJob.remove).toHaveBeenCalled();
     });
 
-    it('não mexe no SLA em transições que não envolvem WAITING (OPEN → RESOLVED)', async () => {
+    it('não mexe no SLA da espera em transições que não envolvem WAITING (OPEN → RESOLVED)', async () => {
       mockPrisma.conversation.findFirst.mockResolvedValueOnce({
         id: 'conv-5',
         status: ConversationStatus.OPEN,
@@ -322,7 +324,8 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       await service.updateStatus(companyId, 'conv-5', { status: ConversationStatus.RESOLVED } as any);
 
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
-      expect(mockSlaQueue.getJob).not.toHaveBeenCalled();
+      // B-114: só o job do atendimento é cancelado — resolver encerra o atendimento
+      expect(mockSlaQueue.getJob.mock.calls).toEqual([['service-sla:conv-5']]);
     });
   });
 
@@ -357,6 +360,213 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       expect(fakeExistingJob.remove).toHaveBeenCalled(); // job antigo cancelado
       const secondCallOptions = mockSlaQueue.add.mock.calls[1][1];
       expect(secondCallOptions.jobId).toBe('sla-check:conv-idem'); // mesmo jobId de sempre
+    });
+  });
+
+  // B-114 (ADR-0019, regras 18 a 21): o relógio do atendimento abre quando a
+  // conversa sai da fila com alguém e fecha ao encerrar; o prazo é do setor
+  describe('SLA do atendimento (B-114)', () => {
+    const queueOf = (maxServiceSecs: number | null, id = 'queue-1') => ({ id, maxWaitSecs: 300, maxServiceSecs });
+    const serviceAdds = () => mockSlaQueue.add.mock.calls.filter(([data]) => data.kind === 'service');
+    const dataOfUpdate = () => mockPrisma.conversation.updateMany.mock.calls[0][0].data;
+
+    // Conversa em atendimento com a Ana, no setor 1, com 10 min de prazo
+    const inService = (over: Record<string, unknown> = {}) => ({
+      id: 'conv-1',
+      status: ConversationStatus.OPEN,
+      contact: { name: 'Fulano' },
+      agent: { id: 'ana' },
+      department: { id: 'dept-1' },
+      queue: queueOf(600),
+      attendedAt: new Date(Date.now() - 120_000),
+      serviceSlaDueAt: new Date(Date.now() + 480_000),
+      serviceSlaBreachedAt: null,
+      ...over,
+    });
+
+    describe('abre o ciclo ao sair da fila com alguém', () => {
+      const waitingIn = (queue: ReturnType<typeof queueOf>) => ({
+        id: 'conv-1',
+        waitingSince: new Date(Date.now() - 60_000),
+        waitSlaDueAt: new Date(Date.now() + 240_000),
+        slaBreachedAt: null,
+        queue,
+      });
+
+      it('Atender: grava o início e o prazo do setor e agenda o job do atendimento', async () => {
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingIn(queueOf(600)));
+
+        await service.attend(companyId, 'conv-1', 'ana');
+
+        const data = dataOfUpdate();
+        expect(data.serviceSlaDueAt.getTime() - data.attendedAt.getTime()).toBe(600_000);
+        expect(data.serviceSlaBreachedAt).toBeNull();
+        expect(serviceAdds()).toHaveLength(1);
+        expect(serviceAdds()[0]).toEqual([
+          expect.objectContaining({ kind: 'service', conversationId: 'conv-1', companyId, maxServiceSecs: 600 }),
+          expect.objectContaining({ jobId: 'service-sla:conv-1' }),
+        ]);
+        const { delay } = serviceAdds()[0][1];
+        expect(delay).toBeGreaterThan(599_000);
+        expect(delay).toBeLessThanOrEqual(600_000);
+      });
+
+      it('setor sem prazo do atendimento: abre o ciclo sem prazo nem job', async () => {
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingIn(queueOf(null)));
+
+        await service.attend(companyId, 'conv-1', 'ana');
+
+        expect(dataOfUpdate()).toMatchObject({ attendedAt: expect.any(Date), serviceSlaDueAt: null });
+        expect(serviceAdds()).toHaveLength(0);
+      });
+
+      describe('com o expediente fechado (B-112)', () => {
+        // terça 20:00 em São Paulo
+        beforeEach(() => jest.useFakeTimers().setSystemTime(new Date('2026-10-20T23:00:00Z')));
+        afterEach(() => jest.useRealTimers());
+
+        it('o prazo do atendimento só corre a partir da abertura', async () => {
+          mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE' });
+          mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingIn(queueOf(600)));
+          mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+            isActive: true,
+            businessHours: { wed: [{ start: '08:00', end: '18:00' }] },
+            company: { timezone: 'America/Sao_Paulo' },
+          });
+
+          await service.attend(companyId, 'conv-1', 'ana');
+
+          // quarta 08:00 em São Paulo + 10 min
+          expect(dataOfUpdate().serviceSlaDueAt.toISOString()).toBe('2026-10-21T11:10:00.000Z');
+        });
+      });
+
+      it('Pegar próxima: o prazo vem do setor da conversa escolhida, gravado depois da troca', async () => {
+        const attendedAt = new Date();
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE', departments: [{ id: 'dept-1' }] });
+        mockPrisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'conv-1', waitingSince: new Date(Date.now() - 60_000), waitSlaDueAt: null, slaBreachedAt: null, attendedAt, maxWaitSecs: 300, maxServiceSecs: 900 },
+        ]);
+
+        await service.attendNext(companyId, 'ana');
+
+        expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+          where: { id: 'conv-1', companyId, agentId: 'ana', attendedAt },
+          data: { serviceSlaDueAt: new Date(attendedAt.getTime() + 900_000) },
+        });
+        expect(serviceAdds()[0][0]).toMatchObject({ kind: 'service', maxServiceSecs: 900 });
+      });
+
+      it('Pegar próxima: o ciclo mudou no meio (transferida de setor) — não agenda o prazo velho', async () => {
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE', departments: [{ id: 'dept-1' }] });
+        mockPrisma.$queryRaw.mockResolvedValueOnce([
+          { id: 'conv-1', waitingSince: new Date(), waitSlaDueAt: null, slaBreachedAt: null, attendedAt: new Date(), maxWaitSecs: 300, maxServiceSecs: 900 },
+        ]);
+        mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        await service.attendNext(companyId, 'ana');
+
+        expect(serviceAdds()).toHaveLength(0);
+      });
+
+      it('supervisor tira da fila para um atendente: abre o ciclo com o prazo do setor', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+          ...inService({ status: ConversationStatus.WAITING, agent: null, attendedAt: null, serviceSlaDueAt: null }),
+          waitingSince: new Date(),
+          waitSlaDueAt: null,
+          slaBreachedAt: null,
+        });
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'ana', name: 'Ana', availability: 'ONLINE' });
+
+        await service.assign(companyId, 'conv-1', { agentId: 'ana' }, supervisor);
+
+        const data = dataOfUpdate();
+        expect(data.serviceSlaDueAt.getTime() - data.attendedAt.getTime()).toBe(600_000);
+        expect(serviceAdds()).toHaveLength(1);
+      });
+    });
+
+    describe('transferência em atendimento (regra 20)', () => {
+      it('para outra pessoa do mesmo setor: o relógio continua', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(inService());
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'bruno', name: 'Bruno', availability: 'ONLINE' });
+
+        await service.assign(companyId, 'conv-1', { agentId: 'bruno' }, supervisor);
+
+        const data = dataOfUpdate();
+        expect(data).toMatchObject({ agentId: 'bruno', status: ConversationStatus.OPEN });
+        expect(data).not.toHaveProperty('attendedAt');
+        expect(data).not.toHaveProperty('serviceSlaDueAt');
+        expect(mockSlaQueue.getJob).not.toHaveBeenCalledWith('service-sla:conv-1');
+        expect(serviceAdds()).toHaveLength(0);
+      });
+
+      it('para outro setor: recomeça com o prazo do setor novo, cuja fila passa a ser a da conversa', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(inService());
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'carla', name: 'Carla', availability: 'ONLINE' });
+        mockPrisma.department.findFirst.mockResolvedValueOnce({ id: 'dept-2' });
+        mockPrisma.queue.findFirst.mockResolvedValueOnce(queueOf(900, 'queue-2'));
+        mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob); // job do ciclo antigo
+
+        await service.assign(companyId, 'conv-1', { agentId: 'carla', departmentId: 'dept-2' }, supervisor);
+
+        const data = dataOfUpdate();
+        expect(data).toMatchObject({ departmentId: 'dept-2', queueId: 'queue-2', serviceSlaBreachedAt: null });
+        expect(data.serviceSlaDueAt.getTime() - data.attendedAt.getTime()).toBe(900_000);
+        expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
+        expect(fakeExistingJob.remove).toHaveBeenCalled();
+        expect(serviceAdds()[0][0]).toMatchObject({ maxServiceSecs: 900 });
+      });
+    });
+
+    describe('fecha o ciclo', () => {
+      it('ao encerrar: cancela o job e audita quanto durou e se estourou', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(
+          inService({ serviceSlaDueAt: new Date(Date.now() - 1000), serviceSlaBreachedAt: new Date() }),
+        );
+        mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.CLOSED, companyId });
+
+        await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.CLOSED } as any, supervisor);
+
+        expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
+        expect(mockAuditLog.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'conversation.service_closed',
+            userId: supervisor.id,
+            entityId: 'conv-1',
+            after: expect.objectContaining({ agentId: 'ana', maxServiceSecs: 600, breached: true }),
+          }),
+        );
+        expect(mockAuditLog.record.mock.calls[0][0].after.serviceSeconds).toBeGreaterThanOrEqual(120);
+      });
+
+      it('encerrar sem atender (direto da fila): não há atendimento a registrar', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(
+          inService({ status: ConversationStatus.WAITING, agent: null, attendedAt: null, serviceSlaDueAt: null }),
+        );
+        mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.CLOSED, companyId });
+
+        await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.CLOSED } as any, supervisor);
+
+        expect(mockAuditLog.record).not.toHaveBeenCalled();
+      });
+
+      it('devolver à fila pelo status: limpa o ciclo e cancela o job, sem auditar duração', async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(inService());
+        mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING, companyId });
+
+        await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.WAITING } as any, supervisor);
+
+        expect(mockPrisma.conversation.update.mock.calls[0][0].data).toMatchObject({
+          attendedAt: null,
+          serviceSlaDueAt: null,
+          serviceSlaBreachedAt: null,
+        });
+        expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
+        expect(mockAuditLog.record).not.toHaveBeenCalled();
+      });
     });
   });
 });

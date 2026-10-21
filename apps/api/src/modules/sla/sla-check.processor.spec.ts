@@ -1,13 +1,16 @@
 import { ConversationStatus } from '@prisma/client';
-import { SlaCheckProcessor, SlaCheckJobData } from './sla-check.processor';
+import { ServiceSlaJobData, SlaCheckProcessor, SlaCheckJobData } from './sla-check.processor';
 
 // B4-6/B4-7: versão unitária do processor (mocks, sem Redis/Bull real) —
 // complementa o teste E2E da B2-5 (apps/api/test/sla.e2e-spec.ts), que prova
 // o delay real do Bull mas roda isolado do `npm test`/coverage padrão. Aqui
 // o foco é cobrir os ramos de decisão rapidamente.
 describe('SlaCheckProcessor', () => {
-  const mockPrisma = { conversation: { findUnique: jest.fn(), update: jest.fn() }, user: { findMany: jest.fn() } };
-  const mockEventsService = { emitSlaBreached: jest.fn() };
+  const mockPrisma = {
+    conversation: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+    user: { findMany: jest.fn() },
+  };
+  const mockEventsService = { emitSlaBreached: jest.fn(), emitServiceSlaBreached: jest.fn() };
   const mockAuditLog = { record: jest.fn() };
   const mockNotificationService = { create: jest.fn() };
 
@@ -148,6 +151,101 @@ describe('SlaCheckProcessor', () => {
     mockPrisma.conversation.findUnique.mockRejectedValueOnce(new Error('conexão perdida'));
 
     await expect(processor.handleSlaCheck(makeJob())).rejects.toThrow('conexão perdida');
+  });
+
+  // B-114 (ADR-0019, regras 18 a 21): o job do atendimento, na mesma fila
+  describe('SLA do atendimento', () => {
+    const serviceJob: ServiceSlaJobData = {
+      kind: 'service',
+      conversationId: 'conv-1',
+      companyId: 'company-1',
+      maxServiceSecs: 600,
+      attendedAt: new Date(Date.now() - 600_000),
+    };
+    const makeServiceJob = () => ({ id: 2, data: serviceJob, attemptsMade: 0, opts: { attempts: 3 } } as any);
+    const inService = (over: Record<string, unknown> = {}) => ({
+      id: 'conv-1',
+      status: ConversationStatus.OPEN,
+      agentId: 'ana',
+      queueId: 'queue-1',
+      attendedAt: serviceJob.attendedAt,
+      serviceSlaDueAt: new Date(Date.now() - 1000),
+      serviceSlaBreachedAt: null,
+      contact: { id: 'contact-1', name: 'Fulano', phone: '5512999999999' },
+      queue: { id: 'queue-1', name: 'Fila Receitas', maxServiceSecs: 600 },
+      ...over,
+    });
+
+    it('passou do prazo em atendimento: marca, emite, audita e avisa quem atende e os supervisores', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce(inService());
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'sup-1' }, { id: 'admin-1' }]);
+
+      await processor.handleSlaCheck(makeServiceJob());
+
+      // Troca condicional: só marca o que segue em atendimento sem marca
+      expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'conv-1', status: ConversationStatus.OPEN, serviceSlaBreachedAt: null },
+        data: { serviceSlaBreachedAt: expect.any(Date) },
+      });
+      expect(mockEventsService.emitServiceSlaBreached).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv-1', agentId: 'ana', maxServiceSecs: 600 }),
+      );
+      expect(mockEventsService.emitServiceSlaBreached.mock.calls[0][0].serviceTimeSeconds).toBeGreaterThanOrEqual(600);
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'sla.service_breached', entityId: 'conv-1' }),
+      );
+      const notified = mockNotificationService.create.mock.calls.map(([n]) => n.userId).sort();
+      expect(notified).toEqual(['admin-1', 'ana', 'sup-1']);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'service_sla_breach', userId: 'ana' }),
+      );
+      // O SLA da espera não é tocado
+      expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+      expect(mockEventsService.emitSlaBreached).not.toHaveBeenCalled();
+    });
+
+    it('quem atende também é supervisor: um aviso só', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce(inService({ agentId: 'sup-1' }));
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'sup-1' }]);
+
+      await processor.handleSlaCheck(makeServiceJob());
+
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['encerrada', { status: ConversationStatus.CLOSED }],
+      ['devolvida à fila', { status: ConversationStatus.WAITING, serviceSlaDueAt: null }],
+      ['já marcada', { serviceSlaBreachedAt: new Date() }],
+      ['job de outro ciclo (recomeçou ao mudar de setor)', { serviceSlaDueAt: new Date(Date.now() + 120_000) }],
+    ])('não alerta: %s', async (_name, over) => {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce(inService(over));
+
+      await processor.handleSlaCheck(makeServiceJob());
+
+      expect(mockPrisma.conversation.updateMany).not.toHaveBeenCalled();
+      expect(mockEventsService.emitServiceSlaBreached).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('outro disparo marcou no meio: não avisa de novo', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce(inService());
+      mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await processor.handleSlaCheck(makeServiceJob());
+
+      expect(mockEventsService.emitServiceSlaBreached).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('relança o erro para o Bull re-tentar quando o banco falha', async () => {
+      mockPrisma.conversation.findUnique.mockRejectedValueOnce(new Error('conexão perdida'));
+
+      await expect(processor.handleSlaCheck(makeServiceJob())).rejects.toThrow('conexão perdida');
+    });
   });
 
   // B6-3: observabilidade de jobs falhos/travados

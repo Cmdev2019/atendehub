@@ -264,7 +264,16 @@ describe('ConversationService — isolamento multi-tenant', () => {
 
       expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
         where: { id: 'conv-1', companyId: companyA, status: ConversationStatus.WAITING, agentId: null },
-        data: { status: ConversationStatus.OPEN, agentId: requesterId, slaBreachedAt: null, waitSlaDueAt: null },
+        data: {
+          status: ConversationStatus.OPEN,
+          agentId: requesterId,
+          slaBreachedAt: null,
+          waitSlaDueAt: null,
+          // B-114: abre o ciclo do atendimento (o setor desta fila não tem prazo)
+          attendedAt: expect.any(Date),
+          serviceSlaDueAt: null,
+          serviceSlaBreachedAt: null,
+        },
       });
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
@@ -563,12 +572,17 @@ describe('ConversationService — isolamento multi-tenant', () => {
           waitingSince: expect.any(Date),
           waitSlaDueAt: expect.any(Date),
           slaBreachedAt: null,
+          // B-114: devolver para a fila fecha o ciclo do atendimento
+          attendedAt: null,
+          serviceSlaDueAt: null,
+          serviceSlaBreachedAt: null,
         },
       });
       expect(mockSlaQueue.add).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'conv-1', maxWaitSecs: 300 }),
         expect.objectContaining({ jobId: 'sla-check:conv-1' }),
       );
+      expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'conversation.assigned', after: { agentId: null } }),
       );

@@ -18,6 +18,12 @@ export class UpdateQueueDto {
   @Min(1)
   maxWaitSecs?: number;
 
+  // B-114: null limpa o prazo — o setor fica sem SLA do atendimento
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxServiceSecs?: number | null;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

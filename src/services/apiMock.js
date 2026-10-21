@@ -81,7 +81,7 @@ const mockConnections = [
 
 const mockQueues = [
   {
-    id: 'queue-1', name: 'Comercial', strategy: 'MANUAL', maxWaitSecs: 300,
+    id: 'queue-1', name: 'Comercial', strategy: 'MANUAL', maxWaitSecs: 300, maxServiceSecs: null,
     greetingMsg: 'Olá! Em instantes um atendente vai te responder.',
     departmentId: 'dept-1', isActive: true,
   },
@@ -1070,6 +1070,7 @@ export class MockApiClient {
       name: data.name,
       strategy: 'MANUAL', // B-66: a fila é compartilhada — só MANUAL existe
       maxWaitSecs: data.maxWaitSecs || 300,
+      maxServiceSecs: data.maxServiceSecs ?? null, // B-114: null = sem prazo de atendimento
       greetingMsg: data.greetingMsg || null,
       departmentId: data.departmentId || null,
       isActive: true,
