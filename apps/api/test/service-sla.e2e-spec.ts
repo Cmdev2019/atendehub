@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bull';
-import { Availability, ConversationStatus, Role } from '@prisma/client';
+import { Availability, ConversationStatus, Role } from '../src/generated/prisma/client';
 import axios from 'axios';
 import { Queue } from 'bull';
 import { randomUUID } from 'crypto';

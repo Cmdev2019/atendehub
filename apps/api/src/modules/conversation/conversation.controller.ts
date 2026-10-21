@@ -13,7 +13,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { ConversationService } from './conversation.service';
 import { TagService } from '../tag/tag.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';

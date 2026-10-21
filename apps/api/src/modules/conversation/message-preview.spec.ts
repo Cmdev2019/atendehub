@@ -1,4 +1,4 @@
-import { MessageType } from '@prisma/client';
+import { MessageType } from '../../generated/prisma/client';
 import { buildMessagePreview } from './message-preview';
 
 describe('buildMessagePreview (B-42/B-60)', () => {

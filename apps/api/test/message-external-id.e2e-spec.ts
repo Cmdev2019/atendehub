@@ -1,6 +1,6 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { MessageStatus, MessageType, SenderType } from '@prisma/client';
+import { MessageStatus, MessageType, SenderType } from '../src/generated/prisma/client';
 import { randomUUID } from 'crypto';
 import { MessageService } from '../src/modules/message/message.service';
 import { PrismaService } from '../src/shared/prisma/prisma.service';

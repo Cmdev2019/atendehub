@@ -5,7 +5,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { ConnectionStatus } from '@prisma/client';
+import { ConnectionStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EvolutionService } from './evolution.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';

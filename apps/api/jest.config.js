@@ -7,6 +7,8 @@ module.exports = {
   },
   collectCoverageFrom: [
     '**/*.(t|j)s',
+    // B-86: o cliente do Prisma, gerado em src/generated
+    '!generated/**',
   ],
   coverageDirectory: '../coverage',
   // M-22/B-63: piso de cobertura dos testes unitários, um pouco abaixo do

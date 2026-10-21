@@ -1,5 +1,5 @@
 import { IsString, IsOptional, IsInt, IsIn, IsBoolean, Min, MaxLength } from 'class-validator';
-import { QueueStrategy } from '@prisma/client';
+import { QueueStrategy } from '../../../generated/prisma/client';
 import { QUEUE_STRATEGY_MESSAGE } from './create-queue.dto';
 
 export class UpdateQueueDto {

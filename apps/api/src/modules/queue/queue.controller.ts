@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { QueueService } from './queue.service';
 import { CreateQueueDto } from './dto/create-queue.dto';
 import { UpdateQueueDto } from './dto/update-queue.dto';

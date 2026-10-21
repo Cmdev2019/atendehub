@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Body } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { CompanyService } from './company.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { Roles } from '../auth/decorators/roles.decorator';

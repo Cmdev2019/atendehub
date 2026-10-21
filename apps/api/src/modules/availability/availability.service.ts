@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Availability } from '@prisma/client';
+import { Availability } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EventsService } from '../events/events.service';

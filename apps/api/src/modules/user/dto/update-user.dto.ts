@@ -9,7 +9,7 @@ import {
   ArrayUnique,
   ArrayMaxSize,
 } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Role } from '../../../generated/prisma/client';
 
 export class UpdateUserDto {
   @IsOptional()

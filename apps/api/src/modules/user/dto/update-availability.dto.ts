@@ -1,5 +1,5 @@
 import { IsEnum } from 'class-validator';
-import { Availability } from '@prisma/client';
+import { Availability } from '../../../generated/prisma/client';
 
 // B-65 (ADR-0019): os dois estados do atendente
 export class UpdateAvailabilityDto {

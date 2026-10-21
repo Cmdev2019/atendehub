@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bull';
-import { ConversationStatus, Prisma } from '@prisma/client';
+import { ConversationStatus, Prisma } from '../../generated/prisma/client';
 import { ConversationService } from './conversation.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';

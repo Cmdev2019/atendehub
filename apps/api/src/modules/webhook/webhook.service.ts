@@ -3,7 +3,7 @@ import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import { MessageType, MessageStatus, Prisma, SenderType } from '@prisma/client';
+import { MessageType, MessageStatus, Prisma, SenderType } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { ContactService } from '../contact/contact.service';
 import { ConversationService } from '../conversation/conversation.service';

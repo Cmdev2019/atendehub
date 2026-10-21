@@ -1,4 +1,4 @@
-import { ConnectionStatus } from '@prisma/client';
+import { ConnectionStatus } from '../../generated/prisma/client';
 import { EvolutionService } from './evolution.service';
 import { WhatsappService } from './whatsapp.service';
 

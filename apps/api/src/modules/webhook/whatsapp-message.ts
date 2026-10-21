@@ -1,4 +1,4 @@
-import { MessageType } from '@prisma/client';
+import { MessageType } from '../../generated/prisma/client';
 
 // ── B-81 (M-02): o que uma mensagem recebida do WhatsApp representa ─────────
 // Antes, só os tipos "simples" eram reconhecidos; o resto virava texto vazio

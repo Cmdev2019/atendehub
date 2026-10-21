@@ -1,4 +1,4 @@
-import { ConversationStatus } from '@prisma/client';
+import { ConversationStatus } from '../../generated/prisma/client';
 import { ServiceSlaJobData, SlaCheckProcessor, SlaCheckJobData } from './sla-check.processor';
 
 // B4-6/B4-7: versão unitária do processor (mocks, sem Redis/Bull real) —

@@ -11,7 +11,7 @@ import {
   ArrayUnique,
   ArrayMaxSize,
 } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Role } from '../../../generated/prisma/client';
 import { BCRYPT_MAX_BYTES, MaxBytes } from '../../../shared/validators/max-bytes.validator';
 
 // Exige ao menos 1 letra maiúscula, 1 minúscula e 1 número.

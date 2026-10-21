@@ -1,7 +1,7 @@
 import { OnQueueFailed, OnQueueStalled, Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
-import { ConversationStatus, Role } from '@prisma/client';
+import { ConversationStatus, Role } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';

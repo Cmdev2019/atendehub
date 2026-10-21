@@ -12,7 +12,7 @@ import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../shared/redis/redis.module';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Availability, Prisma, Role } from '@prisma/client';
+import { Availability, Prisma, Role } from '../../generated/prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';

@@ -4,11 +4,12 @@ name: API Image Check
 # o que só aparece na imagem pronta — nada disso é coberto pelos testes do
 # código:
 #   - roda como `node`, não root, com tini como PID 1 e HEALTHCHECK declarado;
-#   - o engine do Prisma carrega (se o build gerar o client para a versão
-#     errada do OpenSSL, a API não sobe em produção — aconteceu durante o
-#     próprio B-44);
-#   - o CLI `prisma` existe no runtime (o deploy roda `npm run db:migrate:prod`
-#     dentro do container).
+#   - o cliente do Prisma carrega e chega a tentar o banco (B-86: no Prisma 7
+#     ele vai dentro do dist e fala com o banco pelo `pg`);
+#   - o CLI `prisma` existe no runtime e o schema engine roda (o deploy roda
+#     `npm run db:migrate:prod` dentro do container; se o build baixar o
+#     engine para a versão errada do OpenSSL, a migração não roda — aconteceu
+#     com o engine das consultas durante o próprio B-44).
 on:
   push:
     branches: [master]
@@ -17,6 +18,7 @@ on:
       - 'apps/api/.dockerignore'
       - 'apps/api/package.json'
       - 'apps/api/package-lock.json'
+      - 'apps/api/prisma.config.ts'
       - 'apps/api/prisma/**'
       - '.github/workflows/api-image-check.yml'
   pull_request:
@@ -25,6 +27,7 @@ on:
       - 'apps/api/.dockerignore'
       - 'apps/api/package.json'
       - 'apps/api/package-lock.json'
+      - 'apps/api/prisma.config.ts'
       - 'apps/api/prisma/**'
       - '.github/workflows/api-image-check.yml'
 
@@ -54,16 +57,27 @@ jobs:
           [ "$entry" = '["/usr/bin/tini","--"]' ] || { echo "::error::tini deve ser o entrypoint"; exit 1; }
           [ "$health" = "ok" ] || { echo "::error::HEALTHCHECK ausente"; exit 1; }
 
-      # Sem banco: o esperado é "Can't reach database server". Erro de Query
-      # Engine significa client gerado para a plataforma errada.
-      - name: Engine do Prisma carrega
+      # Sem banco: o esperado é o P1001 ("Can't reach database server"). Outro
+      # erro (cliente gerado fora do dist, compilador de consultas ou `pg`
+      # faltando) significa imagem quebrada. Usa o PrismaService da própria API.
+      - name: Cliente do Prisma carrega
         run: |
-          docker run --rm --entrypoint node atendehub-api:ci -e "
-            new (require('@prisma/client').PrismaClient)({ datasourceUrl: 'postgresql://x:x@127.0.0.1:1/x' })
-              .\$connect()
+          docker run --rm --entrypoint node \
+            -e DATABASE_URL='postgresql://x:x@127.0.0.1:1/x?schema=atendehub' \
+            atendehub-api:ci -e "
+            const { PrismaService } = require('./dist/shared/prisma/prisma.service');
+            new PrismaService().company.findMany({ take: 1 })
               .then(() => process.exit(1))
-              .catch((e) => { console.log(e.message.split('\n')[0]); process.exit(/Query Engine/.test(e.message) ? 1 : 0); });
+              .catch((e) => { console.log(e.code, e.message.trim().split('\n').pop()); process.exit(e.code === 'P1001' ? 0 : 1); });
           "
 
+      # O schema engine também tem que chegar ao P1001: engine baixado para a
+      # versão errada do OpenSSL falha antes, ao carregar
       - name: CLI do Prisma no runtime
-        run: docker run --rm --entrypoint npx atendehub-api:ci --no-install prisma --version
+        run: |
+          docker run --rm --entrypoint npx atendehub-api:ci --no-install prisma --version
+          out=$(docker run --rm --entrypoint npx \
+            -e DATABASE_URL='postgresql://x:x@127.0.0.1:1/x?schema=atendehub' \
+            atendehub-api:ci --no-install prisma migrate status 2>&1 || true)
+          echo "$out" | tail -3
+          echo "$out" | grep -q 'P1001' || { echo "::error::o schema engine não rodou no runtime"; exit 1; }

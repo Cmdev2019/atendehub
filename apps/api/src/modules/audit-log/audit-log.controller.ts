@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { AuditLogService } from './audit-log.service';
 import { ListAuditLogsDto } from './dto/list-audit-logs.dto';
 import { Roles } from '../auth/decorators/roles.decorator';

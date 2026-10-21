@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Availability, ConversationStatus, Role } from '@prisma/client';
+import { Availability, ConversationStatus, Role } from '../src/generated/prisma/client';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import * as http from 'http';

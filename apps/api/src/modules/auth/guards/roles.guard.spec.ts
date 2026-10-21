@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../../generated/prisma/client';
 import { RolesGuard } from './roles.guard';
 
 function makeContext(role: Role): ExecutionContext {

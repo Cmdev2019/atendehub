@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../../generated/prisma/client';
 import { getTenantId } from '../tenant/tenant-context';
 
 // ── B-83 (M-19 / B-41): Row-Level Security como rede de proteção ────────────

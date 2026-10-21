@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bull';
-import { AutoAttendanceAction, ConversationResolution, ConversationStatus, Prisma } from '@prisma/client';
+import { AutoAttendanceAction, ConversationResolution, ConversationStatus, Prisma } from '../../generated/prisma/client';
 import { AutoAttendanceEngineService } from './auto-attendance-engine.service';
 import { AutoAttendanceSessionService } from './auto-attendance-session.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';

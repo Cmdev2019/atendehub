@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConversationStatus, ConversationResolution, Prisma } from '@prisma/client';
+import { ConversationStatus, ConversationResolution, Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { loadCompanyTimeZone, parsePeriodBoundary } from '../../shared/time/company-time';
 

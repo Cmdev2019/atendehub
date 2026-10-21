@@ -1,4 +1,4 @@
-import { MessageType } from '@prisma/client';
+import { MessageType } from '../../generated/prisma/client';
 
 // Rótulo da prévia quando a mensagem não tem texto (B-42/B-60). Sem emoji,
 // conforme a convenção do projeto. O front usa a mesma tabela em

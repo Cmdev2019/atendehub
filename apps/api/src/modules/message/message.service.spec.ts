@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { MessageService } from './message.service';
-import { MessageType, MessageStatus, SenderType, Prisma } from '@prisma/client';
+import { MessageType, MessageStatus, SenderType, Prisma } from '../../generated/prisma/client';
 
 function p2002(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`externalId`)', {

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { AutoAttendanceAction, Prisma } from '@prisma/client';
+import { AutoAttendanceAction, Prisma } from '../../generated/prisma/client';
 import { AutoAttendanceService } from './auto-attendance.service';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 

@@ -5,7 +5,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { Channel, Prisma } from '@prisma/client';
+import { Channel, Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';

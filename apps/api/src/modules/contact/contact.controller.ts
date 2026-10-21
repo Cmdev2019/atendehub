@@ -10,7 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { ContactService } from './contact.service';
 import { TagService } from '../tag/tag.service';
 import { CreateContactDto } from './dto/create-contact.dto';

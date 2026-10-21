@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { roomsForConversation, scopeRoomsForUser } from './scope-rooms';
 import { EventsService } from './events.service';
 

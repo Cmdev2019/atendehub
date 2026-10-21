@@ -208,4 +208,34 @@ describe('RLS — isolamento entre empresas no banco (E2E)', () => {
     const both = await prisma.contact.count({ where: { id: { in: [ids.A.contact, ids.B.contact] } } });
     expect(both).toBe(2);
   });
+
+  // B-86: a extensão reconhece a transação de quem chamou por um campo interno
+  // do Prisma (`__internalParams.transaction`), que pode mudar numa versão nova.
+  // Se deixar de reconhecer, a operação sai da transação (vira uma transação
+  // própria, já confirmada) e o rollback não a desfaz — nenhum outro teste nota.
+  it('transação de quem chamou: com a empresa no contexto, o rollback desfaz o que foi gravado nela', async () => {
+    const name = `b86-rollback-${run}`;
+    const rollback = new Error('rollback de propósito');
+
+    await expect(
+      asA(() =>
+        prisma.$transaction(async (tx) => {
+          await tx.tag.create({ data: { companyId: ids.A.company, name: `${name}-interativa` } });
+          throw rollback;
+        }),
+      ),
+    ).rejects.toBe(rollback);
+
+    // Em lote: a 2ª criação colide com a 1ª (nome único na empresa) e leva a 1ª junto
+    await expect(
+      asA(() =>
+        prisma.$transaction([
+          prisma.tag.create({ data: { companyId: ids.A.company, name: `${name}-lote` } }),
+          prisma.tag.create({ data: { companyId: ids.A.company, name: `${name}-lote` } }),
+        ]),
+      ),
+    ).rejects.toThrow(/unique/i);
+
+    expect(await prisma.tag.count({ where: { companyId: ids.A.company, name: { startsWith: name } } })).toBe(0);
+  });
 });

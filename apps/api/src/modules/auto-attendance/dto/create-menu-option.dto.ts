@@ -1,5 +1,5 @@
 import { IsEnum, IsInt, IsString, Min, MaxLength, ValidateIf } from 'class-validator';
-import { AutoAttendanceAction } from '@prisma/client';
+import { AutoAttendanceAction } from '../../../generated/prisma/client';
 
 export class CreateMenuOptionDto {
   @IsInt()

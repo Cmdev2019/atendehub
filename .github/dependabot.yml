@@ -44,8 +44,9 @@ updates:
       nestjs:
         patterns: ["@nestjs/*"]
         update-types: ["minor", "patch"]
+      # B-86: o adapter do Postgres sai na mesma versão do cliente
       prisma:
-        patterns: ["prisma", "@prisma/client"]
+        patterns: ["prisma", "@prisma/*"]
         update-types: ["minor", "patch"]
       dev-dependencies:
         dependency-type: development

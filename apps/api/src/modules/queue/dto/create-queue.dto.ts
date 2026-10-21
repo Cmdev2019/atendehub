@@ -1,5 +1,5 @@
 import { IsString, IsOptional, IsInt, IsIn, Min, MaxLength } from 'class-validator';
-import { QueueStrategy } from '@prisma/client';
+import { QueueStrategy } from '../../../generated/prisma/client';
 
 // B-66 (ADR-0019, M-21): a fila é compartilhada — só MANUAL existe de fato
 export const QUEUE_STRATEGY_MESSAGE =

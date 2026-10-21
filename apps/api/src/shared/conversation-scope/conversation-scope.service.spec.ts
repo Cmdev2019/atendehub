@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 import { ConversationScopeService } from './conversation-scope.service';
 import { ConversationScopeGuard } from './conversation-scope.guard';
 

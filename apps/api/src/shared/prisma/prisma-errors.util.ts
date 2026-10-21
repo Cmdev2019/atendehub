@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 
 // ── Consolidação arquitetural (ACR 2026-08-01) ──────────────────────────────
 // O predicado `err instanceof Prisma.PrismaClientKnownRequestError &&

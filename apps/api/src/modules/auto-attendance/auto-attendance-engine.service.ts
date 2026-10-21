@@ -8,7 +8,7 @@ import {
   MessageStatus,
   MessageType,
   SenderType,
-} from '@prisma/client';
+} from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ConversationService } from '../conversation/conversation.service';

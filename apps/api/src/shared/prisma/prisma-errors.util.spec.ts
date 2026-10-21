@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 import { isUniqueConstraintViolation } from './prisma-errors.util';
 
 describe('isUniqueConstraintViolation', () => {

@@ -6,7 +6,7 @@ import { sendCsv, sendPdf } from './report-export.util';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
+import { Role } from '../../generated/prisma/client';
 
 // C-10/B-40: relatórios cobrem a empresa inteira (todos os departamentos e
 // atendentes) — só SUPERVISOR em diante. O RolesGuard global aplica.
