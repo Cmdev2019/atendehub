@@ -19,6 +19,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-65 (2026-10-19):** o atendente escolhe se está **Online** ou **Offline** no topo da tela; o logout e a desativação o põem Offline, e o supervisor vê o estado de cada um em Configurações → Usuários, atualizado na hora. Nova rota `PATCH /users/me/availability` e evento `user.availability`.
 - **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
+### Segurança
+- **B-115 (2026-10-20):** `follow-redirects` 1.16.1 na API (era 1.16.0, com um aviso alto novo sobre cabeçalhos de credencial em redirecionamentos); o pacote vem do `axios`, e a mudança é só no lockfile.
+
 ## [0.2.0] - 2026-10-18
 
 Fecha a Fase 3 do plano da auditoria de 2026-10-16 (B-91 a B-106) e, com ela, o plano inteiro.

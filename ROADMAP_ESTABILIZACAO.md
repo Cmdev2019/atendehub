@@ -34,6 +34,9 @@
   seed com os 13 setores e o menu. **B-67 concluído** (2026-10-20): "Pegar próxima" na API — a
   conversa que espera há mais tempo nos setores de quem pede, sem dois atendentes receberem a
   mesma (o botão entra no painel, B-68).
+- **B-115 concluído** (2026-10-20): um aviso alto novo no `follow-redirects`, que a API usa por
+  meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
+  só no lockfile.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
@@ -217,6 +220,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-112 | — | O SLA não conta para a conversa que chega fora do expediente, nem depois que ele abre | ⬜ Pendente |
 | B-113 | — | Setores do atendente escolhidos no cadastro e na edição dele (um ou vários); mudar os setores reconecta o socket | ✅ 2026-10-19 |
 | B-114 | — | O atendimento não tem SLA: conversa atendida e esquecida não alerta ninguém | ⬜ Pendente |
+| B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |
 
 ## 📖 Regras do documento vivo
 
