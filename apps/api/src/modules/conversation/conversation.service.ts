@@ -95,6 +95,16 @@ interface WaitingConversation {
   queue: { maxWaitSecs: number } | null;
 }
 
+// Linha que o "Pegar próxima" (B-67) devolve do SQL cru: a conversa já
+// atendida, com o prazo e a marca de violação de antes da troca
+interface PickedConversation {
+  id: string;
+  waitingSince: Date | null;
+  waitSlaDueAt: Date | null;
+  slaBreachedAt: Date | null;
+  maxWaitSecs: number | null;
+}
+
 @Injectable()
 export class ConversationService {
   private readonly logger = new Logger(ConversationService.name);
@@ -412,6 +422,67 @@ export class ConversationService {
 
     await this.closeWaitCycle(companyId, before, requesterId, requesterId, now);
     return this.emitAssignment(companyId, conversationId);
+  }
+
+  // ── Pegar próxima (B-67 / ADR-0019, regra 5) ─────────────────────────────
+  // Atende a conversa que espera há mais tempo nos setores de quem pede —
+  // supervisor e admin também, pelos setores de que são membros. Escolher e
+  // atender é uma instrução só no Postgres: o `FOR UPDATE SKIP LOCKED` pula a
+  // conversa que outro pedido acabou de travar, então pedidos simultâneos
+  // recebem conversas diferentes, e o Atender não pega a mesma (ADR-0004).
+  // Conversa sem setor fica de fora — continua no botão Atender. Nada
+  // esperando: null (o controller responde 204).
+  async attendNext(companyId: string, requesterId: string) {
+    const requester = await this.prisma.user.findFirst({
+      where: { id: requesterId, companyId },
+      select: { availability: true, departments: { select: { id: true } } },
+    });
+    if (!requester) throw new NotFoundException('Usuário não encontrado');
+    if (requester.availability !== Availability.ONLINE) {
+      throw new ConflictException('Fique Online para atender');
+    }
+    const departmentIds = requester.departments.map((d) => d.id);
+    if (departmentIds.length === 0) return null;
+
+    // SQL cru porque o Prisma não tem SKIP LOCKED. Ele roda sem o papel do
+    // RLS (B-83): o companyId do WHERE é o que separa as empresas. O CTE
+    // guarda o prazo e a marca de violação de antes da troca, para a
+    // auditoria do ciclo. Sem waitingSince (a migração do B-66 preencheu),
+    // vale o createdAt.
+    const now = new Date();
+    const [picked] = await this.prisma.$queryRaw<PickedConversation[]>`
+      WITH next AS (
+        SELECT "id", "waitSlaDueAt", "slaBreachedAt"
+        FROM "conversations"
+        WHERE "companyId" = ${companyId}
+          AND "status" = 'WAITING'
+          AND "agentId" IS NULL
+          AND "departmentId" = ANY(${departmentIds}::text[])
+        ORDER BY COALESCE("waitingSince", "createdAt"), "id"
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE "conversations" AS c
+      SET "status" = 'OPEN',
+          "agentId" = ${requesterId},
+          "slaBreachedAt" = NULL,
+          "waitSlaDueAt" = NULL,
+          "updatedAt" = NOW() AT TIME ZONE 'UTC'
+      FROM next
+      WHERE c."id" = next."id"
+      RETURNING c."id", c."waitingSince", next."waitSlaDueAt", next."slaBreachedAt",
+        (SELECT q."maxWaitSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxWaitSecs"`;
+    if (!picked) return null;
+
+    const { maxWaitSecs, ...cycle } = picked;
+    await this.closeWaitCycle(
+      companyId,
+      { ...cycle, queue: maxWaitSecs === null ? null : { maxWaitSecs } },
+      requesterId,
+      requesterId,
+      now,
+    );
+    return this.emitAssignment(companyId, picked.id);
   }
 
   // Por que a conversa não está mais na fila — a mensagem que quem perdeu vê

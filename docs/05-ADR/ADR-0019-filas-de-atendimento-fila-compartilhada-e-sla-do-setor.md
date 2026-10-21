@@ -2,7 +2,7 @@
 
 - **Status:** Aprovada (2026-10-19, PR #104) — implementação pelos itens B-65 a B-68 e B-112 a B-114
 - **Data de criação:** 2026-10-19
-- **Última revisão:** 2026-10-19
+- **Última revisão:** 2026-10-20
 - **Autor:** Engenharia (Claude Code), a partir das regras ditadas pelo responsável do projeto
 - **Revisores:** responsável do projeto (PR #104)
 - **Versão:** 1.0
@@ -462,6 +462,7 @@ Estado atual que motivou a decisão (o que será implementado entra no Históric
 | 2026-10-19 | **B-65 implementado** (PR #105, regras 8 a 12): `users.availability`, `AvailabilityService` com troca condicional, `PATCH /users/me/availability`, Offline no logout e na desativação, evento `user.availability` e seletor no topo do painel. Validado por e2e com Socket.IO real (`websocket-session.e2e-spec.ts`) | 1.0 |
 | 2026-10-19 | **B-113 implementado** (PR #106, regra 22): `departmentIds` no cadastro e na edição do usuário (a lista substitui), setor de outra empresa recusado, e mudar os setores — também pela tela de Grupos — reconecta o socket com as salas novas. Validado por e2e HTTP (`http-authz.e2e-spec.ts`) | 1.0 |
 | 2026-10-19 | **B-66 implementado** (PR #107, regras 1 a 4, 6, 7, 13 a 16 e 23): `POST /conversations/:id/attend` com troca condicional, 1ª resposta pela mesma troca, transferência com as permissões da regra 4 — e a mesma regra no `PATCH /status`, que era um atalho para puxar conversa de colega —, `waitingSince`/`waitSlaDueAt` em todos os caminhos de entrada na fila, estratégia só `MANUAL` e seed com os 13 setores e o menu. Validado por e2e com Postgres real (`queue-attend.e2e-spec.ts`: 5 pedidos simultâneos, 1 sucesso) | 1.0 |
+| 2026-10-20 | **B-67 implementado** (PR #110, regra 5): `POST /conversations/next` escolhe e atende numa instrução só (CTE com `FOR UPDATE SKIP LOCKED`), pela ordem do `waitingSince`, só nos setores de que quem pede é membro — supervisor e admin inclusive; fila vazia responde `204`. Depois da troca, o mesmo caminho do Atender (SLA cancelado, `conversation.attended`, evento). Validado por e2e com Postgres real (`queue-next.e2e-spec.ts`: 5 pedidos simultâneos, 5 conversas diferentes; sem a trava, o teste falha) | 1.0 |
 
 ## Referências
 
