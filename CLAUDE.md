@@ -88,6 +88,11 @@ docker compose up -d         # postgres, redis, evolution + minio (só dev; port
    Start-Process powershell -ArgumentList '-NoExit','-File','C:\...\scripts\dev-api.ps1' -WindowStyle Minimized
    Start-Process powershell -ArgumentList '-NoExit','-File','C:\...\scripts\dev-front.ps1' -WindowStyle Minimized
    ```
+5. **No Windows, `DATABASE_URL` com `127.0.0.1`, nunca `localhost`** (B-117).
+   Abrir conexão nova por `localhost` passa do prazo de 2 s do Prisma:
+   transações interativas simultâneas falham com P2028 ("Unable to start a
+   transaction in the given time") — 5 ao mesmo tempo, só 1 passava. A CI
+   (Linux) não sofre, então o erro só aparece em dev.
 
 ## Convenções
 
