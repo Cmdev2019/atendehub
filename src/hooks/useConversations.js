@@ -537,7 +537,7 @@ export function useConversations(currentUserId) {
     // Emitido ao atender (POST /attend) e ao transferir (PATCH /assign) —
     // distinto de conversation.updated (o backend usa um evento próprio).
     const handleConversationAssigned = (payload) => {
-      const { conversationId, agentId, agent, status, waitingSince } = payload ?? {};
+      const { conversationId, agentId, agent, status, waitingSince, attendedAt, serviceSlaDueAt } = payload ?? {};
       if (!conversationId) return;
 
       setConversations((prev) =>
@@ -551,6 +551,11 @@ export function useConversations(currentUserId) {
                 // todos na hora; devolvida à fila, ela volta
                 ...(status && { status }),
                 ...(waitingSince !== undefined && { waitingSince }),
+                // B-68: o ciclo do atendimento (B-114) — mudou de setor, o
+                // prazo recomeça; voltou para a fila, some
+                ...(attendedAt !== undefined && { attendedAt }),
+                ...(serviceSlaDueAt !== undefined && { serviceSlaDueAt }),
+                ...(attendedAt !== undefined && attendedAt !== conv.attendedAt && { serviceSlaBreachedAt: null }),
                 // Atribuir agente sempre encerra a espera — o backend já
                 // cancela o job de SLA pendente nesse momento.
                 slaBreached: agentId ? false : conv.slaBreached,
@@ -577,12 +582,26 @@ export function useConversations(currentUserId) {
       );
     };
 
+    // Payload: { companyId, conversationId, agentId, ..., breachedAt } — B-114:
+    // o atendimento passou do prazo do setor; destaque na lista (B-68)
+    const handleServiceSlaBreached = (payload) => {
+      const conversationId = payload?.conversationId;
+      if (!conversationId) return;
+
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === conversationId ? { ...conv, serviceSlaBreachedAt: payload.breachedAt } : conv,
+        ),
+      );
+    };
+
     wsClient.on('conversation.created', handleConversationCreated);
     wsClient.on('message.new', handleMessageNew);
     wsClient.on('message.updated', handleMessageUpdated);
     wsClient.on('conversation.updated', handleConversationUpdated);
     wsClient.on('conversation.assigned', handleConversationAssigned);
     wsClient.on('sla.breached', handleSlaBreached);
+    wsClient.on('sla.service_breached', handleServiceSlaBreached);
 
     // Cleanup — remove só os callbacks registrados aqui (B-7); outros
     // consumidores do mesmo evento (ex.: useNotifications, B-8) não são
@@ -594,6 +613,7 @@ export function useConversations(currentUserId) {
       wsClient.off('conversation.updated', handleConversationUpdated);
       wsClient.off('conversation.assigned', handleConversationAssigned);
       wsClient.off('sla.breached', handleSlaBreached);
+      wsClient.off('sla.service_breached', handleServiceSlaBreached);
     };
   }, []);
 
@@ -717,27 +737,62 @@ export function useConversations(currentUserId) {
   // o motivo ("Fulano já está atendendo", "Fique Online para atender"), que
   // volta em `error` para a tela mostrar. A confirmação otimista evita esperar
   // o round-trip do socket só pra a conversa sumir da aba "Fila".
+  // A conversa que acabou de sair da fila com o atendente (Atender ou Pegar
+  // próxima): status, quem atende e o ciclo do atendimento (B-114)
+  const markAttended = useCallback((conversationId, updated, agent) => {
+    setConversations((prev) =>
+      prev.map((conv) =>
+        conv.id === conversationId
+          ? {
+              ...conv,
+              status: updated?.status || 'OPEN',
+              agent: updated?.agent?.name || agent.name,
+              agentId: updated?.agent?.id || agent.id,
+              slaBreached: false,
+              ...(updated?.attendedAt !== undefined && { attendedAt: updated.attendedAt }),
+              ...(updated?.serviceSlaDueAt !== undefined && { serviceSlaDueAt: updated.serviceSlaDueAt }),
+              serviceSlaBreachedAt: null,
+            }
+          : conv,
+      ),
+    );
+  }, []);
+
   const attendConversation = useCallback(async (conversationId, agent) => {
     try {
       const updated = await apiClient.attendConversation(conversationId);
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === conversationId
-            ? {
-                ...conv,
-                status: updated?.status || 'OPEN',
-                agent: updated?.agent?.name || agent.name,
-                agentId: updated?.agent?.id || agent.id,
-              }
-            : conv,
-        ),
-      );
+      markAttended(conversationId, updated, agent);
       fetchStats();
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error?.message || 'Não foi possível atender esta conversa' };
     }
-  }, [fetchStats]);
+  }, [fetchStats, markAttended]);
+
+  // Pegar próxima (B-68, rota do B-67): a API escolhe a conversa que espera
+  // há mais tempo nos setores do atendente. Sem nenhuma esperando, `empty`.
+  // Se ela ainda não estava carregada na lista (outra página), entra no topo.
+  const attendNextConversation = useCallback(async (agent) => {
+    try {
+      const picked = await apiClient.attendNextConversation();
+      if (!picked) {
+        return { ok: false, empty: true, error: 'Nenhuma conversa esperando nos seus setores.' };
+      }
+      if (!conversationsRef.current.some((conv) => conv.id === picked.id)) {
+        try {
+          const full = toUiConversation(await apiClient.getConversation(picked.id));
+          setConversations((prev) => (prev.some((c) => c.id === full.id) ? prev : [full, ...prev]));
+        } catch {
+          // Segue com o que já veio do pick: a conversa abre ao ser buscada
+        }
+      }
+      markAttended(picked.id, picked, agent);
+      fetchStats();
+      return { ok: true, conversationId: picked.id };
+    } catch (error) {
+      return { ok: false, error: error?.message || 'Não foi possível pegar a próxima conversa' };
+    }
+  }, [fetchStats, markAttended]);
 
   // Encerrar (B-31): fecha a conversa ativa — some da fila ativa e, se a aba
   // "Encerrados" já tiver sido aberta antes, entra nela na hora.
@@ -960,6 +1015,7 @@ export function useConversations(currentUserId) {
     loadMoreClosedConversations,
     searchConversations,
     attendConversation,
+    attendNextConversation,
     closeConversation,
   };
 }

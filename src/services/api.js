@@ -277,6 +277,7 @@ class ApiClient {
 
     if (resource === 'conversations') {
       if (id === 'stats') return mockApiClient.getConversationStats();
+      if (id === 'next' && method === 'POST') return mockApiClient.attendNextConversation(); // B-68
       if (sub === 'messages' && method === 'POST') {
         // subId === 'media' → envio de mídia; no mock vira texto ilustrativo
         if (subId === 'media') {
@@ -566,6 +567,12 @@ class ApiClient {
   // ("Fulano já está atendendo", "Fique Online para atender").
   async attendConversation(id) {
     return this.request(`/conversations/${id}/attend`, { method: 'POST' });
+  }
+
+  // Pegar próxima (B-67/B-68): atende a conversa que espera há mais tempo nos
+  // setores de quem chama. Devolve null quando não há nenhuma (204).
+  async attendNextConversation() {
+    return this.request('/conversations/next', { method: 'POST' });
   }
 
   // Transferir (B-66): para uma pessoa ou, sem agentId, de volta à fila. Antes

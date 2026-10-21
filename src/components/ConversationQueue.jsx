@@ -2,6 +2,23 @@ import { createElement as h, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { messagePreview } from '../utils/messagePreview';
 import { formatElapsed } from '../utils/elapsed';
+import { formatSlaSpan, slaLabel, slaState } from '../utils/sla';
+
+// B-68: o relógio da lista anda a cada 15 s — o bastante para o selo do SLA
+// mudar de "ok" para "perto de estourar" sem esperar um minuto
+const CLOCK_TICK_MS = 15_000;
+
+// O prazo que cada etapa acompanha (ADR-0019): na fila, o SLA da espera; em
+// atendimento, o SLA do atendimento (B-114). Encerradas não têm prazo.
+function conversationSla(conv, tab, now) {
+  if (tab === 'queue') {
+    const state = slaState(conv.waitingSince, conv.waitSlaDueAt, now, conv.slaBreachedAt || (conv.slaBreached ? true : null));
+    return state && { ...state, name: 'SLA', title: `SLA da espera ${slaLabel(state)}` };
+  }
+  if (tab === 'closed' || conv.status !== 'OPEN') return null;
+  const state = slaState(conv.attendedAt, conv.serviceSlaDueAt, now, conv.serviceSlaBreachedAt);
+  return state && { ...state, name: 'Atendimento', title: `SLA do atendimento ${slaLabel(state)}` };
+}
 
 // B-104 (L-09): a partir de quantos caracteres a busca vai ao servidor, e o
 // intervalo de digitação antes de buscar
@@ -55,6 +72,10 @@ export function ConversationQueue({
   // B-66: por que o "Atender" foi recusado ("Fulano já está atendendo")
   attendNotice = null,
   onDismissAttendNotice,
+  // B-68: "Pegar próxima" — só para quem está Online
+  onAttendNext,
+  canAttend = true,
+  attendingNext = false,
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('queue');
@@ -62,11 +83,11 @@ export function ConversationQueue({
   // busca filtrava só o que já estava carregado na tela — conversa da 2ª
   // página em diante nunca aparecia.
   const [serverResult, setServerResult] = useState(null);
-  // Relógio do tempo de espera, atualizado a cada minuto
+  // Relógio do tempo de espera e dos prazos de SLA
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    const timer = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
     return () => clearInterval(timer);
   }, []);
 
@@ -104,12 +125,15 @@ export function ConversationQueue({
 
   // B-60: mais recente primeiro, como o servidor já entrega — sem isto, uma
   // conversa que recebia mensagem em tempo real ficava parada onde estava.
+  // B-68: a fila vai na ordem de chegada (quem espera há mais tempo no topo),
+  // a mesma do "Pegar próxima".
   const activityOf = (conv) => new Date(conv.lastMessageAt || conv.createdAt || 0).getTime();
+  const waitedFrom = (conv) => new Date(conv.waitingSince || conv.createdAt || 0).getTime();
   const filteredConversations = tabList
     // O servidor já filtrou pelo nome/telefone; o filtro local cobre o
     // intervalo de digitação e o modo sem servidor
     .filter((conv) => usingServer || conv.contact.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => activityOf(b) - activityOf(a));
+    .sort((a, b) => (activeTab === 'queue' ? waitedFrom(a) - waitedFrom(b) : activityOf(b) - activityOf(a)));
 
   // Contagens rápidas no seletor (menos a de encerrados, que só reflete o
   // que já foi carregado, já que a aba busca sob demanda).
@@ -217,21 +241,39 @@ export function ConversationQueue({
         title: 'Fechar aviso',
       }, h(Icon, { name: 'x', size: 12, label: 'Fechar aviso' })),
     ),
+    // B-68: a ação principal da fila — atende a que espera há mais tempo nos
+    // setores do atendente, sem ele escolher (ADR-0019, regra 5)
+    activeTab === 'queue' && onAttendNext && h(
+      'div',
+      { className: 'queue-toolbar' },
+      h('button', {
+        type: 'button',
+        className: 'queue-next-button',
+        onClick: onAttendNext,
+        disabled: !canAttend || attendingNext,
+        title: canAttend
+          ? 'Atender a conversa que espera há mais tempo nos seus setores'
+          : 'Fique Online para atender',
+      }, h(Icon, { name: 'play', size: 13 }), attendingNext ? ' Pegando…' : ' Pegar próxima'),
+      !canAttend && h('span', { className: 'queue-toolbar-hint' }, 'Fique Online para atender'),
+    ),
     h(
       'div',
       { className: 'queue-list', onScroll: handleScroll },
       filteredConversations.length > 0 ? (
-        filteredConversations.map((conv) =>
-          h(
+        filteredConversations.map((conv) => {
+          const sla = conversationSla(conv, activeTab, now);
+          const breached = sla?.level === 'breached';
+          return h(
             'div',
             {
               key: conv.id,
-              className: `queue-item${activeId === conv.id ? ' active' : ''}${conv.slaBreached ? ' sla-breached' : ''}`,
+              className: `queue-item${activeId === conv.id ? ' active' : ''}${breached ? ' sla-breached' : ''}`,
               role: 'button',
               tabIndex: 0,
               onClick: () => onSelect(conv.id),
               onKeyDown: (e) => handleItemKeyDown(e, conv.id),
-              title: conv.slaBreached ? `${conv.contact} — SLA de espera estourado` : conv.contact,
+              title: breached ? `${conv.contact} — ${sla.title}` : conv.contact,
               // B-14: a conversa aberta só era indicada por CSS (.active)
               'aria-current': activeId === conv.id ? 'true' : undefined,
             },
@@ -256,12 +298,14 @@ export function ConversationQueue({
                     },
                     conv.unreadCount > 99 ? '99+' : String(conv.unreadCount),
                   ),
-                conv.slaBreached &&
+                // B-68: quanto falta para o prazo, ou que ele estourou — com
+                // texto, não só cor
+                sla &&
                   h(
                     'span',
-                    { className: 'queue-item-sla-badge' },
-                    h(Icon, { name: 'warning', size: 11 }),
-                    ' SLA',
+                    { className: `queue-item-sla sla-${sla.level}`, title: sla.title },
+                    h(Icon, { name: breached ? 'warning' : 'clock', size: 11 }),
+                    ` ${sla.name} ${breached ? 'estourado' : formatSlaSpan(sla.remainingMs)}`,
                   ),
               ),
               h('div', { className: 'queue-item-preview' },
@@ -288,8 +332,8 @@ export function ConversationQueue({
                   }, 'Atender'),
                 )
               : h('div', { className: 'queue-item-time', title: 'Última atividade' }, formatElapsed(activityOf(conv), now)),
-          ),
-        )
+          );
+        })
       ) : (
         h('div', { className: 'queue-empty' }, EMPTY_MESSAGES[activeTab])
       ),

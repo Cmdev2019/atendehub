@@ -836,15 +836,149 @@ button {
   border-left-color: #dc2626;
 }
 
-.queue-item-sla-badge {
+/* B-68: selo do prazo de SLA — espera na fila, atendimento nas demais abas.
+   Texto e ícone dizem o estado; a cor só reforça (não é a única pista). */
+.queue-item-sla {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #b91c1c;
   margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
   vertical-align: middle;
+}
+
+.queue-item-sla.sla-ok {
+  background: var(--panel-soft);
+  color: var(--text-secondary);
+}
+
+.queue-item-sla.sla-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.queue-item-sla.sla-breached {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+/* No escuro, os tons claros mantêm o contraste do texto */
+:root[data-theme="dark"] .queue-item-sla.sla-warning,
+:root.dark-mode .queue-item-sla.sla-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+:root[data-theme="dark"] .queue-item-sla.sla-breached,
+:root.dark-mode .queue-item-sla.sla-breached {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+}
+
+/* B-68: "Pegar próxima", a ação principal da fila */
+.queue-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+}
+
+.queue-next-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--brand);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.queue-next-button:hover:not(:disabled) {
+  background: var(--brand-dark);
+}
+
+.queue-next-button:focus-visible {
+  outline: 2px solid var(--brand-light);
+  outline-offset: 2px;
+}
+
+.queue-next-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.queue-toolbar-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* B-68: aviso de conversa nova na fila (só para quem está Online) */
+.arrival-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+}
+
+.arrival-toast-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.arrival-toast-text span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrival-toast-attend {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: var(--brand);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.arrival-toast-close {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .arrival-toast {
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
 }
 
 /* B-60: contador de não lidas por conversa */
