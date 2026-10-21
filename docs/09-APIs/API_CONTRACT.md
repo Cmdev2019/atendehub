@@ -166,7 +166,7 @@ Query: `status?` (ConversationStatus) · `channel?` · `agentId?` · `department
   "_count":     { "messages": 12 },
   // B-66 (ADR-0019, regra 15): ciclo de espera atual
   "waitingSince": "2026-10-19T13:00:00.000Z" | null, // início da espera atual (mantido depois de atendida)
-  "waitSlaDueAt": "2026-10-19T13:05:00.000Z" | null, // prazo do SLA da espera; null = sem SLA ou fora da fila
+  "waitSlaDueAt": "2026-10-19T13:05:00.000Z" | null, // prazo do SLA da espera, contado só no expediente (B-112); null = sem SLA ou fora da fila
   "slaBreachedAt": null                              // estouro do SLA da espera
 }
 // Wrapper: { data, meta: { total, page, limit, totalPages } }
@@ -601,6 +601,13 @@ inglês, 3 letras): `{ mon: [{start:"09:00",end:"18:00"}], ... }`. Dia ausente
 da chave = fechado o dia inteiro. `null`/ausente = sem restrição de horário
 (roda o dia inteiro).
 
+**Relógio dos SLAs (B-112, ADR-0019 regra 17):** com o auto-atendimento ativo, o mesmo horário
+é o relógio do SLA da espera, no fuso da empresa. Fora dele o prazo não corre: a conversa que
+chega com o expediente fechado tem o prazo contado a partir da abertura, e a espera que
+atravessa o fechamento continua na abertura seguinte. Auto-atendimento desligado ou sem horário:
+o relógio anda o dia todo. Expediente sem nenhum dia aberto (`{}`): sem prazo. Mudar o horário não
+recalcula o prazo de quem já está esperando.
+
 ### `PATCH /auto-attendance` — requer `ADMIN`
 Body: todos os campos opcionais — `{ isActive?, greetingMessage?, businessHours?, outOfHoursMessage?, inactivityTimeoutSecs? (≥30), inactivityMessage?, closingMessage? }`.
 Faz upsert (cria o registro na 1ª chamada). Mandar `businessHours: null`
@@ -792,7 +799,7 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
 | `conversation.updated` | `{ companyId, conversationId, changes: {...} }` |
 | `conversation.assigned` | `{ companyId, conversationId, agentId, departmentId, agent, status, waitingSince }` — ao atender (`/attend` ou `/next`) e ao transferir (`/assign`); com o `status` (B-66), a conversa sai (ou volta) da fila de todos na hora |
 | `connection.status` | `{ companyId, connectionId, sessionName, status, phone?, profileName? }` |
-| `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` |
+| `sla.breached` | `{ companyId, conversationId, contact, queue, waitTimeSeconds, maxWaitSecs, breachedAt }` — `waitTimeSeconds` é o tempo de relógio desde o início da espera; o limite `maxWaitSecs` conta só o expediente (B-112) |
 | `user.availability` | `{ companyId, userId, availability: "ONLINE" \| "OFFLINE", changedAt }` — B-65 |
 
 ---

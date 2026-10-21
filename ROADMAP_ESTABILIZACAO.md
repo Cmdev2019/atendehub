@@ -33,7 +33,9 @@
   Offline não pega da fila, transferências com as permissões do responsável, fila só `MANUAL` e
   seed com os 13 setores e o menu. **B-67 concluído** (2026-10-20): "Pegar próxima" na API — a
   conversa que espera há mais tempo nos setores de quem pede, sem dois atendentes receberem a
-  mesma (o botão entra no painel, B-68).
+  mesma (o botão entra no painel, B-68). **B-112 concluído** (2026-10-20): o prazo do SLA da espera
+  só corre no expediente do auto-atendimento, no fuso da empresa — quem chega com a clínica fechada
+  passa a ter prazo, contado da abertura.
 - **B-115 concluído** (2026-10-20): um aviso alto novo no `follow-redirects`, que a API usa por
   meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
   só no lockfile.
@@ -43,8 +45,8 @@
 
 1. **Evolução: filas de atendimento** (ADR-0019), nesta ordem: B-65 (Online/Offline) ✅, B-113
    (setores no cadastro do atendente) ✅, B-66 (Atender atômico e fila compartilhada) ✅, B-67
-   ("Pegar próxima") ✅, **B-112** (SLA no expediente — o próximo), B-114 (SLA do atendimento) e
-   B-68 (painel, com os prints de referência do responsável).
+   ("Pegar próxima") ✅, B-112 (SLA no expediente) ✅, **B-114** (SLA do atendimento — o próximo)
+   e B-68 (painel, com os prints de referência do responsável).
 2. **Atualização de majors** (B-86) — um PR por major; os do Dependabot já estão abertos.
 3. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
 
@@ -71,7 +73,7 @@
 | Fase 1 | Bloqueadores de go-live | B-55 a B-64, B-40, B-43, B-44 | ✅ Concluída (B-43 e B-64 parciais, em espera) |
 | **Fase 2** | **Estabilização:** M-01, M-02, M-03, M-05 a M-11, M-13, M-14, M-16, M-19, M-20, M-21, M-23, M-25, M-26, M-27 e revisão da documentação (M-24) | B-69 em diante (M-16 resolvido no B-64; M-21 registrado como B-66) | ✅ Concluída 2026-10-18 (B-69 a B-90; em espera: e-mail/CAPTCHA do B-85, número real no B-81) |
 | Fase 3 | Higiene contínua: itens baixos L-01 a L-17 | — | ✅ Concluída 2026-10-18 (B-91 a B-106; L-01 no B-89; recomendações antigas registradas como B-107 a B-111) |
-| Evolução | **Filas de atendimento** — fora do plano da auditoria, depois da Fase 2 (decisão de 2026-10-17) | ADR-0019, B-65 a B-68, B-112 a B-114 | 🔄 Em andamento (ADR-0019 aprovado, B-65, B-113 e B-66 concluídos em 2026-10-19, B-67 em 2026-10-20; próximo: B-112) |
+| Evolução | **Filas de atendimento** — fora do plano da auditoria, depois da Fase 2 (decisão de 2026-10-17) | ADR-0019, B-65 a B-68, B-112 a B-114 | 🔄 Em andamento (ADR-0019 aprovado, B-65, B-113 e B-66 concluídos em 2026-10-19, B-67 e B-112 em 2026-10-20; próximo: B-114) |
 
 **Legenda de status:** ⬜ Pendente · 🔄 Em andamento · 🔍 Em validação · ✅ Concluído · ⛔ Bloqueado · 🚫 Cancelado
 
@@ -91,7 +93,6 @@
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
-| B-112 | — | O SLA não conta para a conversa que chega fora do expediente, nem depois que ele abre | ⬜ Pendente |
 | B-114 | — | O atendimento não tem SLA: conversa atendida e esquecida não alerta ninguém | ⬜ Pendente |
 
 **Concluídos em parte** (o resto em espera):
@@ -217,7 +218,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
-| B-112 | — | O SLA não conta para a conversa que chega fora do expediente, nem depois que ele abre | ⬜ Pendente |
+| B-112 | — | Relógio do SLA só no expediente, no fuso da empresa: quem chega com a clínica fechada tem prazo contado da abertura | ✅ 2026-10-20 |
 | B-113 | — | Setores do atendente escolhidos no cadastro e na edição dele (um ou vários); mudar os setores reconecta o socket | ✅ 2026-10-19 |
 | B-114 | — | O atendimento não tem SLA: conversa atendida e esquecida não alerta ninguém | ⬜ Pendente |
 | B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |

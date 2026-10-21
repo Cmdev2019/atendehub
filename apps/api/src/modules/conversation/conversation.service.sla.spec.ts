@@ -131,20 +131,56 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
     });
 
-    it('NÃO agenda SLA fora do expediente do auto-atendimento ativo', async () => {
-      mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
-      mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 120 });
-      mockPrisma.conversation.create.mockResolvedValueOnce({ id: 'conv-noite', companyId });
-      // Expediente vazio em todos os dias = sempre fora
-      mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce({
+    // B-112 (ADR-0019, regra 17): o relógio só anda no expediente. Antes
+    // (B-98), quem chegava fora dele ficava sem SLA, nem depois da abertura.
+    describe('relógio no expediente (B-112)', () => {
+      const weekdays = { tue: [{ start: '08:00', end: '18:00' }], wed: [{ start: '08:00', end: '18:00' }] };
+      const flow = (over: Record<string, unknown> = {}) => ({
         isActive: true,
-        businessHours: {},
+        businessHours: weekdays,
         company: { timezone: 'America/Sao_Paulo' },
+        ...over,
+      });
+      const arrive = async (id: string) => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+        mockPrisma.queue.findFirst.mockResolvedValueOnce({ id: 'queue-1', maxWaitSecs: 120 });
+        mockPrisma.conversation.create.mockResolvedValueOnce({ id, companyId });
+        await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1');
+        return mockPrisma.conversation.create.mock.calls[0][0].data;
+      };
+
+      // terça 20:00 em São Paulo, com o expediente já fechado
+      beforeEach(() => jest.useFakeTimers().setSystemTime(new Date('2026-10-20T23:00:00Z')));
+      afterEach(() => jest.useRealTimers());
+
+      it('chegou fora do expediente: o prazo conta da abertura e o job vai para ele', async () => {
+        mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce(flow());
+
+        const data = await arrive('conv-noite');
+
+        // quarta 08:00 em São Paulo + 2 min
+        expect(data.waitingSince.toISOString()).toBe('2026-10-20T23:00:00.000Z');
+        expect(data.waitSlaDueAt.toISOString()).toBe('2026-10-21T11:02:00.000Z');
+        expect(mockSlaQueue.add.mock.calls[0][1]).toMatchObject({ jobId: 'sla-check:conv-noite', delay: 43_320_000 });
       });
 
-      await service.upsertFromWebhook(companyId, 'contact-1', 'wa-conn-1', undefined, 'dept-1');
+      it('auto-atendimento desligado: o horário não vale e o relógio anda o dia todo', async () => {
+        mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce(flow({ isActive: false }));
 
-      expect(mockSlaQueue.add).not.toHaveBeenCalled();
+        const data = await arrive('conv-sem-fluxo');
+
+        expect(data.waitSlaDueAt.getTime() - data.waitingSince.getTime()).toBe(120_000);
+      });
+
+      it('expediente que nunca abre: fica na fila sem prazo nem job', async () => {
+        mockPrisma.autoAttendanceFlow.findUnique.mockResolvedValueOnce(flow({ businessHours: {} }));
+
+        const data = await arrive('conv-sem-expediente');
+
+        expect(data.waitingSince).toBeInstanceOf(Date);
+        expect(data.waitSlaDueAt).toBeNull();
+        expect(mockSlaQueue.add).not.toHaveBeenCalled();
+      });
     });
   });
 

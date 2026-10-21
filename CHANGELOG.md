@@ -19,6 +19,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-65 (2026-10-19):** o atendente escolhe se está **Online** ou **Offline** no topo da tela; o logout e a desativação o põem Offline, e o supervisor vê o estado de cada um em Configurações → Usuários, atualizado na hora. Nova rota `PATCH /users/me/availability` e evento `user.availability`.
 - **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
+### Alterado
+- **B-112 (2026-10-20):** o prazo do SLA da espera só corre no horário de expediente do auto-atendimento, no fuso da empresa. A conversa que chega com a clínica fechada passa a ter prazo, contado a partir da abertura (antes ficava sem SLA nenhum), e a espera que atravessa o fechamento, o almoço ou o fim de semana continua na abertura seguinte. Sem horário configurado, nada muda: o relógio anda o dia todo.
+
 ### Segurança
 - **B-115 (2026-10-20):** `follow-redirects` 1.16.1 na API (era 1.16.0, com um aviso alto novo sobre cabeçalhos de credencial em redirecionamentos); o pacote vem do `axios`, e a mudança é só no lockfile.
 

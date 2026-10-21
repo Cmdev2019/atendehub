@@ -11,7 +11,7 @@ import { Queue } from 'bull';
 import { Availability, ConversationStatus, Channel, SenderType, Prisma } from '@prisma/client';
 import { ScopeUser, seesWholeCompany } from '../../shared/conversation-scope/conversation-scope.service';
 import { loadCompanyTimeZone, resolveTimeZone, startOfDayInZone } from '../../shared/time/company-time';
-import { BusinessHours, isWithinBusinessHours } from '../../shared/time/business-hours';
+import { addBusinessTime, BusinessHours } from '../../shared/time/business-hours';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { isUniqueConstraintViolation } from '../../shared/prisma/prisma-errors.util';
 import { formatStructuredLog } from '../../shared/logging/structured-log.util';
@@ -78,12 +78,19 @@ const ASSIGNMENT_SELECT = {
 };
 
 // Ciclo de espera (ADR-0019, regras 13 a 15): entrar ou voltar na fila abre
-// um ciclo novo. `waitSlaDueAt` null = sem SLA (fila sem prazo, conversa aberta
-// pela empresa ou fora do expediente).
+// um ciclo novo. `waitSlaDueAt` null = sem SLA (sem fila, conversa aberta pela
+// empresa ou expediente que nunca abre).
 interface WaitCycle {
   waitingSince: Date;
   waitSlaDueAt: Date | null;
   slaBreachedAt: null;
+}
+
+// Relógio dos SLAs (B-112, regra 17): o expediente e o fuso em que ele vale.
+// `hours` null = sem horário configurado, o relógio anda o dia todo.
+interface SlaClock {
+  hours: BusinessHours | null;
+  timeZone: string;
 }
 
 // O que é preciso da conversa para fechar o ciclo ao sair da fila
@@ -117,19 +124,19 @@ export class ConversationService {
     @InjectQueue(QUEUE_NAMES.SLA_CHECK) private readonly slaQueue: Queue<SlaCheckJobData>,
   ) {}
 
-  // B-98 (L-10): expediente do fluxo de auto-atendimento ativo, no fuso da
-  // empresa. Sem fluxo ativo ou sem horário configurado, vale sempre.
-  private async isWithinCompanyBusinessHours(companyId: string): Promise<boolean> {
+  // B-112 (ADR-0019, regra 17): o relógio dos SLAs só anda no expediente do
+  // fluxo de auto-atendimento ativo, no fuso da empresa. Antes (B-98), quem
+  // chegava fora do expediente ficava sem SLA nenhum, nem depois da abertura.
+  // Sem fluxo ativo ou sem horário configurado, o relógio anda o dia todo.
+  private async loadSlaClock(companyId: string): Promise<SlaClock> {
     const flow = await this.prisma.autoAttendanceFlow.findUnique({
       where: { companyId },
       select: { isActive: true, businessHours: true, company: { select: { timezone: true } } },
     });
-    if (!flow?.isActive) return true;
-    return isWithinBusinessHours(
-      flow.businessHours as BusinessHours | null,
-      new Date(),
-      resolveTimeZone(flow.company?.timezone),
-    );
+    return {
+      hours: flow?.isActive ? ((flow.businessHours as BusinessHours | null) ?? null) : null,
+      timeZone: resolveTimeZone(flow?.company?.timezone),
+    };
   }
 
   // ── SLA: agenda/cancela a checagem de violação (Fase B2) ───────────────────
@@ -161,14 +168,16 @@ export class ConversationService {
     );
   }
 
+  // `clock` null = ciclo sem SLA (sem fila, ou conversa aberta pela empresa)
   private waitCycleData(
     queue: { maxWaitSecs: number } | null,
-    withSla: boolean,
+    clock: SlaClock | null,
     now = new Date(),
   ): WaitCycle {
     return {
       waitingSince: now,
-      waitSlaDueAt: queue && withSla ? new Date(now.getTime() + queue.maxWaitSecs * 1000) : null,
+      waitSlaDueAt:
+        queue && clock ? addBusinessTime(now, queue.maxWaitSecs, clock.hours, clock.timeZone) : null,
       slaBreachedAt: null,
     };
   }
@@ -612,8 +621,7 @@ export class ConversationService {
       };
     } else {
       queue = departmentId ? await this.activeQueueOf(companyId, departmentId) : null;
-      const withSla = !!queue && (await this.isWithinCompanyBusinessHours(companyId));
-      cycle = this.waitCycleData(queue, withSla, now);
+      cycle = this.waitCycleData(queue, queue && (await this.loadSlaClock(companyId)), now);
       data = {
         agentId: null,
         departmentId,
@@ -713,11 +721,7 @@ export class ConversationService {
     // Voltar para a fila abre um ciclo novo (regra 14) — e na fila ninguém
     // está com a conversa (regra 1)
     const cycle = entersQueue
-      ? this.waitCycleData(
-          conversation.queue,
-          !!conversation.queue && (await this.isWithinCompanyBusinessHours(companyId)),
-          now,
-        )
+      ? this.waitCycleData(conversation.queue, conversation.queue && (await this.loadSlaClock(companyId)), now)
       : null;
 
     const updated = await this.prisma.conversation
@@ -813,9 +817,7 @@ export class ConversationService {
       select: { status: true, agentId: true },
     });
     const stillWaiting = current?.status === ConversationStatus.WAITING && !current.agentId;
-    const cycle = stillWaiting
-      ? this.waitCycleData(queue, !!queue && (await this.isWithinCompanyBusinessHours(companyId)))
-      : null;
+    const cycle = stillWaiting ? this.waitCycleData(queue, queue && (await this.loadSlaClock(companyId))) : null;
 
     const departmentId = target.departmentId ?? queue?.departmentId ?? null;
     await this.prisma.conversation.update({
@@ -901,12 +903,12 @@ export class ConversationService {
 
     // Produtor de SLA (B2-3): só há prazo quando há fila ativa resolvida —
     // sem isso, `maxWaitSecs` não existe e não há em cima do que alertar.
-    // B-98 (L-10): nem para conversa aberta pela empresa, nem fora do
-    // expediente configurado no auto-atendimento. B-66: o ciclo de espera
-    // (início e prazo) vai gravado na própria conversa.
+    // B-98 (L-10): nem para conversa aberta pela empresa. B-112: fora do
+    // expediente, o prazo começa a contar na abertura. B-66: o ciclo de
+    // espera (início e prazo) vai gravado na própria conversa.
     const cycle = this.waitCycleData(
       queue,
-      !!queue && !startedByCompany && (await this.isWithinCompanyBusinessHours(companyId)),
+      queue && !startedByCompany ? await this.loadSlaClock(companyId) : null,
     );
 
     try {
