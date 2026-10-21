@@ -37,7 +37,9 @@
   só corre no expediente do auto-atendimento, no fuso da empresa — quem chega com a clínica fechada
   passa a ter prazo, contado da abertura. **B-114 concluído** (2026-10-21): SLA do atendimento, do
   Atender ao Encerrar, com prazo por setor na tela de Filas; ao estourar, avisa quem atende e o
-  supervisor. Falta só o painel da fila (B-68).
+  supervisor. Falta só o painel da fila (B-68). **B-116 concluído** (2026-10-21): os 13 setores
+  eram exemplos — o admin cria os setores conforme a necessidade, até 20 ativos por empresa, e o
+  seed não cria nenhum.
 - **B-115 concluído** (2026-10-20): um aviso alto novo no `follow-redirects`, que a API usa por
   meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
   só no lockfile.
@@ -95,6 +97,7 @@
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
+| B-117 | — | No Windows, o localhost do DATABASE_URL faz transações simultâneas do Prisma falharem (P2028) | ⬜ Pendente |
 
 **Concluídos em parte** (o resto em espera):
 
@@ -223,6 +226,8 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-113 | — | Setores do atendente escolhidos no cadastro e na edição dele (um ou vários); mudar os setores reconecta o socket | ✅ 2026-10-19 |
 | B-114 | — | SLA do atendimento do Atender ao Encerrar, prazo por setor e no expediente; ao estourar, avisa quem atende e o supervisor | ✅ 2026-10-21 |
 | B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |
+| B-116 | — | Setores criados pelo admin conforme a necessidade, até 20 ativos por empresa; o seed não cria mais os 13 setores de exemplo | ✅ 2026-10-21 |
+| B-117 | — | No Windows, o localhost do DATABASE_URL faz transações simultâneas do Prisma falharem (P2028) | ⬜ Pendente |
 
 ## 📖 Regras do documento vivo
 

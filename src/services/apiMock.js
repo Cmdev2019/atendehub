@@ -1,6 +1,7 @@
 // Mock API - Para testes sem backend
 // Simula as respostas do API real
 import { initialConversations } from '../data/mockConversations';
+import { MAX_ACTIVE_DEPARTMENTS } from '../utils/limits';
 
 export const mockUsers = {
   'admin@demo.com': {
@@ -931,10 +932,30 @@ export class MockApiClient {
     return stripCount(dept);
   }
 
+  // B-116: o mesmo limite da API — até 20 setores ativos por empresa
+  assertDepartmentSlot() {
+    if (mockDepartments.filter((d) => d.isActive !== false).length >= MAX_ACTIVE_DEPARTMENTS) {
+      throw {
+        status: 400,
+        message: `Limite de ${MAX_ACTIVE_DEPARTMENTS} setores ativos atingido. Desative ou exclua um setor para abrir outro`,
+      };
+    }
+  }
+
   async createDepartment(data) {
     await this.simulateDelay();
-    const dept = { id: nextId('dept'), name: data.name, color: data.color || '#0f766e', users: [] };
+    this.assertDepartmentSlot();
+    const dept = { id: nextId('dept'), name: data.name, color: data.color || '#0f766e', isActive: true, users: [] };
     mockDepartments.push(dept);
+    return stripCount(dept);
+  }
+
+  async updateDepartment(id, data) {
+    await this.simulateDelay();
+    const dept = mockDepartments.find((d) => d.id === id);
+    if (!dept) throw { status: 404, message: 'Grupo não encontrado' };
+    if (data.isActive === true && dept.isActive === false) this.assertDepartmentSlot();
+    Object.assign(dept, data);
     return stripCount(dept);
   }
 

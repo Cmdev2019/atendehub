@@ -6,6 +6,7 @@ import { apiClient } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import { Icon } from '../icons';
 import { AVAILABILITY_LABELS } from '../AvailabilityToggle';
+import { MAX_ACTIVE_DEPARTMENTS } from '../../utils/limits';
 
 // ── Níveis de usuário (Role do backend → rótulo do produto) ─────────────────
 export const ROLE_LABELS = {
@@ -1480,6 +1481,20 @@ function GroupsSection() {
     }
   };
 
+  // B-116: desativar libera a vaga de setor ativo; reativar ocupa uma
+  const toggleActive = async (dept) => {
+    try {
+      await apiClient.updateDepartment(dept.id, { isActive: dept.isActive === false });
+      setError(null);
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  const activeCount = departments.filter((d) => d.isActive !== false).length;
+  const atLimit = activeCount >= MAX_ACTIVE_DEPARTMENTS;
+
   const addMember = async (deptId) => {
     if (!memberToAdd) return;
     try {
@@ -1511,7 +1526,11 @@ function GroupsSection() {
     { className: 'settings-section' },
     h('h3', null, h(Icon, { name: 'users', size: 17 }), ' Grupos (setores)'),
     h('p', { className: 'settings-hint' },
-      'Organize os atendentes em setores — cada grupo pode ter sua fila e conexões.'),
+      'Organize os atendentes em setores — cada grupo pode ter sua fila e conexões. ' +
+      `Crie os setores conforme a necessidade: até ${MAX_ACTIVE_DEPARTMENTS} ativos por empresa ` +
+      '(desativar um setor libera a vaga).'),
+    h('p', { className: `settings-hint${atLimit ? ' warning' : ''}` },
+      `${activeCount} de ${MAX_ACTIVE_DEPARTMENTS} setores ativos`),
     error && h('div', { className: 'settings-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${error}`),
 
     h(
@@ -1527,8 +1546,10 @@ function GroupsSection() {
         title: 'Cor do grupo',
         onChange: (e) => setForm((f) => ({ ...f, color: e.target.value })),
       }),
-      h('button', { className: 'settings-btn primary', type: 'submit', disabled: busy || !form.name.trim() },
-        h(Icon, { name: 'plus', size: 14 }), ' Criar grupo'),
+      h('button', {
+        className: 'settings-btn primary', type: 'submit', disabled: busy || !form.name.trim() || atLimit,
+        title: atLimit ? `Limite de ${MAX_ACTIVE_DEPARTMENTS} setores ativos — desative um para criar outro` : undefined,
+      }, h(Icon, { name: 'plus', size: 14 }), ' Criar grupo'),
     ),
 
     h(
@@ -1537,7 +1558,7 @@ function GroupsSection() {
       departments.map((dept) =>
         h(
           'div',
-          { key: dept.id, className: 'settings-item column' },
+          { key: dept.id, className: `settings-item column${dept.isActive === false ? ' inactive' : ''}` },
           h(
             'div',
             { className: 'settings-item-row' },
@@ -1549,6 +1570,7 @@ function GroupsSection() {
               h('div', { className: 'settings-hint' },
                 `${dept._count?.users ?? dept.users?.length ?? 0} membro(s)`),
             ),
+            dept.isActive === false && h('span', { className: 'settings-badge off' }, 'Inativo'),
             h(
               'div',
               { className: 'settings-item-actions' },
@@ -1556,6 +1578,14 @@ function GroupsSection() {
                 className: 'settings-btn', type: 'button', onClick: () => openDetail(dept.id),
               }, h(Icon, { name: expanded?.id === dept.id ? 'chevron-up' : 'chevron-down', size: 14 }),
                 expanded?.id === dept.id ? ' Fechar' : ' Membros'),
+              h('button', {
+                className: 'settings-btn', type: 'button', onClick: () => toggleActive(dept),
+                disabled: dept.isActive === false && atLimit,
+                title: dept.isActive === false ? 'Reativar grupo' : 'Desativar grupo',
+              }, h(Icon, {
+                name: dept.isActive === false ? 'play' : 'pause', size: 14,
+                label: dept.isActive === false ? 'Reativar grupo' : 'Desativar grupo',
+              })),
               h('button', {
                 className: 'settings-btn danger', type: 'button', onClick: () => remove(dept),
                 title: 'Excluir grupo',

@@ -59,8 +59,9 @@ npm run build        # vite build
 npm run start:dev    # watch | npm run start = dist
 npm run build        # nest build
 npm run db:migrate   # prisma migrate dev
-npm run db:seed      # seed (só cria o que falta: 13 setores, filas, menu; senha do admin
-                     # ALEATÓRIA só ao criá-lo → .seed-credentials-*.txt)
+npm run db:seed      # seed (só cria o que falta: empresa demo, admin, auto-atendimento
+                     # desligado e tags — sem setores: o admin cria até 20 ativos, B-116;
+                     # senha do admin ALEATÓRIA só ao criá-lo → .seed-credentials-*.txt)
 npm run db:studio    # Prisma Studio :5555
 
 # Infra (na raiz)

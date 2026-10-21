@@ -4,10 +4,24 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+
+// B-116 (decisão do responsável em 2026-10-21): o admin cria os setores
+// conforme a necessidade — até 20 ativos por empresa, por enquanto. Conta como
+// os limites de usuários e de conexões: só os ativos (desativar libera a vaga).
+export const MAX_ACTIVE_DEPARTMENTS = 20;
+
+const DEPARTMENT_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  color: true,
+  isActive: true,
+};
 
 @Injectable()
 export class DepartmentService {
@@ -75,30 +89,25 @@ export class DepartmentService {
 
   // ── Criar departamento ────────────────────────────────────────────────────
   async create(companyId: string, dto: CreateDepartmentDto) {
-    const existing = await this.prisma.department.findFirst({
-      where: { companyId, name: dto.name },
-    });
+    return this.withActiveDepartmentSlot(companyId, async (tx) => {
+      const existing = await tx.department.findFirst({
+        where: { companyId, name: dto.name },
+      });
 
-    if (existing) {
-      throw new ConflictException('Já existe um departamento com este nome');
-    }
+      if (existing) {
+        throw new ConflictException('Já existe um departamento com este nome');
+      }
 
-    return this.prisma.department.create({
-      data: { companyId, ...dto },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        color: true,
-        isActive: true,
-        createdAt: true,
-      },
+      return tx.department.create({
+        data: { companyId, ...dto },
+        select: { ...DEPARTMENT_SELECT, createdAt: true },
+      });
     });
   }
 
   // ── Atualizar departamento ────────────────────────────────────────────────
   async update(companyId: string, id: string, dto: UpdateDepartmentDto) {
-    await this.findOne(companyId, id);
+    const current = await this.findOne(companyId, id);
 
     if (dto.name) {
       const conflict = await this.prisma.department.findFirst({
@@ -107,17 +116,38 @@ export class DepartmentService {
       if (conflict) throw new ConflictException('Já existe um departamento com este nome');
     }
 
-    return this.prisma.department.update({
-      where: { id },
-      data: dto,
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        color: true,
-        isActive: true,
-        updatedAt: true,
-      },
+    const save = (client: Pick<Prisma.TransactionClient, 'department'>) =>
+      client.department.update({
+        where: { id },
+        data: dto,
+        select: { ...DEPARTMENT_SELECT, updatedAt: true },
+      });
+
+    // B-116: reativar um setor ocupa uma vaga, como criar
+    if (dto.isActive === true && !current.isActive) {
+      return this.withActiveDepartmentSlot(companyId, save);
+    }
+    return save(this.prisma);
+  }
+
+  // B-116: só passa se a empresa tiver vaga de setor ativo. A trava na linha
+  // da empresa enfileira as criações e reativações simultâneas — sem ela, duas
+  // ao mesmo tempo contariam 19 e as duas passariam (ADR-0004: a garantia fica
+  // no banco). Dentro da transação o RLS não vale (B-83): os filtros por
+  // companyId são explícitos.
+  private withActiveDepartmentSlot<T>(
+    companyId: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "companies" WHERE "id" = ${companyId} FOR UPDATE`;
+      const active = await tx.department.count({ where: { companyId, isActive: true } });
+      if (active >= MAX_ACTIVE_DEPARTMENTS) {
+        throw new BadRequestException(
+          `Limite de ${MAX_ACTIVE_DEPARTMENTS} setores ativos atingido. Desative ou exclua um setor para abrir outro`,
+        );
+      }
+      return work(tx);
     });
   }
 

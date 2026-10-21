@@ -2662,6 +2662,12 @@ button {
   color: var(--text-muted);
 }
 
+/* B-116: contador de setores ativos quando o limite chega */
+.settings-hint.warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .settings-error {
   padding: 10px 14px;
   border-radius: 8px;
