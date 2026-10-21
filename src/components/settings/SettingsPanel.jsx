@@ -7,14 +7,9 @@ import { wsClient } from '../../services/websocket';
 import { Icon } from '../icons';
 import { AVAILABILITY_LABELS } from '../AvailabilityToggle';
 import { MAX_ACTIVE_DEPARTMENTS } from '../../utils/limits';
+import { ROLE_LABELS } from '../../utils/roles';
 
 // ── Níveis de usuário (Role do backend → rótulo do produto) ─────────────────
-export const ROLE_LABELS = {
-  AGENT: 'Usuário comum (atendente)',
-  SUPERVISOR: 'Líder de setor',
-  ADMIN: 'Administrador',
-  SUPER_ADMIN: 'Super administrador',
-};
 
 // Níveis atribuíveis pela tela (SUPER_ADMIN é interno do sistema)
 const ASSIGNABLE_ROLES = ['AGENT', 'SUPERVISOR', 'ADMIN'];

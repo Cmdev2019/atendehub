@@ -13,12 +13,14 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Role } from '@prisma/client';
 import { ConversationService } from './conversation.service';
 import { TagService } from '../tag/tag.service';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { ConversationScopeGuard } from '../../shared/conversation-scope/conversation-scope.guard';
 import { ConversationScopeService } from '../../shared/conversation-scope/conversation-scope.service';
@@ -53,6 +55,16 @@ export class ConversationController {
     return this.statsFlight.run(`${user.companyId}:${user.id}`, async () =>
       this.conversationService.getStats(user.companyId, user.id, await this.scope.conversationWhere(user)),
     );
+  }
+
+  // GET /api/v1/conversations/overview
+  // B-68 (parte 2): visão do supervisor — setores × atendentes. Supervisor e
+  // admin veem a empresa toda (B-40), então os números são da empresa.
+  // Antes de GET /:id pelo mesmo motivo do /stats.
+  @Get('overview')
+  @Roles(Role.SUPERVISOR)
+  getOverview(@CurrentUser() user: AuthUserDto) {
+    return this.conversationService.getOverview(user.companyId);
   }
 
   // GET /api/v1/conversations/:id

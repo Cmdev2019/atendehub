@@ -278,6 +278,7 @@ class ApiClient {
     if (resource === 'conversations') {
       if (id === 'stats') return mockApiClient.getConversationStats();
       if (id === 'next' && method === 'POST') return mockApiClient.attendNextConversation(); // B-68
+      if (id === 'overview' && method === 'GET') return mockApiClient.getConversationsOverview(); // B-68
       if (sub === 'messages' && method === 'POST') {
         // subId === 'media' → envio de mídia; no mock vira texto ilustrativo
         if (subId === 'media') {
@@ -573,6 +574,11 @@ class ApiClient {
   // setores de quem chama. Devolve null quando não há nenhuma (204).
   async attendNextConversation() {
     return this.request('/conversations/next', { method: 'POST' });
+  }
+
+  // Visão do supervisor (B-68): setores × atendentes, só SUPERVISOR+
+  async getConversationsOverview() {
+    return this.request('/conversations/overview', { method: 'GET' });
   }
 
   // Transferir (B-66): para uma pessoa ou, sem agentId, de volta à fila. Antes

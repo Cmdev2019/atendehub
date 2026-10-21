@@ -54,7 +54,7 @@ Da 0019 em diante, as ADRs nascem junto com os itens do roadmap que as implement
 | [0016](ADR-0016-nginx-como-borda-sem-hardening-proprio.md) | Nginx como borda única; hardening pendente | Implementada (topologia) / **Proposta** (hardening) | Nginx, WebSocket | AGR §6/§9 | Obrigatória ao implementar **B-43** |
 | [0017](ADR-0017-websocket-autenticado-por-handshake-jwt.md) | WebSocket por handshake JWT, com paridade de revogação | ✅ Implementada (v1.1, B-74) | WebSocket, Redis | AGR §9.1 | — |
 | [0018](ADR-0018-estrategia-de-testes-unitario-mockado-e2e-dirigido.md) | Testes: unitário mockado, e2e dirigido, gate pendente | Implementada (gate de cobertura e e2e na CI — B-63, 2026-10-17) | Todos (via CI) | ABR §10, AGR §10.1 | Subir o piso quando a cobertura subir |
-| [0019](ADR-0019-filas-de-atendimento-fila-compartilhada-e-sla-do-setor.md) | Filas de atendimento: fila compartilhada por setor, atendente Online/Offline, SLAs de espera e de atendimento | Aprovada (2026-10-19, PR #104) | Conversas, SLA, Usuários, Filas, WebSocket, front | Roadmap B-65 a B-68, B-112 a B-114 | A cada item da trilha; ADR nova se voltar a distribuição automática |
+| [0019](ADR-0019-filas-de-atendimento-fila-compartilhada-e-sla-do-setor.md) | Filas de atendimento: fila compartilhada por setor, atendente Online/Offline, SLAs de espera e de atendimento | Implementada (2026-10-21; aprovada no PR #104) | Conversas, SLA, Usuários, Filas, WebSocket, front | Roadmap B-65 a B-68, B-112 a B-114 | A cada item da trilha; ADR nova se voltar a distribuição automática |
 
 ## ADRs previstas (v1.1 em diante — ainda pendentes)
 

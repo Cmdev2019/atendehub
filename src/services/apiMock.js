@@ -430,6 +430,66 @@ export class MockApiClient {
     return { id: conv.id, status: conv.status, agent: conv.agent, department: conv.department ?? null };
   }
 
+  // Visão do supervisor (B-68): como o GET /conversations/overview, a partir
+  // das conversas, setores e usuários do modo demonstração
+  async getConversationsOverview() {
+    await this.simulateDelay();
+    const now = Date.now();
+    const active = mockConversationsList.filter((c) => c.status === 'WAITING' || c.status === 'OPEN');
+    const deptOf = (c) => c.department?.id ?? c.departmentId ?? null;
+    const waitBreached = (c) => !!c.slaBreachedAt || (c.waitSlaDueAt && Date.parse(c.waitSlaDueAt) < now);
+    const serviceBreached = (c) => !!c.serviceSlaBreachedAt || (c.serviceSlaDueAt && Date.parse(c.serviceSlaDueAt) < now);
+    const lastFromClient = (c) => c.messages?.at(-1)?.senderType === 'CLIENT' || c.messages?.at(-1)?.type === 'customer';
+    const users = mockUsersList.filter((u) => u.isActive !== false);
+    const online = (list) => list.filter((u) => u.availability === 'ONLINE').length;
+
+    const sector = (list, members) => {
+      const waiting = list.filter((c) => c.status === 'WAITING');
+      const inService = list.filter((c) => c.status === 'OPEN');
+      const oldest = waiting.map((c) => c.waitingSince || c.createdAt).filter(Boolean).sort()[0] ?? null;
+      return {
+        waiting: waiting.length,
+        oldestWaitingSince: oldest,
+        waitSlaBreached: waiting.filter(waitBreached).length,
+        inService: inService.length,
+        serviceSlaBreached: inService.filter(serviceBreached).length,
+        agentsOnline: online(members),
+        agentsTotal: members.length,
+      };
+    };
+
+    const departments = mockDepartments.map((d) => ({
+      id: d.id,
+      name: d.name,
+      color: d.color,
+      isActive: d.isActive !== false,
+      ...sector(active.filter((c) => deptOf(c) === d.id), d.users ?? []),
+    }));
+    const noSector = sector(active.filter((c) => !deptOf(c)), []);
+    if (noSector.waiting + noSector.inService > 0) {
+      departments.push({ id: null, name: 'Sem setor', color: null, isActive: true, ...noSector });
+    }
+
+    const agents = users.map((u) => {
+      const mine = active.filter((c) => c.status === 'OPEN' && c.agent?.id === u.id);
+      return {
+        id: u.id,
+        name: u.name,
+        avatarUrl: u.avatarUrl ?? null,
+        role: u.role,
+        availability: u.availability ?? 'OFFLINE',
+        availabilityChangedAt: null,
+        departmentIds: mockDepartments.filter((d) => (d.users ?? []).some((m) => m.id === u.id)).map((d) => d.id),
+        inService: mine.length,
+        serviceSlaBreached: mine.filter(serviceBreached).length,
+        awaitingReply: mine.filter(lastFromClient).length,
+      };
+    });
+
+    const totals = sector(active, users);
+    return { generatedAt: new Date(now).toISOString(), totals, departments, agents };
+  }
+
   // Pegar próxima (B-68): como o POST /conversations/next — a que espera há
   // mais tempo; null (o 204 da API) quando não há nenhuma
   async attendNextConversation() {
