@@ -22,7 +22,7 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
 
 ## Arquitetura
 
-- **Front** (raiz): Vite 6 + React 19 **JavaScript** (decisão F5-3: permanece
+- **Front** (raiz): Vite 8 + React 19 **JavaScript** (decisão F5-3: permanece
   Vite+React), sem JSX transform manual — componentes usam
   `createElement as h`. Socket.IO client. Dev na porta **3000**.
   - `src/services/api.js` — ApiClient (REST, fallback mock só em dev, classe
