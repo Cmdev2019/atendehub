@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/modules/auth/auth.service';
+import { ConversationService } from '../src/modules/conversation/conversation.service';
 import { applyHttpPipeline } from '../src/shared/http/http-pipeline';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
 import { QUEUE_NAMES } from '../src/shared/queues/queue-names';
@@ -53,6 +54,8 @@ describe('SLA do atendimento (E2E)', () => {
     });
 
   const conversation = (id: string) => prisma.conversation.findUniqueOrThrow({ where: { id } });
+  // B-107: o job do SLA vai para o Redis depois da resposta
+  const slaSynced = () => app.get(ConversationService).whenSlaSynced();
 
   // Espera o Bull disparar e o processor gravar (sem sleep fixo)
   const eventually = async <T>(read: () => Promise<T | null | undefined | false>, timeoutMs = 15000) => {
@@ -131,6 +134,7 @@ describe('SLA do atendimento (E2E)', () => {
   });
 
   afterAll(async () => {
+    await slaSynced();
     for (const id of conversations) {
       for (const jobId of [`service-sla:${id}`, `sla-check:${id}`]) {
         await (await slaQueue.getJob(jobId))?.remove().catch(() => undefined);
@@ -178,6 +182,7 @@ describe('SLA do atendimento (E2E)', () => {
     // O prazo é gravado depois da troca, conferindo o início devolvido pelo SQL
     const picked = await conversation(id);
     expect(picked.serviceSlaDueAt!.getTime() - picked.attendedAt!.getTime()).toBe(900_000);
+    await slaSynced();
     const job = await slaQueue.getJob(`service-sla:${id}`);
     expect(Math.abs(job!.timestamp + Number(job!.opts.delay) - picked.serviceSlaDueAt!.getTime())).toBeLessThan(2000);
   });
@@ -195,6 +200,7 @@ describe('SLA do atendimento (E2E)', () => {
     expect(after.attendedAt).toEqual(before.attendedAt);
     expect(after.serviceSlaDueAt).toEqual(before.serviceSlaDueAt);
     // O job do ciclo segue agendado para o mesmo prazo
+    await slaSynced();
     const job = await slaQueue.getJob(`service-sla:${id}`);
     expect(Math.abs(job!.timestamp + Number(job!.opts.delay) - after.serviceSlaDueAt!.getTime())).toBeLessThan(2000);
   });
@@ -214,6 +220,7 @@ describe('SLA do atendimento (E2E)', () => {
     expect(after).toMatchObject({ agentId: users.erica.id, departmentId: dept.endoscopia, queueId: queueOf.endoscopia });
     expect(after.attendedAt!.getTime()).toBeGreaterThanOrEqual(before.attendedAt!.getTime());
     expect(after.serviceSlaDueAt!.getTime() - after.attendedAt!.getTime()).toBe(1200_000);
+    await slaSynced();
     const job = await slaQueue.getJob(`service-sla:${id}`);
     expect(Math.abs(job!.timestamp + Number(job!.opts.delay) - after.serviceSlaDueAt!.getTime())).toBeLessThan(2000);
   });
@@ -225,6 +232,7 @@ describe('SLA do atendimento (E2E)', () => {
     const res = await call('PATCH', `/conversations/${id}/status`, 'ana', { status: 'CLOSED', resolution: 'RESOLVED' });
 
     expect(res.status).toBe(200);
+    await slaSynced();
     // Passa do prazo de 2 s com folga: nada pode estourar
     await new Promise((resolve) => setTimeout(resolve, 3500));
     expect((await conversation(id)).serviceSlaBreachedAt).toBeNull();

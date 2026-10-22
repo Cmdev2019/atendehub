@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/modules/auth/auth.service';
+import { ConversationService } from '../src/modules/conversation/conversation.service';
 import { applyHttpPipeline } from '../src/shared/http/http-pipeline';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
 import { QUEUE_NAMES } from '../src/shared/queues/queue-names';
@@ -81,6 +82,8 @@ describe('SLA da espera no expediente (E2E)', () => {
     expect(res.data.status).toBe('WAITING');
 
     const saved = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+    // B-107: o job do SLA vai para o Redis depois da resposta
+    await app.get(ConversationService).whenSlaSynced();
     const job = await slaQueue.getJob(`sla-check:${conv.id}`);
     return { saved, job };
   };
@@ -117,6 +120,7 @@ describe('SLA da espera no expediente (E2E)', () => {
   });
 
   afterAll(async () => {
+    await app.get(ConversationService).whenSlaSynced();
     for (const id of conversations) {
       await (await slaQueue.getJob(`sla-check:${id}`))?.remove().catch(() => undefined);
     }

@@ -1,11 +1,11 @@
 # ADR-0014 — Clientes Redis especializados por serviço, sem provider compartilhado (relacionada a B-46)
 
-- **Status:** Implementada — consolidação parcial feita na v1.1 (B-80)
+- **Status:** Implementada — consolidação parcial feita na v1.1 (B-80); prazos por comando na v1.2 (B-107)
 - **Data de criação:** 2026-08-05
-- **Última revisão:** 2026-10-18
+- **Última revisão:** 2026-10-22
 - **Autor:** Engenharia (formalização retroativa do racional já registrado na ACR de 2026-08-01)
 - **Revisores:** —
-- **Versão:** 1.1
+- **Versão:** 1.2
 - **Decisores:** Architecture Review Board
 - **Contexto técnico:** `token-blacklist.service.ts`, `auto-attendance-session.service.ts`,
   `health.service.ts`, `redis-io.adapter.ts`, `BullModule.forRootAsync` (`app.module.ts:46-56`)
@@ -20,6 +20,22 @@
 > Bull, `RedisIoAdapter` (pub/sub), `RedisThrottlerStorage` (sem fila offline) e `HealthService`.
 > A contagem de sockets passou a ser a do cluster (`fetchSockets` pelo adapter). As seções abaixo
 > registram o estado de 2026-08-05.
+
+> **v1.2 (2026-10-22, B-107, decisões D1, D2, D4 e D8 do responsável):** um Redis que aceita a
+> conexão e não responde segurava para sempre os comandos sem prazo — e a política de falha de cada
+> consumidor nunca chegava a valer. Os clientes por onde passa uma requisição ganharam prazo por
+> comando; os demais ficam como estavam:
+>
+> | Cliente | Prazo | Com o Redis travado ou fora do ar |
+> |---|---|---|
+> | `REDIS_CLIENT` (compartilhado) | 500 ms por comando | blacklist em fail-open (um token revogado vale até expirar); auto-atendimento "sem sessão" (a mensagem vai para a fila normal); sem foto; sem teto diário de cadastro |
+> | `HealthService` (readiness) | 2 s na checagem (conexão + ping) e por comando | `503` com `redis: "down"`; a checagem do banco não mudou (D4) |
+> | Produtor do SLA dos pedidos do painel (`SLA_REQUEST_QUEUE`: instância própria da fila `sla-check`, com o ioredis do Bull) | 2 s por comando, só na conexão de comandos | o pedido responde mesmo assim; a falha vai para o log e a reconciliação recria o job pelo banco |
+> | `RedisThrottlerStorage` | 500 ms (já tinha) | fail-open |
+> | Bull do `BullModule` (processors, robô, webhook, DLQ) e `RedisIoAdapter` (pub/sub) | sem mudança (D8) | como antes |
+>
+> Com o Redis saudável, os comandos respondem em poucos ms e nada muda. Risco aceito (D2): durante
+> a falha, o token cujo logout ficou só na blacklist continua aceito até expirar (15 min por padrão).
 
 ## Contexto
 
@@ -150,6 +166,7 @@ Redis for proposto (o custo de adiar cresce a cada novo consumidor não-consolid
 | Data | Mudança | Versão |
 |---|---|---|
 | 2026-08-05 | Criação — formaliza retroativamente o racional já registrado na ACR de 2026-08-01 | 1.0 |
+| 2026-10-22 | **B-107:** prazo por comando no cliente compartilhado (500 ms), no readiness (2 s) e no produtor do SLA dos pedidos do painel (2 s); Bull dos processors, do robô e do webhook e o pub/sub sem mudança | 1.2 |
 
 ## Referências
 

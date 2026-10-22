@@ -116,6 +116,17 @@ export class SlaCheckProcessor {
         return;
       }
 
+      // B-107: ciclo atual sem prazo e job de outro ciclo (o início é outro) —
+      // sobra de um cancelamento que falhou com o Redis fora. Não alerta.
+      if (
+        !conversation.waitSlaDueAt &&
+        conversation.waitingSince &&
+        new Date(queuedAt).getTime() !== conversation.waitingSince.getTime()
+      ) {
+        this.logger.debug(`Conversa ${conversationId}: ciclo atual sem prazo; job de outro ciclo ignorado`);
+        return;
+      }
+
       // ── SLA VIOLADO: marca timestamp e registra ───────────────────────────
       const now = new Date();
       const waitStart = conversation.waitingSince ?? new Date(queuedAt);

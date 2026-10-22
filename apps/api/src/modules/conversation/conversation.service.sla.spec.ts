@@ -7,6 +7,7 @@ import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { SLA_REQUEST_QUEUE } from './sla-request-queue';
 
 // B4-6: cobre o PRODUTOR de jobs de SLA (B2-3/B2-4) — o outro lado da fila
 // que o E2E da B2-5 já testa (agendar → delay real → processor). Aqui a fila
@@ -34,6 +35,8 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
     department: { findFirst: jest.fn() },
     // B-67: o "Pegar próxima" é SQL cru
     $queryRaw: jest.fn(),
+    // B-107: a troca e a auditoria vão numa transação (aqui, o próprio mock)
+    $transaction: jest.fn(),
   };
   const mockEvents = {
     emitConversationAssigned: jest.fn(),
@@ -58,6 +61,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
     fakeExistingJob.remove.mockClear().mockResolvedValue(undefined);
     mockSlaQueue.getJob.mockResolvedValue(null); // por padrão, nenhum job pendente
     mockPrisma.conversation.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation((run: (tx: unknown) => unknown) => run(mockPrisma));
     mockPrisma.conversation.findFirstOrThrow.mockResolvedValue({
       id: 'conv',
       status: ConversationStatus.OPEN,
@@ -74,6 +78,9 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: getQueueToken(QUEUE_NAMES.SLA_CHECK), useValue: mockSlaQueue },
+        // B-107: os pedidos do painel usam o produtor com prazo — o mesmo mock
+        // aqui; a separação dos dois fica no sla-sync.spec
+        { provide: SLA_REQUEST_QUEUE, useValue: mockSlaQueue },
       ],
     }).compile();
 
@@ -205,6 +212,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
 
       await service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, supervisor);
+      await service.whenSlaSynced();
 
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(fakeExistingJob.remove).toHaveBeenCalled();
@@ -219,6 +227,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       await expect(
         service.assign(companyId, 'conv-1', { agentId: 'agent-1' }, supervisor),
       ).resolves.toBeDefined();
+      await service.whenSlaSynced();
       expect(fakeExistingJob.remove).not.toHaveBeenCalled();
     });
   });
@@ -243,6 +252,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob); // job antigo (fila do dept-old)
 
       await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, supervisor);
+      await service.whenSlaSynced();
 
       expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -264,6 +274,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
       mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob);
 
       await service.assign(companyId, 'conv-2', { departmentId: 'dept-new' }, supervisor);
+      await service.whenSlaSynced();
 
       expect(fakeExistingJob.remove).toHaveBeenCalled();
       expect(mockSlaQueue.add).not.toHaveBeenCalled();
@@ -398,6 +409,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingIn(queueOf(600)));
 
         await service.attend(companyId, 'conv-1', 'ana');
+        await service.whenSlaSynced();
 
         const data = dataOfUpdate();
         expect(data.serviceSlaDueAt.getTime() - data.attendedAt.getTime()).toBe(600_000);
@@ -417,6 +429,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.conversation.findFirst.mockResolvedValueOnce(waitingIn(queueOf(null)));
 
         await service.attend(companyId, 'conv-1', 'ana');
+        await service.whenSlaSynced();
 
         expect(dataOfUpdate()).toMatchObject({ attendedAt: expect.any(Date), serviceSlaDueAt: null });
         expect(serviceAdds()).toHaveLength(0);
@@ -437,13 +450,14 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
           });
 
           await service.attend(companyId, 'conv-1', 'ana');
+        await service.whenSlaSynced();
 
           // quarta 08:00 em São Paulo + 10 min
           expect(dataOfUpdate().serviceSlaDueAt.toISOString()).toBe('2026-10-21T11:10:00.000Z');
         });
       });
 
-      it('Pegar próxima: o prazo vem do setor da conversa escolhida, gravado depois da troca', async () => {
+      it('Pegar próxima: o prazo vem do setor da conversa escolhida, gravado na transação da troca', async () => {
         const attendedAt = new Date();
         mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE', departments: [{ id: 'dept-1' }] });
         mockPrisma.$queryRaw.mockResolvedValueOnce([
@@ -451,24 +465,48 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         ]);
 
         await service.attendNext(companyId, 'ana');
+        await service.whenSlaSynced();
 
+        // A troca trava a linha até o fim da transação: o prazo não confere mais o início
         expect(mockPrisma.conversation.updateMany).toHaveBeenCalledWith({
-          where: { id: 'conv-1', companyId, agentId: 'ana', attendedAt },
+          where: { id: 'conv-1', companyId },
           data: { serviceSlaDueAt: new Date(attendedAt.getTime() + 900_000) },
         });
         expect(serviceAdds()[0][0]).toMatchObject({ kind: 'service', maxServiceSecs: 900 });
       });
 
-      it('Pegar próxima: o ciclo mudou no meio (transferida de setor) — não agenda o prazo velho', async () => {
+      // B-107: antes, o prazo ia num 2º update depois do Redis — com o Redis
+      // fora, a conversa ficava atendida sem prazo nenhum
+      it('Pegar próxima: escolher, gravar o prazo e auditar acontecem dentro da mesma transação', async () => {
+        const inTransaction: string[] = [];
+        let open = false;
+        mockPrisma.$transaction.mockImplementationOnce(async (run: (tx: unknown) => unknown) => {
+          open = true;
+          try {
+            return await run(mockPrisma);
+          } finally {
+            open = false;
+          }
+        });
+        mockPrisma.$queryRaw.mockImplementationOnce(async () => {
+          if (open) inTransaction.push('troca');
+          return [
+            { id: 'conv-1', waitingSince: new Date(), waitSlaDueAt: null, slaBreachedAt: null, attendedAt: new Date(), maxWaitSecs: 300, maxServiceSecs: 900 },
+          ];
+        });
+        mockPrisma.conversation.updateMany.mockImplementationOnce(async () => {
+          if (open) inTransaction.push('prazo');
+          return { count: 1 };
+        });
+        mockAuditLog.record.mockImplementationOnce(async () => {
+          if (open) inTransaction.push('auditoria');
+        });
         mockPrisma.user.findFirst.mockResolvedValueOnce({ availability: 'ONLINE', departments: [{ id: 'dept-1' }] });
-        mockPrisma.$queryRaw.mockResolvedValueOnce([
-          { id: 'conv-1', waitingSince: new Date(), waitSlaDueAt: null, slaBreachedAt: null, attendedAt: new Date(), maxWaitSecs: 300, maxServiceSecs: 900 },
-        ]);
-        mockPrisma.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
 
         await service.attendNext(companyId, 'ana');
 
-        expect(serviceAdds()).toHaveLength(0);
+        expect(inTransaction).toEqual(['troca', 'prazo', 'auditoria']);
+        expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       });
 
       it('supervisor tira da fila para um atendente: abre o ciclo com o prazo do setor', async () => {
@@ -481,6 +519,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'ana', name: 'Ana', availability: 'ONLINE' });
 
         await service.assign(companyId, 'conv-1', { agentId: 'ana' }, supervisor);
+        await service.whenSlaSynced();
 
         const data = dataOfUpdate();
         expect(data.serviceSlaDueAt.getTime() - data.attendedAt.getTime()).toBe(600_000);
@@ -494,6 +533,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'bruno', name: 'Bruno', availability: 'ONLINE' });
 
         await service.assign(companyId, 'conv-1', { agentId: 'bruno' }, supervisor);
+        await service.whenSlaSynced();
 
         const data = dataOfUpdate();
         expect(data).toMatchObject({ agentId: 'bruno', status: ConversationStatus.OPEN });
@@ -511,6 +551,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockSlaQueue.getJob.mockResolvedValueOnce(fakeExistingJob); // job do ciclo antigo
 
         await service.assign(companyId, 'conv-1', { agentId: 'carla', departmentId: 'dept-2' }, supervisor);
+        await service.whenSlaSynced();
 
         const data = dataOfUpdate();
         expect(data).toMatchObject({ departmentId: 'dept-2', queueId: 'queue-2', serviceSlaBreachedAt: null });
@@ -529,6 +570,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.CLOSED, companyId });
 
         await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.CLOSED } as any, supervisor);
+        await service.whenSlaSynced();
 
         expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
         expect(mockAuditLog.record).toHaveBeenCalledWith(
@@ -538,6 +580,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
             entityId: 'conv-1',
             after: expect.objectContaining({ agentId: 'ana', maxServiceSecs: 600, breached: true }),
           }),
+          mockPrisma, // B-107: na transação do status
         );
         expect(mockAuditLog.record.mock.calls[0][0].after.serviceSeconds).toBeGreaterThanOrEqual(120);
       });
@@ -549,6 +592,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.CLOSED, companyId });
 
         await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.CLOSED } as any, supervisor);
+        await service.whenSlaSynced();
 
         expect(mockAuditLog.record).not.toHaveBeenCalled();
       });
@@ -558,6 +602,7 @@ describe('ConversationService — produtor de SLA (ciclo de espera)', () => {
         mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: ConversationStatus.WAITING, companyId });
 
         await service.updateStatus(companyId, 'conv-1', { status: ConversationStatus.WAITING } as any, supervisor);
+        await service.whenSlaSynced();
 
         expect(mockPrisma.conversation.update.mock.calls[0][0].data).toMatchObject({
           attendedAt: null,

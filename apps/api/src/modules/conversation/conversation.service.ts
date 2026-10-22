@@ -1,13 +1,15 @@
 import {
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { Job } from 'bull';
 import { Availability, ConversationStatus, Channel, SenderType, Prisma } from '../../generated/prisma/client';
 import { ScopeUser, seesWholeCompany } from '../../shared/conversation-scope/conversation-scope.service';
 import { loadCompanyTimeZone, resolveTimeZone, startOfDayInZone } from '../../shared/time/company-time';
@@ -19,10 +21,11 @@ import { ListConversationsDto } from './dto/list-conversations.dto';
 import { AssignConversationDto } from './dto/assign-conversation.dto';
 import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
 import { EventsService } from '../events/events.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, RecordAuditLogParams } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
 import { ServiceSlaJobData, SlaCheckJobData } from '../sla/sla-check.processor';
+import { SLA_REQUEST_QUEUE, SlaQueue } from './sla-request-queue';
 
 // B-73 (M-07): o índice único parcial do B-49 permite uma só conversa ativa
 // (WAITING/OPEN) por contato. Reativar uma RESOLVED quando o contato já abriu
@@ -143,25 +146,93 @@ interface PickedConversation {
   maxServiceSecs: number | null;
 }
 
+// B-107: resultado da reconciliação de uma conversa (SlaReconciliationService)
+// - ok: o job do ciclo aberto está pendente no Redis;
+// - rescheduled: faltava, era de outro ciclo ou já tinha terminado sem marcar
+//   o estouro, e foi refeito a partir do banco;
+// - skipped: fora de um ciclo com prazo por vencer — nada a agendar.
+export type SlaReconcileOutcome = 'ok' | 'rescheduled' | 'skipped';
+
+// Quanto o desligamento espera as sincronizações do SLA pendentes; o que não
+// terminar, a reconciliação refaz quando o processo subir de novo
+const SLA_SYNC_SHUTDOWN_WAIT_MS = 5000;
+
+// Folga entre o disparo do job e o prazo gravado: o delay sai de `prazo -
+// agora`, calculado alguns ms depois
+const SLA_JOB_FIRE_TOLERANCE_MS = 2000;
+
 @Injectable()
-export class ConversationService {
+export class ConversationService implements OnModuleDestroy {
   private readonly logger = new Logger(ConversationService.name);
+
+  // B-107: sincronizações do SLA em andamento, por conversa (a última da fila)
+  private readonly slaSyncs = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsService: EventsService,
     private readonly auditLog: AuditLogService,
     private readonly notificationService: NotificationService,
+    // Robô e webhook: o cliente padrão do Bull, esperado como sempre (D8)
     @InjectQueue(QUEUE_NAMES.SLA_CHECK)
-    private readonly slaQueue: Queue<SlaCheckJobData | ServiceSlaJobData>,
+    private readonly slaQueue: SlaQueue,
+    // B-107: pedidos do painel e reconciliação, com prazo de 2 s por comando
+    @Inject(SLA_REQUEST_QUEUE)
+    private readonly requestSlaQueue: SlaQueue,
   ) {}
+
+  // ── B-107: o SLA dos pedidos do painel não segura a resposta ──────────────
+  // Atender, Pegar próxima, transferir e mudar o status gravam no banco, numa
+  // transação, tudo o que a troca precisa (atendente, prazos e auditoria),
+  // avisam o painel e respondem. Os jobs do SLA vão para o Redis em seguida,
+  // fora da resposta, pelo produtor com prazo. Se o Redis falhar, fica o log,
+  // e a reconciliação (a cada 60 s, também depois de reiniciar) recria o job a
+  // partir do banco. Por conversa, as sincronizações rodam na ordem dos
+  // pedidos, como quando cada pedido esperava a sua.
+  private inSlaOrder<T>(conversationId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.slaSyncs.get(conversationId) ?? Promise.resolve();
+    const result = previous.then(task);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.slaSyncs.set(conversationId, settled);
+    void settled.then(() => {
+      if (this.slaSyncs.get(conversationId) === settled) this.slaSyncs.delete(conversationId);
+    });
+    return result;
+  }
+
+  private syncSlaInBackground(conversationId: string, action: string, sync: (jobs: SlaQueue) => Promise<void>) {
+    this.inSlaOrder(conversationId, () => sync(this.requestSlaQueue)).catch((err: Error) => {
+      this.logger.warn(
+        `SLA da conversa ${conversationId} não sincronizado no Redis (${action}): ${err.message}. ` +
+          'A reconciliação recria o job a partir do banco.',
+      );
+    });
+  }
+
+  // Espera as sincronizações pendentes — no desligamento e nos testes
+  async whenSlaSynced(): Promise<void> {
+    while (this.slaSyncs.size > 0) {
+      await Promise.all(this.slaSyncs.values());
+    }
+  }
+
+  async onModuleDestroy() {
+    await Promise.race([
+      this.whenSlaSynced(),
+      new Promise((resolve) => setTimeout(resolve, SLA_SYNC_SHUTDOWN_WAIT_MS).unref()),
+    ]);
+  }
 
   // B-112 (ADR-0019, regra 17): o relógio dos SLAs só anda no expediente do
   // fluxo de auto-atendimento ativo, no fuso da empresa. Antes (B-98), quem
   // chegava fora do expediente ficava sem SLA nenhum, nem depois da abertura.
   // Sem fluxo ativo ou sem horário configurado, o relógio anda o dia todo.
-  private async loadSlaClock(companyId: string): Promise<SlaClock> {
-    const flow = await this.prisma.autoAttendanceFlow.findUnique({
+  // `db`: a transação de quem chama, se houver (B-107)
+  private async loadSlaClock(companyId: string, db: Prisma.TransactionClient = this.prisma): Promise<SlaClock> {
+    const flow = await db.autoAttendanceFlow.findUnique({
       where: { companyId },
       select: { isActive: true, businessHours: true, company: { select: { timezone: true } } },
     });
@@ -183,15 +254,18 @@ export class ConversationService {
 
   // B-66: o job vale para o prazo gravado no ciclo (`waitSlaDueAt`). Ciclo
   // sem prazo cancela o job pendente de um ciclo anterior.
+  // `jobs` (B-107): o produtor com prazo nos pedidos do painel; o padrão, no
+  // robô e no webhook
   private async syncWaitSla(
     conversationId: string,
     companyId: string,
     cycle: WaitCycle,
     maxWaitSecs?: number,
+    jobs: SlaQueue = this.slaQueue,
   ) {
-    await this.cancelSlaCheck(conversationId);
+    await this.cancelSlaCheck(conversationId, jobs);
     if (!cycle.waitSlaDueAt || !maxWaitSecs) return;
-    await this.slaQueue.add(
+    await jobs.add(
       { conversationId, companyId, maxWaitSecs, queuedAt: cycle.waitingSince },
       {
         jobId: this.slaJobId(conversationId),
@@ -223,12 +297,12 @@ export class ConversationService {
     });
   }
 
-  private cancelSlaCheck(conversationId: string) {
-    return this.removeSlaJob(this.slaJobId(conversationId));
+  private cancelSlaCheck(conversationId: string, jobs: SlaQueue = this.slaQueue) {
+    return this.removeSlaJob(this.slaJobId(conversationId), jobs);
   }
 
-  private async removeSlaJob(jobId: string) {
-    const job = await this.slaQueue.getJob(jobId);
+  private async removeSlaJob(jobId: string, jobs: SlaQueue) {
+    const job = await jobs.getJob(jobId);
     if (!job) return;
     // Job já em execução não pode ser removido (Bull lança erro) — sem problema,
     // o processor reconsulta a conversa e não faz nada se o ciclo já fechou
@@ -241,8 +315,8 @@ export class ConversationService {
     return `service-sla:${conversationId}`;
   }
 
-  private cancelServiceSla(conversationId: string) {
-    return this.removeSlaJob(this.serviceSlaJobId(conversationId));
+  private cancelServiceSla(conversationId: string, jobs: SlaQueue = this.slaQueue) {
+    return this.removeSlaJob(this.serviceSlaJobId(conversationId), jobs);
   }
 
   // O prazo é o do setor (`maxServiceSecs` da fila), contado só no
@@ -251,10 +325,11 @@ export class ConversationService {
     companyId: string,
     queue: { maxServiceSecs: number | null } | null,
     now: Date,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<ServiceCycle> {
     let serviceSlaDueAt: Date | null = null;
     if (queue?.maxServiceSecs) {
-      const clock = await this.loadSlaClock(companyId);
+      const clock = await this.loadSlaClock(companyId, db);
       serviceSlaDueAt = addBusinessTime(now, queue.maxServiceSecs, clock.hours, clock.timeZone);
     }
     return { attendedAt: now, serviceSlaDueAt, serviceSlaBreachedAt: null };
@@ -267,10 +342,11 @@ export class ConversationService {
     companyId: string,
     cycle: ServiceCycle,
     maxServiceSecs?: number | null,
+    jobs: SlaQueue = this.slaQueue,
   ) {
-    await this.cancelServiceSla(conversationId);
+    await this.cancelServiceSla(conversationId, jobs);
     if (!cycle.serviceSlaDueAt || !maxServiceSecs) return;
-    await this.slaQueue.add(
+    await jobs.add(
       { kind: 'service', conversationId, companyId, maxServiceSecs, attendedAt: cycle.attendedAt },
       {
         jobId: this.serviceSlaJobId(conversationId),
@@ -280,16 +356,16 @@ export class ConversationService {
   }
 
   // Encerrou (regra 21): o ciclo do atendimento fecha, e a auditoria registra
-  // quanto durou e se estourou
-  private async closeServiceCycle(
+  // quanto durou e se estourou. B-107: ela vai na transação do status; o job
+  // do ciclo é cancelado depois, com o resto do SLA. Sem ciclo, nada a auditar.
+  private serviceClosedAudit(
     companyId: string,
     conversation: ServicedConversation,
     actorId: string | undefined,
     now: Date,
-  ) {
-    await this.cancelServiceSla(conversation.id);
-    if (!conversation.attendedAt) return;
-    await this.auditLog.record({
+  ): RecordAuditLogParams | null {
+    if (!conversation.attendedAt) return null;
+    return {
       companyId,
       userId: actorId,
       action: 'conversation.service_closed',
@@ -303,7 +379,89 @@ export class ConversationService {
           !!conversation.serviceSlaBreachedAt ||
           (!!conversation.serviceSlaDueAt && now > conversation.serviceSlaDueAt),
       },
+    };
+  }
+
+  // ── B-107: reconciliação dos jobs do SLA (SlaReconciliationService) ───────
+  // O banco é a fonte de verdade. Num ciclo aberto, com prazo e sem estouro
+  // marcado, o job do ciclo precisa estar pendente no Redis; faltando (o Redis
+  // falhou na hora de criar), sendo de outro ciclo (o cancelamento falhou) ou
+  // já finalizado sem marcar o estouro, é refeito com o prazo gravado — já
+  // vencido, dispara na hora. Fora de ciclo, nada é criado: ciclo encerrado
+  // não volta. Roda na fila de sincronizações da conversa, depois das que
+  // estiverem pendentes, e relê a conversa nessa hora. Job de sistema, como o
+  // processor do SLA: lê a conversa pelo id, de qualquer empresa.
+  async reconcileSla(conversationId: string): Promise<SlaReconcileOutcome> {
+    return this.inSlaOrder(conversationId, async () => {
+      const c = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: {
+          id: true,
+          companyId: true,
+          status: true,
+          waitingSince: true,
+          waitSlaDueAt: true,
+          slaBreachedAt: true,
+          attendedAt: true,
+          serviceSlaDueAt: true,
+          serviceSlaBreachedAt: true,
+          queue: { select: { maxWaitSecs: true, maxServiceSecs: true } },
+        },
+      });
+      if (!c) return 'skipped';
+
+      if (
+        c.status === ConversationStatus.WAITING &&
+        c.waitingSince &&
+        c.waitSlaDueAt &&
+        !c.slaBreachedAt &&
+        c.queue?.maxWaitSecs
+      ) {
+        const job = await this.requestSlaQueue.getJob(this.slaJobId(c.id));
+        if (this.isPendingFor(job, 'queuedAt', c.waitingSince, c.waitSlaDueAt)) return 'ok';
+        const cycle: WaitCycle = { waitingSince: c.waitingSince, waitSlaDueAt: c.waitSlaDueAt, slaBreachedAt: null };
+        await this.syncWaitSla(c.id, c.companyId, cycle, c.queue.maxWaitSecs, this.requestSlaQueue);
+        return 'rescheduled';
+      }
+
+      if (
+        c.status === ConversationStatus.OPEN &&
+        c.attendedAt &&
+        c.serviceSlaDueAt &&
+        !c.serviceSlaBreachedAt &&
+        c.queue?.maxServiceSecs
+      ) {
+        const job = await this.requestSlaQueue.getJob(this.serviceSlaJobId(c.id));
+        if (this.isPendingFor(job, 'attendedAt', c.attendedAt, c.serviceSlaDueAt)) return 'ok';
+        const service: ServiceCycle = {
+          attendedAt: c.attendedAt,
+          serviceSlaDueAt: c.serviceSlaDueAt,
+          serviceSlaBreachedAt: null,
+        };
+        await this.syncServiceSla(c.id, c.companyId, service, c.queue.maxServiceSecs, this.requestSlaQueue);
+        return 'rescheduled';
+      }
+
+      return 'skipped';
     });
+  }
+
+  // Job do ciclo ainda por disparar: não finalizado (concluído ou falho de vez),
+  // do mesmo ciclo (o início gravado no job) e marcado para o prazo — ou para
+  // a hora em que foi criado, se o prazo já tinha passado
+  private isPendingFor(
+    job: Job<SlaCheckJobData | ServiceSlaJobData> | null,
+    startField: 'queuedAt' | 'attendedAt',
+    cycleStart: Date,
+    dueAt: Date,
+  ): boolean {
+    if (!job || job.finishedOn) return false;
+    // Do Redis a data volta como texto ISO
+    const start =
+      startField === 'queuedAt' ? (job.data as SlaCheckJobData).queuedAt : (job.data as ServiceSlaJobData).attendedAt;
+    if (!start || new Date(start).getTime() !== cycleStart.getTime()) return false;
+    const firesAt = job.timestamp + (Number(job.opts.delay) || 0);
+    return Math.abs(firesAt - Math.max(dueAt.getTime(), job.timestamp)) <= SLA_JOB_FIRE_TOLERANCE_MS;
   }
 
   // ── Listar conversas com filtros e paginação ──────────────────────────────
@@ -662,21 +820,31 @@ export class ConversationService {
     // B-114 (regra 18): sair da fila com alguém abre o ciclo do atendimento,
     // no mesmo instante em que o da espera termina
     const service = await this.serviceCycleData(companyId, before.queue, now);
-    const { count } = await this.prisma.conversation.updateMany({
-      where: { id: conversationId, companyId, status: ConversationStatus.WAITING, agentId: null },
-      data: {
-        status: ConversationStatus.OPEN,
-        agentId: requesterId,
-        // B-98 (L-10): saiu da espera, a marca de SLA violado não vale mais
-        slaBreachedAt: null,
-        waitSlaDueAt: null,
-        ...service,
-      },
+    // B-107: a troca e a auditoria do ciclo gravam juntas, antes de qualquer
+    // coisa no Redis. Na transação não vale o papel do RLS (ADR-0010 v1.1): o
+    // companyId do where e da auditoria é o que separa as empresas.
+    const attended = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.conversation.updateMany({
+        where: { id: conversationId, companyId, status: ConversationStatus.WAITING, agentId: null },
+        data: {
+          status: ConversationStatus.OPEN,
+          agentId: requesterId,
+          // B-98 (L-10): saiu da espera, a marca de SLA violado não vale mais
+          slaBreachedAt: null,
+          waitSlaDueAt: null,
+          ...service,
+        },
+      });
+      if (count === 0) return false;
+      await this.auditLog.record(this.attendedAudit(companyId, before, requesterId, requesterId, now), tx);
+      return true;
     });
-    if (count === 0) throw await this.notInQueueError(companyId, conversationId);
+    if (!attended) throw await this.notInQueueError(companyId, conversationId);
 
-    await this.closeWaitCycle(companyId, before, requesterId, requesterId, now);
-    await this.syncServiceSla(conversationId, companyId, service, before.queue?.maxServiceSecs);
+    this.syncSlaInBackground(conversationId, 'atender', async (jobs) => {
+      await this.cancelSlaCheck(conversationId, jobs);
+      await this.syncServiceSla(conversationId, companyId, service, before.queue?.maxServiceSecs, jobs);
+    });
     return this.emitAssignment(companyId, conversationId);
   }
 
@@ -705,8 +873,14 @@ export class ConversationService {
     // guarda o prazo e a marca de violação de antes da troca, para a
     // auditoria do ciclo. Sem waitingSince (a migração do B-66 preencheu),
     // vale o createdAt. B-114: a mesma troca abre o ciclo do atendimento.
+    // B-107: escolher, gravar o prazo do atendimento e auditar vão numa
+    // transação só. O prazo é o do setor da conversa escolhida, que só se
+    // conhece depois da troca; antes ele ia num 2º update depois do Redis, e
+    // com o Redis fora a conversa ficava atendida sem prazo nenhum. A trava da
+    // linha vale até o fim da transação: ninguém muda o ciclo no meio.
     const now = new Date();
-    const [picked] = await this.prisma.$queryRaw<PickedConversation[]>`
+    const picked = await this.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<PickedConversation[]>`
       WITH next AS (
         SELECT "id", "waitSlaDueAt", "slaBreachedAt"
         FROM "conversations"
@@ -732,28 +906,34 @@ export class ConversationService {
       RETURNING c."id", c."waitingSince", c."attendedAt", next."waitSlaDueAt", next."slaBreachedAt",
         (SELECT q."maxWaitSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxWaitSecs",
         (SELECT q."maxServiceSecs" FROM "queues" q WHERE q."id" = c."queueId") AS "maxServiceSecs"`;
+      if (!row) return null;
+
+      const { maxWaitSecs, maxServiceSecs, attendedAt, ...cycle } = row;
+      const service = await this.serviceCycleData(companyId, { maxServiceSecs }, attendedAt, tx);
+      if (service.serviceSlaDueAt) {
+        await tx.conversation.updateMany({
+          where: { id: row.id, companyId },
+          data: { serviceSlaDueAt: service.serviceSlaDueAt },
+        });
+      }
+      await this.auditLog.record(
+        this.attendedAudit(
+          companyId,
+          { ...cycle, queue: maxWaitSecs === null ? null : { maxWaitSecs } },
+          requesterId,
+          requesterId,
+          now,
+        ),
+        tx,
+      );
+      return { id: row.id, service, maxServiceSecs };
+    });
     if (!picked) return null;
 
-    const { maxWaitSecs, maxServiceSecs, attendedAt, ...cycle } = picked;
-    await this.closeWaitCycle(
-      companyId,
-      { ...cycle, queue: maxWaitSecs === null ? null : { maxWaitSecs } },
-      requesterId,
-      requesterId,
-      now,
-    );
-
-    // O prazo do atendimento é o do setor da conversa escolhida, que só se
-    // conhece agora. A troca confere o início do ciclo: se ele mudou no meio
-    // (transferida de setor), o prazo deste já não vale.
-    const service = await this.serviceCycleData(companyId, { maxServiceSecs }, attendedAt);
-    if (service.serviceSlaDueAt) {
-      const { count } = await this.prisma.conversation.updateMany({
-        where: { id: picked.id, companyId, agentId: requesterId, attendedAt },
-        data: { serviceSlaDueAt: service.serviceSlaDueAt },
-      });
-      if (count === 1) await this.syncServiceSla(picked.id, companyId, service, maxServiceSecs);
-    }
+    this.syncSlaInBackground(picked.id, 'pegar próxima', async (jobs) => {
+      await this.cancelSlaCheck(picked.id, jobs);
+      await this.syncServiceSla(picked.id, companyId, picked.service, picked.maxServiceSecs, jobs);
+    });
     return this.emitAssignment(companyId, picked.id);
   }
 
@@ -770,17 +950,17 @@ export class ConversationService {
     return new ConflictException('Esta conversa não está na fila');
   }
 
-  // Saiu da fila com alguém (regras 13 e 16): o SLA da espera termina — o job
-  // pendente é cancelado — e o ciclo vai para a auditoria
-  private async closeWaitCycle(
+  // Saiu da fila com alguém (regras 13 e 16): o SLA da espera termina e o
+  // ciclo vai para a auditoria. B-107: ela vai na transação da troca; o job
+  // pendente do ciclo é cancelado depois, com o resto do SLA.
+  private attendedAudit(
     companyId: string,
     conversation: WaitingConversation,
     agentId: string,
     actorId: string,
     now: Date,
-  ) {
-    await this.cancelSlaCheck(conversation.id);
-    await this.auditLog.record({
+  ): RecordAuditLogParams {
+    return {
       companyId,
       userId: actorId,
       action: 'conversation.attended',
@@ -795,7 +975,7 @@ export class ConversationService {
         breached:
           !!conversation.slaBreachedAt || (!!conversation.waitSlaDueAt && now > conversation.waitSlaDueAt),
       },
-    });
+    };
   }
 
   // Lê o estado novo, avisa em tempo real e devolve a resposta. Com o status
@@ -917,34 +1097,51 @@ export class ConversationService {
 
     // Troca condicional: só vale se a conversa segue como foi lida. Se alguém
     // atendeu ou transferiu no meio, quem chegou depois recebe 409.
-    const { count } = await this.prisma.conversation
-      .updateMany({ where: { id, companyId, status: before.status, agentId: previousAgentId }, data })
+    // B-107: a troca e as auditorias numa transação, antes do Redis (sem o
+    // papel do RLS, como no Atender: o companyId do where separa as empresas)
+    const tookFromQueue = !!targetAgentId && before.status === ConversationStatus.WAITING;
+    const changed = await this.prisma
+      .$transaction(async (tx) => {
+        const { count } = await tx.conversation.updateMany({
+          where: { id, companyId, status: before.status, agentId: previousAgentId },
+          data,
+        });
+        if (count === 0) return false;
+        if (tookFromQueue) {
+          await this.auditLog.record(this.attendedAudit(companyId, before, targetAgentId, requester.id, now), tx);
+        }
+        // Auditoria (B1-4): mudança real de agentId — desatribuir também conta
+        if (targetAgentId !== previousAgentId) {
+          await this.auditLog.record(
+            {
+              companyId,
+              userId: requester.id,
+              action: 'conversation.assigned',
+              entity: 'Conversation',
+              entityId: id,
+              before: { agentId: previousAgentId },
+              after: { agentId: targetAgentId },
+            },
+            tx,
+          );
+        }
+        return true;
+      })
       .catch(rethrowActiveConversationConflict);
-    if (count === 0) {
+    if (!changed) {
       throw new ConflictException('A conversa mudou de mãos agora há pouco. Atualize a tela e tente de novo');
     }
 
-    if (cycle) {
-      // Voltou para a fila: SLA do ciclo novo (ou nenhum, sem prazo)
-      await this.syncWaitSla(id, companyId, cycle, queue?.maxWaitSecs);
-      await this.cancelServiceSla(id);
-    } else if (targetAgentId && before.status === ConversationStatus.WAITING) {
-      await this.closeWaitCycle(companyId, before, targetAgentId, requester.id, now);
-    }
-    if (service) await this.syncServiceSla(id, companyId, service, serviceQueue?.maxServiceSecs);
-
-    // Auditoria (B1-4): mudança real de agentId — desatribuir também conta
-    if (targetAgentId !== previousAgentId) {
-      await this.auditLog.record({
-        companyId,
-        userId: requester.id,
-        action: 'conversation.assigned',
-        entity: 'Conversation',
-        entityId: id,
-        before: { agentId: previousAgentId },
-        after: { agentId: targetAgentId },
-      });
-    }
+    this.syncSlaInBackground(id, 'transferir', async (jobs) => {
+      if (cycle) {
+        // Voltou para a fila: SLA do ciclo novo (ou nenhum, sem prazo)
+        await this.syncWaitSla(id, companyId, cycle, queue?.maxWaitSecs, jobs);
+        await this.cancelServiceSla(id, jobs);
+      } else if (tookFromQueue) {
+        await this.cancelSlaCheck(id, jobs);
+      }
+      if (service) await this.syncServiceSla(id, companyId, service, serviceQueue?.maxServiceSecs, jobs);
+    });
 
     // Notifica quem recebeu a conversa (B1-3) — não quem a puxou para si
     if (targetAgentId && targetAgentId !== previousAgentId && targetAgentId !== requester.id) {
@@ -1017,46 +1214,59 @@ export class ConversationService {
       ? this.waitCycleData(conversation.queue, conversation.queue && (await this.loadSlaClock(companyId)), now)
       : null;
 
-    const updated = await this.prisma.conversation
-      .update({
-        where: { id },
-        data: {
-          status: dto.status,
-          ...(cycle && { agentId: null, ...cycle, ...NO_SERVICE_CYCLE }),
-          ...(reopens && NO_SERVICE_CYCLE),
-          // B-98 (L-10): fora da espera, a marca de SLA violado é zerada
-          ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null, waitSlaDueAt: null }),
-          ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
-          ...(dto.status === ConversationStatus.CLOSED && {
-            closedAt: now,
-            resolution: dto.resolution,
-            resolutionNote: dto.resolutionNote,
-          }),
-        },
-        select: {
-          id: true,
-          status: true,
-          companyId: true,
-          resolvedAt: true,
-          closedAt: true,
-          resolution: true,
-          resolutionNote: true,
-          updatedAt: true,
-        },
+    // B-107: o status e a auditoria do fim do atendimento numa transação,
+    // antes do Redis (sem o papel do RLS: o companyId vai no where)
+    const closedAudit = endsService ? this.serviceClosedAudit(companyId, conversation, requester?.id, now) : null;
+    const updated = await this.prisma
+      .$transaction(async (tx) => {
+        const row = await tx.conversation.update({
+          where: { id, companyId },
+          data: {
+            status: dto.status,
+            ...(cycle && { agentId: null, ...cycle, ...NO_SERVICE_CYCLE }),
+            ...(reopens && NO_SERVICE_CYCLE),
+            // B-98 (L-10): fora da espera, a marca de SLA violado é zerada
+            ...(dto.status !== ConversationStatus.WAITING && { slaBreachedAt: null, waitSlaDueAt: null }),
+            ...(dto.status === ConversationStatus.RESOLVED && { resolvedAt: now }),
+            ...(dto.status === ConversationStatus.CLOSED && {
+              closedAt: now,
+              resolution: dto.resolution,
+              resolutionNote: dto.resolutionNote,
+            }),
+          },
+          select: {
+            id: true,
+            status: true,
+            companyId: true,
+            resolvedAt: true,
+            closedAt: true,
+            resolution: true,
+            resolutionNote: true,
+            updatedAt: true,
+          },
+        });
+        if (closedAudit) await this.auditLog.record(closedAudit, tx);
+        return row;
       })
       .catch(rethrowActiveConversationConflict);
 
     // Reentrada em WAITING (ex.: reaberta) agenda o SLA do ciclo novo; sair
-    // de WAITING por aqui cancela o job
-    if (cycle) {
-      await this.syncWaitSla(updated.id, updated.companyId, cycle, conversation.queue?.maxWaitSecs);
-    } else if (wasWaiting && updated.status !== ConversationStatus.WAITING) {
-      await this.cancelSlaCheck(updated.id);
-    }
-    if (endsService) {
-      await this.closeServiceCycle(updated.companyId, conversation, requester?.id, now);
-    } else if (entersQueue) {
-      await this.cancelServiceSla(updated.id);
+    // de WAITING por aqui cancela o job; encerrar ou voltar para a fila
+    // cancela o do atendimento
+    const syncSla = async (jobs: SlaQueue) => {
+      if (cycle) {
+        await this.syncWaitSla(updated.id, updated.companyId, cycle, conversation.queue?.maxWaitSecs, jobs);
+      } else if (wasWaiting && updated.status !== ConversationStatus.WAITING) {
+        await this.cancelSlaCheck(updated.id, jobs);
+      }
+      if (endsService || entersQueue) await this.cancelServiceSla(updated.id, jobs);
+    };
+    // Pedido do painel: o SLA não segura a resposta (B-107). Sem `requester` é
+    // o robô, que segue esperando o Bull com o cliente padrão, como antes (D8)
+    if (requester) {
+      this.syncSlaInBackground(updated.id, 'mudar o status', syncSla);
+    } else {
+      await syncSla(this.slaQueue);
     }
 
     // Emite evento em tempo real

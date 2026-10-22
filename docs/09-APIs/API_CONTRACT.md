@@ -112,6 +112,9 @@ Empresa nasce no plano `FREE` (`maxAgents=5`, `maxChannels=2` — defaults do sc
 `{ "refreshToken": "..." }` → revoga o refresh token e blacklista o access token atual. Responde **204 No Content**.
 B-65: põe o usuário do token **Offline** (emite `user.availability` se ele estava Online). Uma falha
 nessa troca não impede o logout.
+B-107: com o Redis sem responder ou fora do ar, a blacklist desiste em 500 ms e o logout responde
+igual — o refresh token fica revogado no banco, mas o access token pode continuar aceito até
+expirar (`JWT_EXPIRES_IN`, 15 min por padrão), porque a checagem da blacklist é fail-open.
 
 ### `POST /auth/revoke`
 Revoga TODOS os refresh tokens do usuário (logout de todos os dispositivos).
@@ -238,6 +241,14 @@ relógio; **mudar de setor** recomeça com o prazo do setor novo (e a fila da co
 dele); devolver à fila fecha o ciclo (`attendedAt`, `serviceSlaDueAt` e `serviceSlaBreachedAt`
 voltam a `null`). Ao estourar, a API grava `serviceSlaBreachedAt`, emite `sla.service_breached` e
 notifica quem atende e os supervisores e admins (`type: "service_sla_breach"`).
+
+**Redis indisponível (B-107):** `/attend`, `/next`, `/assign` e `/status` gravam no banco, numa
+transação, tudo o que a troca precisa (atendente, início e prazos dos SLAs e a auditoria), emitem o
+evento e respondem **sem esperar o Redis**. Os jobs do SLA vão para a fila logo depois, com prazo de
+2 s por comando. Com o Redis travado ou fora do ar, a resposta é a mesma (`200`) e cada job que não
+chegou ao Redis fica no log; a reconciliação, a cada 60 s, recria pelo banco o job do ciclo aberto
+que faltar (também depois de a API reiniciar), sem duplicar o que já existe nem recriar ciclo
+encerrado. Nesse caso, o alerta de estouro pode chegar até cerca de 1 min depois do prazo.
 
 ### `POST /conversations/:id/attend` (B-66, ADR-0019) — pegar a conversa da fila para si
 Corpo vazio. **Quem chegar primeiro fica com a conversa:** a passagem `WAITING → OPEN` é uma
@@ -774,6 +785,8 @@ quando os dois respondem; `503` com o mesmo shape (`status: "unavailable"`,
 detalhando qual dependência caiu) caso contrário. Pensado pra orquestração/
 nginx decidirem se a instância deve receber tráfego — o `GET /health` acima
 não serve pra isso (não checa nada além do processo estar de pé).
+B-107: a checagem do Redis tem prazo de 2 s — com o Redis aceitando a conexão sem responder, a rota
+devolve o `503` com `redis: "down"` em vez de ficar pendurada. A do banco segue sem prazo próprio.
 
 ### `GET /health/dependencies` (B-102) — requer `ADMIN`
 Diagnóstico, não decide tráfego (sempre `200`): `{ checks: { database, redis, storage, evolution }, timestamp }`,
@@ -820,6 +833,8 @@ responde **404**, como se não existisse; item sem empresa identificada não apa
   encerramento de sessões. Recusa = `connect_error` com `data: { code: "UNAUTHORIZED" }` e
   mensagem `"Token não informado"`, `"Token inválido ou expirado"`, `"Tipo de token inválido"`,
   `"Token foi revogado"`, `"Usuário não encontrado ou inativo"` ou `"Sessão encerrada"`.
+  Com o Redis sem responder, a checagem da blacklist desiste em 500 ms e deixa passar, como no
+  HTTP (fail-open, B-107).
   Recusado no handshake, o Socket.IO não reconecta sozinho: o cliente renova o token
   (`POST /auth/refresh`) e chama `connect()` de novo.
 - **Desconexão pelo servidor** (`disconnect` com motivo `"io server disconnect"`, B-74): quando

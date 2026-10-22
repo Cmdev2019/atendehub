@@ -83,6 +83,49 @@ describe('SlaCheckProcessor', () => {
     expect(mockEventsService.emitSlaBreached).not.toHaveBeenCalled();
   });
 
+  // B-107: com o Redis fora, o cancelamento do job falha e ele fica para trás
+  it('job de outro ciclo não alerta um ciclo atual sem prazo (sobra de um cancelamento que falhou)', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      id: 'conv-1',
+      status: ConversationStatus.WAITING,
+      slaBreachedAt: null,
+      waitingSince: new Date(), // ciclo novo, numa fila sem prazo
+      waitSlaDueAt: null,
+      agentId: null,
+      queueId: null,
+      contact: {},
+      queue: null,
+    });
+
+    await processor.handleSlaCheck(makeJob()); // queuedAt de 1 min atrás: outro ciclo
+
+    expect(mockPrisma.conversation.update).not.toHaveBeenCalled();
+    expect(mockEventsService.emitSlaBreached).not.toHaveBeenCalled();
+  });
+
+  it('sem prazo gravado, o job do mesmo ciclo segue valendo pelo agendamento dele', async () => {
+    mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      id: 'conv-1',
+      status: ConversationStatus.WAITING,
+      slaBreachedAt: null,
+      waitingSince: jobData.queuedAt, // o mesmo início: o job é deste ciclo
+      waitSlaDueAt: null,
+      agentId: null,
+      queueId: 'queue-1',
+      contact: { id: 'contact-1', name: 'Fulano', phone: '5512999999999' },
+      queue: { id: 'queue-1', name: 'Fila', maxWaitSecs: 60 },
+    });
+    mockPrisma.conversation.update.mockResolvedValueOnce({});
+    mockPrisma.user.findMany.mockResolvedValueOnce([]);
+
+    await processor.handleSlaCheck(makeJob());
+
+    expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv-1' },
+      data: { slaBreachedAt: expect.any(Date) },
+    });
+  });
+
   it('prazo vencido: o tempo de espera conta do início do ciclo gravado', async () => {
     mockPrisma.conversation.findUnique.mockResolvedValueOnce({
       id: 'conv-1',

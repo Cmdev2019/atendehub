@@ -226,6 +226,32 @@ describe('AuthService', () => {
       expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
     });
 
+    // B-107: com o prazo de 500 ms do cliente compartilhado, um Redis sem
+    // resposta vira erro — e o teto diário não bloqueia o cadastro
+    it('Redis sem resposta (comando estourou o prazo): o cadastro segue, sem o teto diário', async () => {
+      mockRedis.multi.mockImplementationOnce(() => {
+        const chain: any = {
+          incr: jest.fn(() => chain),
+          expire: jest.fn(() => chain),
+          exec: jest.fn(async () => {
+            throw new Error('Command timed out');
+          }),
+        };
+        return chain;
+      });
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.company.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.company.create.mockResolvedValueOnce({ id: 'company-1', name: dto.companyName, slug: 'cafe-cia' });
+      mockPrisma.user.create.mockResolvedValueOnce({
+        id: 'user-1', companyId: 'company-1', name: dto.name,
+        email: 'novaadmin@empresa.com', role: Role.ADMIN, avatarUrl: null,
+      });
+
+      await service.registerCompany(dto, '10.0.0.1');
+
+      expect(mockPrisma.company.create).toHaveBeenCalled();
+    });
+
     it('passado o teto diário do IP, responde 429 sem criar nada', async () => {
       mockConfig.get.mockImplementation((key: string, fallback?: unknown) =>
         key === 'SIGNUP_DAILY_LIMIT_PER_IP' ? '2' : fallback,
