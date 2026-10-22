@@ -23,6 +23,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
 ### Alterado
+- **B-86, ESLint 10 na API (2026-10-21):** o lint da API passa para o ESLint 10, sem regra nova acusando nada. O front segue no ESLint 9 até o `eslint-plugin-react` aceitar o 10.
 - **B-86, class-validator 0.15 (2026-10-21):** a validação dos dados que chegam à API passa para o class-validator 0.15, sem mudança de comportamento.
 - **B-86, Sentry 11 (2026-10-21):** API e front passam para o Sentry 11. O SDK novo coletaria por padrão IP, cabeçalhos, cookies e corpos de requisição; a configuração agora desliga tudo isso explicitamente, e só stack trace e metadados técnicos continuam saindo (LGPD).
 - **B-86, Nest 12 (2026-10-21):** a API passa para o NestJS 12 (com `@nestjs/config`, `@nestjs/schedule`, `@nestjs/bull`, `@nestjs/jwt` e `@nestjs/passport` 12 e o `nest-winston` 2) e os testes da API para o Jest 30. Os pacotes do Nest 12 são só ESM; a API segue em CommonJS e os carrega pelo Node 24. Rodar os testes da API pelos scripts do `package.json`, que já passam a flag que o Jest precisa.
