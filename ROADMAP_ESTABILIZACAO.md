@@ -54,7 +54,7 @@
   Jest os carrega com o `--experimental-vm-modules` (já nos scripts de teste).
   **Sentry 10 → 11 concluído** (PR #121), na API e no front, com a coleta de dados pessoais desligada
   explicitamente (sem isso, o 11 coletaria IP, cabeçalhos, cookies e corpos).
-  **class-validator 0.14 → 0.15 concluído** (PR #PR), sem mudança de comportamento na validação.
+  **class-validator 0.14 → 0.15 concluído** (PR #122), sem mudança de comportamento na validação.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
