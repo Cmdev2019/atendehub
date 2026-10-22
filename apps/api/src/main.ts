@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
-import * as compression from 'compression';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './shared/websocket/redis-io.adapter';
 import { createWinstonLogger } from './shared/logging/winston.logger';

@@ -1,5 +1,8 @@
 {
   "extends": "./tsconfig.json",
+  // B-86 (TypeScript 6): sem o rootDir, a saída ia para dist/src/main.js — o
+  // `npm start` e a imagem esperam dist/main.js
+  "compilerOptions": { "rootDir": "./src" },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "test", "dist", "prisma"]
 }

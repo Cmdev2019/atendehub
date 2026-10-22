@@ -5,7 +5,7 @@ import type { Response } from 'express';
 // ("is not a constructor"), mesmo com o build (tsc) passando limpo (só
 // `allowSyntheticDefaultImports` afeta checagem de tipo, não o JS emitido).
 // Mesmo padrão já usado pra `compression` em `main.ts`.
-import * as PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 
 // Linha já formatada pra exibição: chave = cabeçalho em PT-BR, valor = texto
 // pronto (datas/duração já formatadas) — o mesmo shape alimenta CSV e PDF,
