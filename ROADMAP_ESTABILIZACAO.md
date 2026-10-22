@@ -52,7 +52,7 @@
   **ioredis 5 → 6 concluído** (PR #119): RESP3 por padrão, com teste novo do Socket.IO entre réplicas.
   **Nest 11 → 12 concluído** (PR #120), com o Jest 30 da API: os pacotes do Nest 12 são só ESM, e o
   Jest os carrega com o `--experimental-vm-modules` (já nos scripts de teste).
-  **Sentry 10 → 11 concluído** (PR #PR), na API e no front, com a coleta de dados pessoais desligada
+  **Sentry 10 → 11 concluído** (PR #121), na API e no front, com a coleta de dados pessoais desligada
   explicitamente (sem isso, o 11 coletaria IP, cabeçalhos, cookies e corpos).
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
