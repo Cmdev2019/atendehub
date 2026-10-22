@@ -20,7 +20,9 @@ import { Redis } from 'ioredis';
 export const REDIS_ADAPTER_CONNECT_TIMEOUT_MS = 5000;
 
 export class RedisIoAdapter extends IoAdapter {
-  private readonly logger = new Logger(RedisIoAdapter.name);
+  // B-86: no Nest 12 o IoAdapter já tem um logger protegido; este o substitui,
+  // com o nome do adapter nos logs
+  protected readonly logger = new Logger(RedisIoAdapter.name);
   private adapterConstructor?: ReturnType<typeof createAdapter>;
   private clients: Redis[] = [];
 

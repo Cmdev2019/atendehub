@@ -34,7 +34,7 @@ Central de atendimento multiatendente via WhatsApp (SaaS multi-tenant).
     `toUiConversation`/`toUiMessage` (contrato API → shape da UI)
   - `src/components/icons.jsx` — TODO ícone vem do **svgrepo.com** (coleção
     Tabler Icons); **nunca** emoji na UI
-- **Back** (`apps/api`): NestJS + Prisma + PostgreSQL, Redis/Bull, storage S3
+- **Back** (`apps/api`): NestJS 12 + Prisma + PostgreSQL, Redis/Bull, storage S3
   (MinIO em dev, Cloudflare R2 em produção — B-64), Socket.IO gateway.
   Porta **3001**, prefixo `/api/v1`.
   - Multi-tenant: **toda** query filtra por `companyId`; o RLS do Postgres é a
@@ -99,6 +99,11 @@ docker compose up -d         # postgres, redis, evolution + minio (só dev; port
    (Linux) não sofre, então o erro só aparece em dev. Com o Prisma 7 (B-86) a
    conexão passa pelo `pg`, que tenta IPv4 e IPv6 juntos, e o `localhost` voltou
    a funcionar (5 de 5); o `127.0.0.1` continua por ser onde o Postgres escuta.
+6. **Jest da API só pelos scripts** (`npm test`, `npm run test:cov`, `npm run test:e2e`),
+   nunca `npx jest` direto (B-86). Os pacotes do Nest 12 são só ESM, e o Jest 30 só os
+   carrega com o `node --experimental-vm-modules` que os scripts já passam; sem ele,
+   quase todas as suítes quebram com "Must use import to load ES Module". Para um
+   arquivo só: `npm test -- caminho/do.spec.ts`.
 
 ## Convenções
 
