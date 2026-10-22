@@ -5,6 +5,8 @@ node_modules/
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 dist/
+# B-86: estado do build incremental do TypeScript (o TS 6 grava ao lado do tsconfig)
+*.tsbuildinfo
 build/
 .next/
 out/
