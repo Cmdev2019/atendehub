@@ -65,7 +65,7 @@
   a divisão do pacote (B-105) foi reescrita e ficou igual, com os arquivos menores.
   **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #127): os padrões novos do
   TS 6 (modo estrito, tipos globais, pasta de origem) ficaram explícitos no `tsconfig`, sem mudar a saída.
-- **B-107 em validação** (2026-10-22, PR #NNN, aguardando a revisão do responsável): com o Redis
+- **B-107 em validação** (2026-10-22, PR #129, aguardando a revisão do responsável): com o Redis
   travado (aceitando a conexão sem responder) ou fora do ar, as rotas autenticadas e o login do
   WebSocket seguem respondendo (blacklist em fail-open depois de 500 ms), o readiness responde 503 em
   cerca de 2 s, e Atender, Pegar próxima, transferir e mudar o status gravam no banco a troca, os
@@ -77,7 +77,7 @@
 
 1. **B-118** — refatorar os 15 `setState` dentro de efeitos e os 3 refs gravados no render que o react-hooks
    7 acusou; depois, a regra vira erro.
-2. **B-107** em validação (PR #NNN) — revisão do responsável e merge.
+2. **B-107** em validação (PR #129) — revisão do responsável e merge.
 3. **Pendências registradas** — B-45 (Swagger), B-108 a B-111 (recomendações dos relatórios antigos).
    Ficaram para ocorrências à parte, por decisão do responsável no B-107: o prazo da checagem do banco
    no readiness (D4) e a verificação de como a Evolution trata o 5xx do webhook (D7).
@@ -123,7 +123,7 @@
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
 | B-86 | M-23 | Versões major pendentes, cada uma com migração própria | ✅ 2026-10-21 (parcial — TypeScript 7 e ESLint 10 do front em espera: dependem do ts-jest, do typescript-eslint e do eslint-plugin-react) |
-| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | 🔍 Em validação 2026-10-22 (PR #NNN) |
+| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | 🔍 Em validação 2026-10-22 (PR #129) |
 | B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
@@ -248,7 +248,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-104 | L-09 | Busca da fila no servidor (com o filtro da aba) e tempo na fila / última atividade em cada conversa | ✅ 2026-10-18 |
 | B-105 | L-13 | Relatórios com limite de período (366 dias) e de linhas (5.000); front carrega Dashboard, Relatórios, Contatos e Configurações sob demanda (856 → 462 kB no carregamento inicial) | ✅ 2026-10-18 |
 | B-106 | L-17 | Recomendações abertas dos relatórios em PDF registradas como itens B-107 a B-111 | ✅ 2026-10-18 |
-| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | 🔍 Em validação 2026-10-22 (PR #NNN) |
+| B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | 🔍 Em validação 2026-10-22 (PR #129) |
 | B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
