@@ -49,7 +49,7 @@
 - **B-86 em andamento** (2026-10-21): versões major, um PR por major ou família acoplada.
   **Prisma 5 → 7 concluído** (PR #118): o cliente é gerado em `apps/api/src/generated/prisma` e fala
   com o Postgres pelo `pg`; uma migration põe chave primária nas três tabelas de junção N:N.
-  **ioredis 5 → 6 concluído** (PR #PR): RESP3 por padrão, com teste novo do Socket.IO entre réplicas.
+  **ioredis 5 → 6 concluído** (PR #119): RESP3 por padrão, com teste novo do Socket.IO entre réplicas.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
