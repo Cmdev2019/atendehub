@@ -14,9 +14,23 @@ export function initSentry() {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
     tracesSampleRate: 0,
+    // B-86 (Sentry 11): sem `dataCollection`, o SDK 11 coleta tudo — IP,
+    // cabeçalhos, cookies, corpos, query string e variáveis locais; no 10 o
+    // padrão era não coletar dado pessoal. O mínimo fica aqui, explícito.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+    },
     // Nunca manda corpo de requisição/cookies pro Sentry — pode conter
     // telefone/conteúdo de mensagem de cliente (LGPD, mesma cautela de
     // B-17/B-28/B-29/B-30). Só stack trace e metadata técnica saem daqui.
+    // Segunda barreira: vale mesmo que algo anexe esses campos ao evento.
     beforeSend(event) {
       if (event.request) {
         delete event.request.data;

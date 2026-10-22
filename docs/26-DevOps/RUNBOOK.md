@@ -469,10 +469,16 @@ bloqueia boot nem build.**
   capturado, além dos `window.onerror`/`unhandledrejection` globais que o
   SDK do Sentry já instrumenta sozinho.
 
-**Privacidade (mesma cautela de B-17/B-28/B-29/B-30):** `beforeSend` em
-ambos os lados remove `request.data`/`cookies` do evento antes de enviar —
-o corpo de uma requisição pode conter telefone/conteúdo de mensagem de
-cliente. Só stack trace e metadata técnica saem da sua infra.
+**Privacidade (mesma cautela de B-17/B-28/B-29/B-30):** desde o Sentry 11
+(B-86), os dois lados fixam o `dataCollection` no mínimo — sem IP do
+usuário, cookies, cabeçalhos, query string, corpos, dados de consulta,
+argumentos de fila e variáveis locais (sem essa opção, o SDK 11 coleta
+tudo). O `beforeSend` dos dois lados ainda remove `request.data`/`cookies`
+do evento antes de enviar, como segunda barreira — o corpo de uma
+requisição pode conter telefone/conteúdo de mensagem de cliente. Só stack
+trace e metadata técnica saem da sua infra. Os testes `sentry.spec.ts`
+(API) e `sentryOptions.test.js` (front) falham se essa configuração mudar.
+Com Sentry self-hosted, o SDK 11 exige a versão 26.4.2 ou mais nova.
 
 ## Troubleshooting
 

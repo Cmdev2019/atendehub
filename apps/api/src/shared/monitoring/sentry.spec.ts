@@ -2,12 +2,45 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Prisma } from '../../generated/prisma/client';
 import { BaseExceptionFilter } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
-import { SentryExceptionFilter } from './sentry';
+import { initSentry, SentryExceptionFilter } from './sentry';
 
 jest.mock('@sentry/node', () => ({
   init: jest.fn(),
   captureException: jest.fn(),
 }));
+
+// B-86 (Sentry 11): sem `dataCollection` explícito, o SDK 11 passaria a coletar
+// IP, cabeçalhos, cookies e corpos — o 10 não coletava por padrão
+describe('initSentry — o que sai da API (B-18 / B-86)', () => {
+  beforeEach(() => jest.clearAllMocks());
+  const options = () => {
+    initSentry();
+    return (Sentry.init as jest.Mock).mock.calls[0][0];
+  };
+
+  it('não coleta dado pessoal: dataCollection mínimo e explícito, sem tracing', () => {
+    const { dataCollection, tracesSampleRate } = options();
+
+    expect(dataCollection).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+    });
+    expect(tracesSampleRate).toBe(0);
+  });
+
+  it('beforeSend tira o corpo e os cookies da requisição, mesmo que algo os anexe', () => {
+    const { beforeSend } = options();
+    const event = { request: { url: '/api/v1/x', data: '{"phone":"5511999990000"}', cookies: { sid: 'a' } } };
+
+    expect(beforeSend(event)).toEqual({ request: { url: '/api/v1/x' } });
+  });
+});
 
 // B-18: só erros inesperados (5xx / não-HttpException) viram evento no
 // Sentry — HttpException com status < 500 é fluxo normal da aplicação
