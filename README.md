@@ -83,7 +83,7 @@ Padrões e decisões de arquitetura em [`docs/04-Arquitetura/`](docs/04-Arquitet
 
 | Camada | Tecnologia | Versão |
 |---|---|---|
-| **Frontend** | Vite · React (JavaScript) | 6 · 19 |
+| **Frontend** | Vite · React (JavaScript) | 8 · 19 |
 | | Socket.IO Client · Recharts · Sentry | — |
 | **Backend** | NestJS · TypeScript | 12 · 5.9 |
 | | Prisma ORM · Passport JWT · class-validator | 7.10 |
