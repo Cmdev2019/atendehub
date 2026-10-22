@@ -59,7 +59,7 @@
   ainda não aceita o 10. **jest-dom 6 → 7 no front concluído** (PR #124).
   **eslint-plugin-react-hooks 5 → 7 concluído** (PR #125): as regras novas do React Compiler valem como
   erro, menos duas, que acusam código de antes e viraram o B-118.
-  **Vite 6 → 8 com o `@vitejs/plugin-react` 6 concluído** (PR #PR): o empacotador passa a ser o Rolldown;
+  **Vite 6 → 8 com o `@vitejs/plugin-react` 6 concluído** (PR #126): o empacotador passa a ser o Rolldown;
   a divisão do pacote (B-105) foi reescrita e ficou igual, com os arquivos menores.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
