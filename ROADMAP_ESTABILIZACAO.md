@@ -56,7 +56,7 @@
   explicitamente (sem isso, o 11 coletaria IP, cabeçalhos, cookies e corpos).
   **class-validator 0.14 → 0.15 concluído** (PR #122), sem mudança de comportamento na validação.
   **ESLint 9 → 10 na API concluído** (PR #123). No front, o ESLint 10 espera o `eslint-plugin-react`, que
-  ainda não aceita o 10. **jest-dom 6 → 7 no front concluído** (PR #PR).
+  ainda não aceita o 10. **jest-dom 6 → 7 no front concluído** (PR #124).
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
