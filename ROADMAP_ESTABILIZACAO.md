@@ -46,7 +46,9 @@
 - **B-115 concluído** (2026-10-20): um aviso alto novo no `follow-redirects`, que a API usa por
   meio do `axios`, deixou a auditoria de dependências do CI vermelha; a versão corrigida entrou
   só no lockfile.
-- **B-86 em andamento** (2026-10-21): versões major, um PR por major ou família acoplada.
+- **B-86 concluído** (2026-10-21, parcial): versões major, um PR por major ou família acoplada (#118 a
+  #127). Em espera, por dependerem de terceiros: o TypeScript 7 (o ts-jest e o typescript-eslint ainda não
+  aceitam) e o ESLint 10 do front (o `eslint-plugin-react` ainda não aceita).
   **Prisma 5 → 7 concluído** (PR #118): o cliente é gerado em `apps/api/src/generated/prisma` e fala
   com o Postgres pelo `pg`; uma migration põe chave primária nas três tabelas de junção N:N.
   **ioredis 5 → 6 concluído** (PR #119): RESP3 por padrão, com teste novo do Socket.IO entre réplicas.
@@ -61,15 +63,18 @@
   erro, menos duas, que acusam código de antes e viraram o B-118.
   **Vite 6 → 8 com o `@vitejs/plugin-react` 6 concluído** (PR #126): o empacotador passa a ser o Rolldown;
   a divisão do pacote (B-105) foi reescrita e ficou igual, com os arquivos menores.
+  **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #PR): os padrões novos do
+  TS 6 (modo estrito, tipos globais, pasta de origem) ficaram explícitos no `tsconfig`, sem mudar a saída.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
-1. **Atualização de majors** (B-86) — em andamento, um PR por vez: Prisma 7 ✅, ioredis 6 ✅, Nest 12 ✅
-   (com o Jest 30), Sentry 11 ✅, class-validator 0.15 ✅, ESLint 10 na API ✅, jest-dom 7 ✅,
-   react-hooks 7 ✅, Vite 8 ✅; a seguir, na API, TypeScript 6 com o CLI 12 do Nest e o `@types/node` 24.
+1. **B-118** — refatorar os 15 `setState` dentro de efeitos e os 3 refs gravados no render que o react-hooks
+   7 acusou; depois, a regra vira erro.
 2. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
-3. ~~Evolução: filas de atendimento~~ (ADR-0019) ✅ — trilha encerrada em 2026-10-21: B-65, B-113, B-66,
+3. ~~Atualização de majors~~ (B-86) ✅ — em espera, por dependerem de terceiros: TypeScript 7 e ESLint 10
+   do front.
+4. ~~Evolução: filas de atendimento~~ (ADR-0019) ✅ — trilha encerrada em 2026-10-21: B-65, B-113, B-66,
    B-67, B-112, B-114 e B-68 (com o B-116, setores pelo admin).
 
 ## 📊 Painel de status
@@ -108,7 +113,7 @@
 | B-43 | — | infra/nginx/nginx.conf não define nenhum header de segurança | 🔄 Parcial 2026-10-17 · em espera (projeto de estudo) |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
-| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7, ioredis 6, Nest 12, Sentry 11, class-validator 0.15, ESLint 10 (API), jest-dom 7, react-hooks 7 e Vite 8 ✅ 2026-10-21 |
+| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | ✅ 2026-10-21 (parcial — TypeScript 7 e ESLint 10 do front em espera: dependem do ts-jest, do typescript-eslint e do eslint-plugin-react) |
 | B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | ⬜ Pendente |
 | B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
@@ -213,7 +218,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-83 | M-19 | Executa o B-41, confirmado pela auditoria | ✅ 2026-10-18 |
 | B-84 | M-10 | Amplificação de requisições | ✅ 2026-10-18 |
 | B-85 | M-20 | Auto-cadastro público sem freio | ✅ 2026-10-18 (parcial — verificação de e-mail e CAPTCHA em espera) |
-| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7, ioredis 6, Nest 12, Sentry 11, class-validator 0.15, ESLint 10 (API), jest-dom 7, react-hooks 7 e Vite 8 ✅ 2026-10-21 |
+| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | ✅ 2026-10-21 (parcial — TypeScript 7 e ESLint 10 do front em espera: dependem do ts-jest, do typescript-eslint e do eslint-plugin-react) |
 | B-87 | M-23 | Processo de Git documentado e não praticado | ✅ 2026-10-18 |
 | B-88 | M-25 | API_CONTRACT.md desatualizado em pontos operacionais | ✅ 2026-10-18 |
 | B-89 | M-24 | Divergências confirmadas na documentação (seção 10.2 da auditoria) | ✅ 2026-10-18 |

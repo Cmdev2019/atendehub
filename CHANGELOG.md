@@ -23,6 +23,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **ADR-0019 (2026-10-19):** desenho das filas de atendimento — fila compartilhada por setor ("quem atender primeiro"), atendente Online/Offline, SLAs de espera e de atendimento contados pelo setor e setores escolhidos no cadastro do atendente, com o plano de implementação (B-65 a B-68 e B-112 a B-114).
 
 ### Alterado
+- **B-86, TypeScript 6 (2026-10-21):** a API passa a compilar com o TypeScript 6, junto com o CLI 12 do Nest e os tipos do Node 24. Com isso, a atualização das versões major (B-86) fecha o que dá para fazer agora; o TypeScript 7 e o ESLint 10 do front esperam as ferramentas de terceiros.
 - **B-86, Vite 8 (2026-10-21):** o front passa a ser empacotado pelo Vite 8 (Rolldown): o build ficou cerca de 10 vezes mais rápido, e os arquivos baixados pelo navegador, um pouco menores, com a mesma divisão de antes.
 - **B-86, react-hooks 7 (2026-10-21):** o lint do front passa a aplicar as regras do React Compiler. Duas, que acusam código de antes, viraram o B-118 (15 `setState` dentro de efeitos e 3 refs gravados no render).
 - **B-86, jest-dom 7 (2026-10-21):** os testes do front passam para o jest-dom 7, com o `@testing-library/dom` declarado no `package.json`.
