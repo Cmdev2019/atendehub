@@ -49,11 +49,12 @@
 - **B-86 em andamento** (2026-10-21): versões major, um PR por major ou família acoplada.
   **Prisma 5 → 7 concluído** (PR #118): o cliente é gerado em `apps/api/src/generated/prisma` e fala
   com o Postgres pelo `pg`; uma migration põe chave primária nas três tabelas de junção N:N.
+  **ioredis 5 → 6 concluído** (PR #119): RESP3 por padrão, com teste novo do Socket.IO entre réplicas.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
-1. **Atualização de majors** (B-86) — em andamento, um PR por vez: Prisma 7 ✅; a seguir ioredis 6,
+1. **Atualização de majors** (B-86) — em andamento, um PR por vez: Prisma 7 ✅, ioredis 6 ✅; a seguir
    Nest 12 (com `@nestjs/config` e `@nestjs/schedule` 12), Sentry 11, class-validator 0.15, Jest 30 e
    ESLint 10 na API, e no front Vite 8, `@vitejs/plugin-react` 6, ESLint 10 e jest-dom 7.
 2. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
@@ -96,7 +97,7 @@
 | B-43 | — | infra/nginx/nginx.conf não define nenhum header de segurança | 🔄 Parcial 2026-10-17 · em espera (projeto de estudo) |
 | B-45 | — | Não há Swagger/OpenAPI: @nestjs/swagger não está nas dependências de apps/api/package.json e não há nenhuma referência a SwaggerModule… | ⬜ Pendente |
 | B-64 | — | A imagem do MinIO fixada no docker-compose.yml (minio/minio:RELEASE.2025-06-13T11-33-47Z) não existe mais no Docker Hub nem no quay.io —… | 🔄 Parcial 2026-10-18 · em espera (projeto de estudo) |
-| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7 ✅ 2026-10-21 |
+| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7 e ioredis 6 ✅ 2026-10-21 |
 | B-107 | L-17 | Fila (producer) sem fail-fast quando o Redis cai: enfileirar pode ficar pendurado em vez de falhar rápido | ⬜ Pendente |
 | B-108 | L-17 | Sem circuit breaker nas chamadas à Evolution: com ela fora do ar, cada chamada espera o timeout inteiro | ⬜ Pendente |
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
@@ -200,7 +201,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-83 | M-19 | Executa o B-41, confirmado pela auditoria | ✅ 2026-10-18 |
 | B-84 | M-10 | Amplificação de requisições | ✅ 2026-10-18 |
 | B-85 | M-20 | Auto-cadastro público sem freio | ✅ 2026-10-18 (parcial — verificação de e-mail e CAPTCHA em espera) |
-| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7 ✅ 2026-10-21 |
+| B-86 | M-23 | Versões major pendentes, cada uma com migração própria | 🔄 Em andamento — Prisma 7 e ioredis 6 ✅ 2026-10-21 |
 | B-87 | M-23 | Processo de Git documentado e não praticado | ✅ 2026-10-18 |
 | B-88 | M-25 | API_CONTRACT.md desatualizado em pontos operacionais | ✅ 2026-10-18 |
 | B-89 | M-24 | Divergências confirmadas na documentação (seção 10.2 da auditoria) | ✅ 2026-10-18 |

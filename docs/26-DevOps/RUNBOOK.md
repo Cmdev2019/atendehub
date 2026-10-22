@@ -62,6 +62,11 @@ cair silenciosamente num valor de desenvolvimento:
 
 Gerar secrets fortes: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`.
 
+**Redis 6 ou mais novo** (B-86): o ioredis 6 da API conversa em RESP3 (`HELLO 3`) e não
+volta sozinho para o protocolo antigo. Um Redis 5, ou um serviço gerenciado ou proxy que
+recuse o `HELLO`, derruba as conexões da API. O `docker-compose.yml` usa o `redis:7-alpine`;
+para um servidor sem RESP3, a saída é `protocol: 2` nos clientes do ioredis.
+
 **Opcional:** `SENTRY_DSN` (backend, `.env` da raiz) e `VITE_SENTRY_DSN`
 (frontend, build arg do `nginx`) — monitoramento de erros (B-18). Sem
 preencher, o Sentry não é inicializado (no-op seguro, não bloqueia o

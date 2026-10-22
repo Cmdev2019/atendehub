@@ -22,6 +22,7 @@ export const REDIS_ADAPTER_CONNECT_TIMEOUT_MS = 5000;
 export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
   private adapterConstructor?: ReturnType<typeof createAdapter>;
+  private clients: Redis[] = [];
 
   constructor(private readonly app: INestApplicationContext) {
     super(app);
@@ -52,6 +53,7 @@ export class RedisIoAdapter extends IoAdapter {
       ]);
 
       this.adapterConstructor = createAdapter(pubClient, subClient);
+      this.clients = [pubClient, subClient];
       this.logger.log(`Socket.IO Redis Adapter configurado (${host}:${port})`);
     } catch (err: any) {
       // Sem adapter, os clientes não servem para nada — desliga para não
@@ -72,5 +74,13 @@ export class RedisIoAdapter extends IoAdapter {
       server.adapter(this.adapterConstructor);
     }
     return server;
+  }
+
+  // B-86: o Nest chama no app.close(). Sem isto, as duas conexões do adapter
+  // seguiam abertas depois do encerramento.
+  async dispose(): Promise<void> {
+    this.clients.forEach((client) => client.disconnect());
+    this.clients = [];
+    await super.dispose();
   }
 }
