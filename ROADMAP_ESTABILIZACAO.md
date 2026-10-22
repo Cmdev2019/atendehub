@@ -55,7 +55,7 @@
   **Sentry 10 → 11 concluído** (PR #121), na API e no front, com a coleta de dados pessoais desligada
   explicitamente (sem isso, o 11 coletaria IP, cabeçalhos, cookies e corpos).
   **class-validator 0.14 → 0.15 concluído** (PR #122), sem mudança de comportamento na validação.
-  **ESLint 9 → 10 na API concluído** (PR #PR). No front, o ESLint 10 espera o `eslint-plugin-react`, que
+  **ESLint 9 → 10 na API concluído** (PR #123). No front, o ESLint 10 espera o `eslint-plugin-react`, que
   ainda não aceita o 10.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
