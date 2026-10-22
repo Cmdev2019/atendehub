@@ -21,6 +21,14 @@ export default [
     rules: {
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // B-86 (react-hooks 7): o preset traz as regras do React Compiler. Duas
+      // ficam de fora como erro (B-118):
+      // - `refs`: acusa todo `ref` passado ao h() — sem JSX, a análise não sabe
+      //   que h é o createElement (11 dos 14 achados eram isso);
+      // - `set-state-in-effect`: 15 setState síncronos em useEffect, que fazem
+      //   um render a mais — aviso até o B-118 refatorá-los, depois erro.
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'warn',
       // Componentes usam createElement (h) — sem JSX transform, sem prop-types
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
