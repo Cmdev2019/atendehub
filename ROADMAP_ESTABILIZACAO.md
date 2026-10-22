@@ -63,7 +63,7 @@
   erro, menos duas, que acusam código de antes e viraram o B-118.
   **Vite 6 → 8 com o `@vitejs/plugin-react` 6 concluído** (PR #126): o empacotador passa a ser o Rolldown;
   a divisão do pacote (B-105) foi reescrita e ficou igual, com os arquivos menores.
-  **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #PR): os padrões novos do
+  **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #127): os padrões novos do
   TS 6 (modo estrito, tipos globais, pasta de origem) ficaram explícitos no `tsconfig`, sem mudar a saída.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
