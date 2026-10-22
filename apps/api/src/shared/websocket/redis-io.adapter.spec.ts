@@ -59,4 +59,14 @@ describe('RedisIoAdapter (B-44)', () => {
     expect(clients.every((c) => c.disconnect.mock.calls.length === 1)).toBe(true);
     jest.useRealTimers();
   });
+
+  it('no encerramento da API (dispose), desliga os dois clientes do adapter', async () => {
+    const adapter = new RedisIoAdapter(app);
+    await adapter.connectToRedis();
+
+    await adapter.dispose();
+
+    expect(clients).toHaveLength(2);
+    expect(clients.every((c) => c.disconnect.mock.calls.length === 1)).toBe(true);
+  });
 });
