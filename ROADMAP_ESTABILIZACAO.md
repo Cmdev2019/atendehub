@@ -57,7 +57,7 @@
   **class-validator 0.14 → 0.15 concluído** (PR #122), sem mudança de comportamento na validação.
   **ESLint 9 → 10 na API concluído** (PR #123). No front, o ESLint 10 espera o `eslint-plugin-react`, que
   ainda não aceita o 10. **jest-dom 6 → 7 no front concluído** (PR #124).
-  **eslint-plugin-react-hooks 5 → 7 concluído** (PR #PR): as regras novas do React Compiler valem como
+  **eslint-plugin-react-hooks 5 → 7 concluído** (PR #125): as regras novas do React Compiler valem como
   erro, menos duas, que acusam código de antes e viraram o B-118.
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
