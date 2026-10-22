@@ -20,8 +20,10 @@ export class AuditLogService {
   // ── Escrita explícita, chamada pelos services que fazem ações sensíveis
   // (decisão B1-4: sem interceptor global — cada service registra o que é
   // relevante para si, evitando logar todo PATCH genérico) ───────────────────
-  async record(params: RecordAuditLogParams) {
-    return this.prisma.auditLog.create({
+  // B-107: `db` é a transação de quem chama, para a auditoria gravar junto com
+  // a mudança que ela descreve (ou nenhuma das duas)
+  async record(params: RecordAuditLogParams, db: Prisma.TransactionClient = this.prisma) {
+    return db.auditLog.create({
       data: {
         companyId: params.companyId,
         userId: params.userId ?? null,

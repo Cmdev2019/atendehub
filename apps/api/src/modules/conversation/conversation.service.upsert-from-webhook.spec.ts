@@ -8,6 +8,7 @@ import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { SLA_REQUEST_QUEUE } from './sla-request-queue';
 
 function p2002(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError(
@@ -50,6 +51,8 @@ describe('ConversationService#upsertFromWebhook — idempotência (B-49)', () =>
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: getQueueToken(QUEUE_NAMES.SLA_CHECK), useValue: mockSlaQueue },
+        // B-107: produtor dos pedidos do painel (não usado aqui)
+        { provide: SLA_REQUEST_QUEUE, useValue: {} },
       ],
     }).compile();
 

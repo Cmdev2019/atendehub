@@ -37,6 +37,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - **B-112 (2026-10-20):** o prazo do SLA da espera só corre no horário de expediente do auto-atendimento, no fuso da empresa. A conversa que chega com a clínica fechada passa a ter prazo, contado a partir da abertura (antes ficava sem SLA nenhum), e a espera que atravessa o fechamento, o almoço ou o fim de semana continua na abertura seguinte. Sem horário configurado, nada muda: o relógio anda o dia todo.
 
 ### Corrigido
+- **B-107 (2026-10-22):** com o Redis travado (aceitando a conexão sem responder) ou fora do ar, a API deixa de ficar pendurada. As rotas autenticadas e o login do WebSocket seguem respondendo (a blacklist de tokens desiste em 500 ms e deixa passar, como já estava documentado), e o `/health/ready` responde 503 em cerca de 2 s. Atender, "Pegar próxima", transferir e mudar o status gravam no banco a troca, os prazos do SLA e a auditoria juntos e respondem sem esperar o Redis; os alertas de SLA que não chegaram à fila são refeitos pelo banco em até 1 minuto, também depois de a API reiniciar. O robô e o webhook seguem como antes.
 - **B-117 (2026-10-21):** em dev no Windows, o `DATABASE_URL` com `localhost` fazia transações simultâneas falharem (P2028 do Prisma); o `.env.example` passa a usar `127.0.0.1`, e o motivo está nas armadilhas do CLAUDE.md.
 
 ### Segurança

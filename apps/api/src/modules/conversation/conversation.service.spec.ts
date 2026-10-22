@@ -8,6 +8,7 @@ import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { SLA_REQUEST_QUEUE } from './sla-request-queue';
 
 // Isolamento multi-tenant (B4-3): o risco é o mesmo dos outros services —
 // assign()/updateStatus() delegam a validação de posse pra findOne() por
@@ -33,6 +34,8 @@ const mockPrisma = {
   queue: { findFirst: jest.fn(), findUnique: jest.fn() },
   // B-67: o "Pegar próxima" é SQL cru (FOR UPDATE SKIP LOCKED)
   $queryRaw: jest.fn(),
+  // B-107: troca e auditoria numa transação — aqui a transação é o próprio mock
+  $transaction: jest.fn(),
 };
 
 const mockEventsService = {
@@ -65,6 +68,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockSlaQueue.getJob.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation((run: (tx: unknown) => unknown) => run(mockPrisma));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -73,7 +77,10 @@ describe('ConversationService — isolamento multi-tenant', () => {
         { provide: EventsService, useValue: mockEventsService },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: NotificationService, useValue: mockNotificationService },
+        // Os dois produtores com o mesmo mock: aqui importa o que vai para o
+        // Bull; qual produtor cada caminho usa fica no sla-sync.spec (B-107)
         { provide: getQueueToken(QUEUE_NAMES.SLA_CHECK), useValue: mockSlaQueue },
+        { provide: SLA_REQUEST_QUEUE, useValue: mockSlaQueue },
       ],
     }).compile();
 
@@ -275,6 +282,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           serviceSlaBreachedAt: null,
         },
       });
+      await service.whenSlaSynced(); // B-107: o SLA vai para o Redis fora da resposta
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -282,6 +290,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           userId: requesterId,
           after: expect.objectContaining({ agentId: requesterId, maxWaitSecs: 300, breached: false }),
         }),
+        mockPrisma, // na transação da troca
       );
       expect(mockAuditLog.record.mock.calls[0][0].after.waitSeconds).toBeGreaterThanOrEqual(90);
       expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
@@ -372,6 +381,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
       expect(sql).toContain('FOR UPDATE SKIP LOCKED');
       expect(sql).toContain('ORDER BY COALESCE("waitingSince", "createdAt")');
       expect(values).toEqual([companyA, ['dep-1', 'dep-2'], requesterId]);
+      await service.whenSlaSynced();
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -380,6 +390,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           entityId: 'conv-1',
           after: expect.objectContaining({ agentId: requesterId, maxWaitSecs: 300, breached: false }),
         }),
+        mockPrisma,
       );
       expect(mockAuditLog.record.mock.calls[0][0].after.waitSeconds).toBeGreaterThanOrEqual(120);
       expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
@@ -498,6 +509,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           before: { agentId: 'ana' },
           after: { agentId: 'bruno' },
         }),
+        mockPrisma,
       );
       expect(mockNotificationService.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'bruno', type: 'conversation_assigned' }),
@@ -578,6 +590,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           serviceSlaBreachedAt: null,
         },
       });
+      await service.whenSlaSynced();
       expect(mockSlaQueue.add).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 'conv-1', maxWaitSecs: 300 }),
         expect.objectContaining({ jobId: 'sla-check:conv-1' }),
@@ -585,6 +598,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('service-sla:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'conversation.assigned', after: { agentId: null } }),
+        mockPrisma,
       );
       expect(mockEventsService.emitConversationAssigned).toHaveBeenCalledWith(
         expect.objectContaining({ agentId: null, status: ConversationStatus.WAITING }),
@@ -601,6 +615,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
 
       await service.assign(companyA, 'conv-1', { agentId: 'ana' }, supervisor);
 
+      await service.whenSlaSynced();
       expect(mockSlaQueue.getJob).toHaveBeenCalledWith('sla-check:conv-1');
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -608,6 +623,7 @@ describe('ConversationService — isolamento multi-tenant', () => {
           userId: 'sup-1',
           after: expect.objectContaining({ agentId: 'ana' }),
         }),
+        mockPrisma,
       );
     });
 

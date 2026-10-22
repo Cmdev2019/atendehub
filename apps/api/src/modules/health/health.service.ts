@@ -24,6 +24,12 @@ export interface DependencyCheck {
 // B-102 (L-16): tempo máximo de cada checagem do diagnóstico
 const DIAGNOSTIC_TIMEOUT_MS = 2000;
 
+// B-107: tempo máximo da checagem do Redis no readiness. Com o Redis aceitando
+// a conexão sem responder, o connect/ping ficava pendurado e o readiness não
+// respondia nada — nem o 503 que tira a instância do balanceador. A checagem
+// do banco segue sem prazo próprio (D4: fica para um item à parte).
+export const READINESS_REDIS_TIMEOUT_MS = 2000;
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -52,6 +58,10 @@ export class HealthService implements OnModuleDestroy {
       // Readiness precisa responder rápido — não fica tentando reconectar
       // indefinidamente nem deixando a requisição pendurada.
       connectTimeout: 2000,
+      // B-107: o connectTimeout só cobre a abertura da conexão; o ping numa
+      // conexão aberta e muda precisa do prazo por comando (senão os pings
+      // de cada checagem se acumulam esperando)
+      commandTimeout: READINESS_REDIS_TIMEOUT_MS,
       lazyConnect: true,
       retryStrategy: () => null,
     });
@@ -119,15 +129,20 @@ export class HealthService implements OnModuleDestroy {
 
   private async checkRedis(): Promise<DependencyStatus> {
     try {
-      if (this.redis.status === 'end' || this.redis.status === 'close') {
-        await this.redis.connect();
-      }
-      await this.redis.ping();
+      // B-107: o prazo cobre também o connect, que espera o handshake
+      await withTimeout(this.pingRedis(), READINESS_REDIS_TIMEOUT_MS);
       return 'up';
     } catch (err: any) {
       this.logger.warn(`Readiness: Redis indisponível — ${err.message}`);
       return 'down';
     }
+  }
+
+  private async pingRedis(): Promise<void> {
+    if (this.redis.status === 'end' || this.redis.status === 'close') {
+      await this.redis.connect();
+    }
+    await this.redis.ping();
   }
 
   async onModuleDestroy(): Promise<void> {

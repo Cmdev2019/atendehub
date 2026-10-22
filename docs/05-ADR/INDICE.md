@@ -14,7 +14,7 @@ Medido por contagem direta desta pasta em 2026-08-05 e atualizado a cada ADR nov
 | Com parte ainda em proposta | 4 — 0012, 0015, 0016, 0018 (ver o status composto de cada uma) |
 | Substituídas (Superseded) | 0 |
 | Arquivadas | 0 |
-| Revisadas depois da criação | 0010 (v1.1, B-83), 0011 (v1.2, B-64), 0014 (v1.1, B-80), 0017 (v1.1, B-74) |
+| Revisadas depois da criação | 0010 (v1.1, B-83), 0011 (v1.2, B-64), 0014 (v1.2, B-107), 0017 (v1.1, B-74) |
 | Vinculadas a item de roadmap (`B-XX`) | 15 de 19 (0001 e 0009 sem item — decisões estruturais; 0010→B-41; 0011→B-38; 0012→B-40; 0013→B-19/B-43; 0014→B-46; 0015→B-44; 0016→B-43; 0017→sem ID, sugestão AGR; 0018→sem ID, sugestão AGR; 0002–0008→B-38/B-39/B-48/B-49; 0019→B-65 a B-68, B-112 a B-114). Recontado em 2026-10-19: a contagem anterior, "9 de 18", não batia com a própria lista |
 | Com validação automatizada real | 1 (`ADR-0002`/idempotência — via teste tripwire do `ConversationStatus`, mesmo mecanismo citado em `AER-019` da Constituição) — as demais dependem de validação manual documentada |
 
@@ -49,7 +49,7 @@ Da 0019 em diante, as ADRs nascem junto com os itens do roadmap que as implement
 | [0011](ADR-0011-storage-privado-com-url-assinada.md) | Storage privado com URL assinada (produção no Cloudflare R2 desde o B-64) | Validada | Storage, WebSocket, Nginx | ABR §9, AGR §4.3/§6 | Se volume de mídia justificar proxy autenticado; ao decidir o local da mídia (LGPD, pendência 7) |
 | [0012](ADR-0012-modelo-de-autorizacao-rbac-hierarquico.md) | Modelo de autorização: RBAC hierárquico + escopo pendente | Implementada (Role e escopo — B-40, 2026-10-17) | Controllers, Services, WebSocket | ABR §2, AGR §3 | Revisar se surgir pedido de escopo configurável por empresa |
 | [0013](ADR-0013-tokens-de-autenticacao-em-localstorage.md) | Tokens em `localStorage` | Implementada — premissa sob reavaliação | Controllers (Auth), WebSocket | ABR §9, AGR §6 | Obrigatória ao implementar **B-43** |
-| [0014](ADR-0014-clientes-redis-especializados-sem-provider-compartilhado.md) | Clientes Redis: compartilhado para estado simples, próprios para Bull/adapter/rate limit/health | ✅ Implementada (v1.1, B-80) | Redis, Bull | ABR §6 | B-46 resolvido pelo B-80 |
+| [0014](ADR-0014-clientes-redis-especializados-sem-provider-compartilhado.md) | Clientes Redis: compartilhado para estado simples, próprios para Bull/adapter/rate limit/health | ✅ Implementada (v1.2, B-107: prazos por comando) | Redis, Bull | ABR §6 | B-46 resolvido pelo B-80 · B-107 |
 | [0015](ADR-0015-imagem-docker-multi-stage-sem-hardening-de-runtime.md) | Docker multi-stage; hardening de runtime pendente | Implementada (build e runtime — B-44, 2026-10-17) | Docker | AGR §10 | Revisar se a base da imagem virar problema medido |
 | [0016](ADR-0016-nginx-como-borda-sem-hardening-proprio.md) | Nginx como borda única; hardening pendente | Implementada (topologia) / **Proposta** (hardening) | Nginx, WebSocket | AGR §6/§9 | Obrigatória ao implementar **B-43** |
 | [0017](ADR-0017-websocket-autenticado-por-handshake-jwt.md) | WebSocket por handshake JWT, com paridade de revogação | ✅ Implementada (v1.1, B-74) | WebSocket, Redis | AGR §9.1 | — |

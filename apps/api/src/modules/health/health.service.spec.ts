@@ -93,6 +93,54 @@ describe('HealthService', () => {
     expect(mockRedisInstance.connect).not.toHaveBeenCalled();
   });
 
+  // B-107: Redis que aceita a conexão e não responde — antes o readiness
+  // ficava pendurado, sem devolver nem o 503
+  describe('Redis sem resposta (B-107)', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('o cliente do readiness tem prazo por comando de 2 s, além do de conexão', () => {
+      const { Redis } = jest.requireMock('ioredis');
+      expect(Redis).toHaveBeenCalledWith(expect.objectContaining({ commandTimeout: 2000, connectTimeout: 2000 }));
+    });
+
+    it('ping que não responde: redis down em 2 s, e o banco segue checado', async () => {
+      jest.useFakeTimers();
+      mockRedisInstance.status = 'ready';
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ '?column?': 1 }]);
+      mockRedisInstance.ping.mockReturnValueOnce(new Promise(() => undefined)); // nunca responde
+
+      const pending = service.checkReadiness();
+      await jest.advanceTimersByTimeAsync(2000);
+
+      await expect(pending).resolves.toEqual({ ready: false, checks: { database: 'up', redis: 'down' } });
+    });
+
+    it('conexão nova que não completa o handshake: também down em 2 s', async () => {
+      jest.useFakeTimers();
+      mockRedisInstance.status = 'end';
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ '?column?': 1 }]);
+      mockRedisInstance.connect.mockReturnValueOnce(new Promise(() => undefined));
+
+      const pending = service.checkReadiness();
+      await jest.advanceTimersByTimeAsync(2000);
+
+      expect((await pending).checks.redis).toBe('down');
+      expect(mockRedisInstance.ping).not.toHaveBeenCalled();
+    });
+
+    it('Redis lento, mas que responde antes dos 2 s, continua up', async () => {
+      jest.useFakeTimers();
+      mockRedisInstance.status = 'ready';
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ '?column?': 1 }]);
+      mockRedisInstance.ping.mockReturnValueOnce(new Promise((resolve) => setTimeout(() => resolve('PONG'), 1500)));
+
+      const pending = service.checkReadiness();
+      await jest.advanceTimersByTimeAsync(1500);
+
+      await expect(pending).resolves.toEqual({ ready: true, checks: { database: 'up', redis: 'up' } });
+    });
+  });
+
   // B-102 (L-16): diagnóstico das 4 dependências, sem derrubar uma por outra
   describe('checkDependencies', () => {
     it('reporta cada dependência com o tempo de resposta e o erro de quem caiu', async () => {

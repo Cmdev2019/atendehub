@@ -7,6 +7,7 @@ import { EventsService } from '../events/events.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { SLA_REQUEST_QUEUE } from './sla-request-queue';
 
 // B-68 (parte 2): a visão do supervisor junta, por setor e por atendente, o
 // que as consultas agrupadas devolvem. Aqui o foco é a montagem e o
@@ -37,6 +38,8 @@ describe('ConversationService — visão do supervisor (B-68)', () => {
         { provide: AuditLogService, useValue: {} },
         { provide: NotificationService, useValue: {} },
         { provide: getQueueToken(QUEUE_NAMES.SLA_CHECK), useValue: {} },
+        // B-107: produtor dos pedidos do painel (não usado aqui)
+        { provide: SLA_REQUEST_QUEUE, useValue: {} },
       ],
     }).compile();
     service = module.get(ConversationService);

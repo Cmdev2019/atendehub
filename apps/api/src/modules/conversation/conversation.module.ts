@@ -7,6 +7,8 @@ import { TagModule } from '../tag/tag.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationModule } from '../notification/notification.module';
 import { QUEUE_NAMES } from '../../shared/queues/queue-names';
+import { slaRequestQueueProvider } from './sla-request-queue';
+import { SlaReconciliationService } from './sla-reconciliation.service';
 
 @Module({
   imports: [
@@ -17,7 +19,9 @@ import { QUEUE_NAMES } from '../../shared/queues/queue-names';
     BullModule.registerQueue({ name: QUEUE_NAMES.SLA_CHECK }),
   ],
   controllers: [ConversationController],
-  providers: [ConversationService],
+  // B-107: produtor da fila do SLA com prazo por comando (pedidos do painel)
+  // e a reconciliação dos jobs a partir do banco
+  providers: [ConversationService, slaRequestQueueProvider, SlaReconciliationService],
   exports: [ConversationService],
 })
 export class ConversationModule {}
