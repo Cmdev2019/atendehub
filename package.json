@@ -16,7 +16,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
-    "@sentry/react": "^11.8.0",
+    "@sentry/react": "^11.9.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "recharts": "^3.10.1",
