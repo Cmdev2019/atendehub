@@ -66,20 +66,21 @@
   **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #127): os padrões novos do
   TS 6 (modo estrito, tipos globais, pasta de origem) ficaram explícitos no `tsconfig`, sem mudar a saída.
 - **B-107 em validação** ([PR #129](https://github.com/Cmdev2019/atendehub/pull/129)): aguarda a revisão do responsável. A implementação desse PR continua separada do B-118.
-- **B-118 implementado localmente, em validação** (2026-11-05): removidos os 15 avisos de estado em
-  efeitos e os refs acessados no render; a regra de estado em efeitos agora é erro, assim como
-  a de refs no hook de conversas. Diálogos reiniciam ao abrir, atualizar tags preserva rascunhos,
-  falhas atrasadas de envio não vazam para outra conversa e a passagem para Encerrados atualiza
-  as listas juntas. Validação: 440 testes em 44 suítes numa cópia isolada dos fontes, lint sem
-  avisos e build de produção. **Branch própria preparada; CI e revisão pendentes**; B-107 continua aguardando
-  revisão. Evidências e limites no [registro de regressão](docs/23-Testes/Regressao/b-118-efeitos-e-refs.md).
+- **B-118 em validação** ([PR #142](https://github.com/Cmdev2019/atendehub/pull/142), 2026-11-05):
+  refatorados efeitos e refs do frontend, com regras de lint obrigatórias. Diálogos reiniciam ao
+  abrir, tags preservam rascunhos, erros atrasados ficam na conversa correta e ativos/encerrados
+  mudam juntos. **CI:** frontend 440/440, API 707/707 e e2e 98/98; os checks api, web e api-e2e
+  passaram. A auditoria de dependências da API falhou; seus manifests e lockfiles não mudam
+  neste PR. Auditoria e revisão seguem pendentes, sem merge. Evidências no
+  [registro de regressão](docs/23-Testes/Regressao/b-118-efeitos-e-refs.md).
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
 1. **B-107** em validação (PR #129) — revisão do responsável e merge.
-2. **B-118** — branch `refactor/b-118-efeitos-e-refs` isolada sobre master; acompanhar os checks
-   `api`, `web` e `api-e2e` do PR e revisar a mudança antes do merge.
+2. **B-118** ([PR #142](https://github.com/Cmdev2019/atendehub/pull/142)) — código aprovado nos
+   checks obrigatórios; revisar o PR e tratar a auditoria de dependências da API em ocorrência
+   própria antes de encerrar a validação.
 3. **Validação de 2026-10-30** — triar os achados do relatório externo e registrá-los com IDs antes de
    iniciar as correções; detalhes de segurança continuam fora do repositório público.
 4. **Pendências registradas** — B-45 (Swagger), B-108 a B-111 (recomendações dos relatórios antigos).
@@ -132,7 +133,7 @@
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
-| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (CI/revisão pendentes) |
+| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (PR #142; auditoria/revisão pendentes) |
 
 **Concluídos em parte** (o resto em espera):
 
@@ -263,7 +264,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |
 | B-116 | — | Setores criados pelo admin conforme a necessidade, até 20 ativos por empresa; o seed não cria mais os 13 setores de exemplo | ✅ 2026-10-21 |
 | B-117 | — | No Windows, o localhost do DATABASE_URL fazia transações simultâneas do Prisma falharem (P2028); exemplo e .env local com 127.0.0.1 | ✅ 2026-10-21 |
-| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (CI/revisão pendentes) |
+| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (PR #142; auditoria/revisão pendentes) |
 
 ## 📖 Regras do documento vivo
 

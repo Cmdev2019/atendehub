@@ -12,6 +12,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
+> **B-118:** [PR #142](https://github.com/Cmdev2019/atendehub/pull/142) publicado. CI do código aprovada (440 testes do front, 707 da API e 98 e2e); auditoria de dependências da API e revisão pendentes.
+
 ### Alterado
 - **B-118 (2026-11-05, implementação local):** estado em efeitos passa a ser erro no lint. Diálogos reiniciam ao abrir; o formulário de contato preserva o rascunho ao atualizar tags. Filtros de relatório reiniciam o resultado, o aviso da fila cancela sua sessão ao ficar Offline, e conversas atualizam refs após o render, descartam erros de outra conversa e movem as listas de ativos e encerrados juntas. Validação: 440 testes/44 suítes em cópia isolada, lint limpo e build de produção; CI/revisão pendentes.
 

@@ -4,7 +4,7 @@
 - **Responsável pela execução:** Codex, na retomada do projeto.
 - **Versão alvo:** alterações locais sobre 9e8ceb4427f86cfeef14614bb61a085f59b4e25e.
 - **Data:** 2026-11-05.
-- **Estado:** implementação validada localmente; branch própria preparada, CI e revisão pendentes.
+- **Estado:** PR #142 aberto; CI do código aprovada, auditoria da API e revisão pendentes.
 
 ## Objetivo
 
@@ -46,7 +46,8 @@ formulários, contatos, exportação, polling, debounce, disponibilidade e confi
 - [x] Regra refs como erro em useConversations; nos componentes permanece desligada
   pelo falso positivo conhecido com createElement/h.
 - [x] Build de produção gerado com a configuração real do Vite/Rolldown.
-- [ ] Comandos normais e checks da CI aprovados no PR do B-118.
+- [x] Comandos normais de lint, testes e build na CI; checks api, web e api-e2e aprovados.
+- [ ] Auditoria de dependências da API aprovada e revisão do B-118 concluída.
 
 ## Critérios de parada
 
@@ -73,8 +74,8 @@ O teste do cliente de demonstração manteve os 800 ms de latência simulada por
 
 Foram executadas as sete regressões também com os quatro fontes originais: quatro passaram
 e três falharam (rascunho após tags, erro de envio em outra conversa e encerramento no mesmo
-lote). Com os fontes alterados, todas passam. Os testes não equivalem a validação visual em
-navegador, backend/e2e ou CI; esses resultados não foram alegados nesta sessão.
+lote). Com os fontes alterados, todas passam. Os testes locais não equivalem a validação visual em
+navegador ou backend/e2e. A execução posterior na CI está registrada abaixo.
 
 ## Evidências e reprodução
 
@@ -95,9 +96,25 @@ O resultado de CI deve ser acrescentado ao histórico antes de marcar o item com
 ## Publicação no GitHub
 
 Após a autorização do responsável para usar a conta Cmdev2019, o acesso de escrita ao
-repositório foi confirmado. Os arquivos do B-118 foram preparados para a branch refactor/b-118-efeitos-e-refs,
-a criar sobre o master afc05cd9b9e097a0dcb171ccde5ef5bdf688e04c. Os 14 arquivos existentes de
+repositório foi confirmado. O B-118 foi publicado na branch refactor/b-118-efeitos-e-refs,
+baseada no master afc05cd9b9e097a0dcb171ccde5ef5bdf688e04c. Os 14 arquivos existentes de
 código, testes e lint têm a mesma base na branch do B-107 e no master; a documentação
 foi portada preservando o histórico do master. Nenhum código do B-107 entra neste PR.
 A primeira tentativa de gravação pela API de Git retornou 403. Após a reconexão informada pelo responsável, a gravação de objeto Git foi confirmada. A publicação usa o conector GitHub porque o terminal local segue indisponível.
 Os checks api, web e api-e2e e a revisão do PR completam a validação desta publicação.
+
+## Resultado da CI — PR #142
+
+Execução do commit 980b1ddd77c4673ca9356bbe1432735aea090001, publicado sobre master:
+
+| Check | Resultado | Evidência |
+|---|---|---|
+| web | Aprovado: 44 suítes, 440 testes; lint e build aprovados | [Web CI](https://github.com/Cmdev2019/atendehub/actions/runs/42065655197) |
+| api | Aprovado: 70 suítes, 707 testes; lint, tipos e cobertura aprovados | [API CI](https://github.com/Cmdev2019/atendehub/actions/runs/42065654977) |
+| api-e2e | Aprovado: 18 suítes, 98 testes | [API CI](https://github.com/Cmdev2019/atendehub/actions/runs/42065654977) |
+| web-audit | Aprovado | [Dependency Audit](https://github.com/Cmdev2019/atendehub/actions/runs/42065654930) |
+| api-audit | Falhou; dependências da API exigem tratamento separado | [Dependency Audit](https://github.com/Cmdev2019/atendehub/actions/runs/42065654930) |
+
+O B-118 não altera package.json, lockfiles nem arquivos apps/api. Os detalhes da auditoria
+permanecem nas evidências externas, seguindo SECURITY.md. O PR continua em validação e
+não foi mesclado. Este registro de CI altera somente documentação; o código permanece idêntico.
