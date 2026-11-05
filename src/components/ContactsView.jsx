@@ -31,25 +31,28 @@ export function ContactsView() {
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setListError(null);
-    try {
-      const response = await apiClient.getContacts({
-        search: search || undefined,
-        tagId: tagFilter || undefined,
-        page,
-        limit: PAGE_LIMIT,
-      });
+  const load = useCallback(() => apiClient.getContacts({
+    search: search || undefined,
+    tagId: tagFilter || undefined,
+    page,
+    limit: PAGE_LIMIT,
+  })
+    .then((response) => {
+      setListError(null);
       setContacts(response?.data || []);
       setMeta(response?.meta || { total: 0, page: 1, totalPages: 1 });
-    } catch (error) {
+    })
+    .catch((error) => {
       setListError(error?.message || 'Não foi possível carregar os contatos.');
       setContacts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, tagFilter, page]);
+    })
+    .finally(() => setLoading(false)), [search, tagFilter, page]);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setListError(null);
+    return load();
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -68,11 +71,19 @@ export function ContactsView() {
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
+    if (searchInput.trim() !== search || page !== 1) {
+      setLoading(true);
+      setListError(null);
+    }
     setPage(1);
     setSearch(searchInput.trim());
   };
 
   const handleTagFilterChange = (event) => {
+    if (event.target.value !== tagFilter || page !== 1) {
+      setLoading(true);
+      setListError(null);
+    }
     setPage(1);
     setTagFilter(event.target.value);
   };
@@ -106,7 +117,7 @@ export function ContactsView() {
         setPage(1); // contato novo precisa estar visível — garante que a página exibida o inclui
       }
       closeDialog();
-      load();
+      reload();
     } catch (error) {
       setFormError(error?.message || 'Não foi possível salvar o contato.');
     } finally {
@@ -125,7 +136,7 @@ export function ContactsView() {
       await apiClient.addContactTag(editingContact.id, tagId);
       const refreshed = await apiClient.getContact(editingContact.id);
       setEditingContact(refreshed);
-      load();
+      reload();
     } catch (error) {
       setFormError(error?.message || 'Não foi possível adicionar a tag.');
     }
@@ -138,7 +149,7 @@ export function ContactsView() {
       await apiClient.removeContactTag(editingContact.id, tagId);
       const refreshed = await apiClient.getContact(editingContact.id);
       setEditingContact(refreshed);
-      load();
+      reload();
     } catch (error) {
       setFormError(error?.message || 'Não foi possível remover a tag.');
     }
@@ -249,7 +260,7 @@ export function ContactsView() {
         { className: 'contacts-pagination' },
         h(
           'button',
-          { type: 'button', className: 'btn-secondary', disabled: page <= 1, onClick: () => setPage((p) => p - 1) },
+          { type: 'button', className: 'btn-secondary', disabled: page <= 1, onClick: () => { setLoading(true); setListError(null); setPage((p) => p - 1); } },
           'Anterior',
         ),
         h('span', null, `Página ${meta.page} de ${meta.totalPages} (${meta.total} contatos)`),
@@ -259,7 +270,7 @@ export function ContactsView() {
             type: 'button',
             className: 'btn-secondary',
             disabled: page >= meta.totalPages,
-            onClick: () => setPage((p) => p + 1),
+            onClick: () => { setLoading(true); setListError(null); setPage((p) => p + 1); },
           },
           'Próxima',
         ),

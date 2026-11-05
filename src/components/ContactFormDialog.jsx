@@ -15,12 +15,17 @@ const PHONE_PATTERN = /^\d{10,15}$/;
 // Tags (organização por tag/grupo) só fazem sentido em contato que já
 // existe — mesma restrição do backend (o endpoint de atribuir tag exige um
 // contactId real) — então só aparecem em edição, nunca em cadastro.
-export function ContactFormDialog({ open, contact, availableTags = [], onAddTag, onRemoveTag, onSave, onCancel, saving, error }) {
+export function ContactFormDialog(props) {
+  return props.open ? h(ContactFormContent, { ...props, key: props.contact?.id ?? 'new' }) : null;
+}
+
+// A identidade do contato reinicia o formulário; atualizar tags preserva o rascunho.
+function ContactFormContent({ contact, availableTags = [], onAddTag, onRemoveTag, onSave, onCancel, saving, error }) {
   const isEdit = !!contact;
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [channel, setChannel] = useState('WHATSAPP');
+  const [name, setName] = useState(contact?.name ?? '');
+  const [phone, setPhone] = useState(contact?.phone ?? '');
+  const [email, setEmail] = useState(contact?.email ?? '');
+  const [channel, setChannel] = useState(contact?.channel ?? 'WHATSAPP');
   const [tagToAdd, setTagToAdd] = useState('');
   const nameRef = useRef(null);
 
@@ -34,24 +39,16 @@ export function ContactFormDialog({ open, contact, availableTags = [], onAddTag,
   };
 
   useEffect(() => {
-    if (!open) return;
-    setName(contact?.name ?? '');
-    setPhone(contact?.phone ?? '');
-    setEmail(contact?.email ?? '');
-    setChannel(contact?.channel ?? 'WHATSAPP');
     nameRef.current?.focus();
-  }, [open, contact]);
+  }, []);
 
   useEffect(() => {
-    if (!open) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onCancel();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onCancel]);
-
-  if (!open) return null;
+  }, [onCancel]);
 
   const nameValid = name.trim().length >= 2;
   const phoneValid = isEdit || PHONE_PATTERN.test(phone.trim());

@@ -17,26 +17,26 @@ export const NOTIFICATIONS_REFRESH_DEBOUNCE_MS = 500;
 export function useNotifications(currentUserId) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await apiClient.getNotifications({ limit: 20 });
+  const loadNotifications = useCallback(() => apiClient.getNotifications({ limit: 20 })
+    .then((response) => {
       const data = response.data || [];
       setNotifications(data);
       setUnreadCount(data.filter((n) => !n.readAt).length);
       setError(null);
-    } catch (err) {
-      setError(err.message || 'Erro ao carregar notificações');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    })
+    .catch((err) => setError(err.message || 'Erro ao carregar notificações'))
+    .finally(() => setLoading(false)), []);
+
+  const fetchNotifications = useCallback(() => {
+    setLoading(true);
+    return loadNotifications();
+  }, [loadNotifications]);
 
   useEffect(() => {
-    fetchNotifications();
+    loadNotifications();
 
     const handleRefetch = () => fetchNotifications();
     const scheduleRefetch = debounce(handleRefetch, NOTIFICATIONS_REFRESH_DEBOUNCE_MS);
@@ -57,7 +57,7 @@ export function useNotifications(currentUserId) {
       wsClient.off('conversation.assigned', handleAssigned);
       wsClient.off('reconnected', handleRefetch);
     };
-  }, [fetchNotifications, currentUserId]);
+  }, [loadNotifications, fetchNotifications, currentUserId]);
 
   const markAsRead = useCallback(async (id) => {
     setNotifications((prev) =>

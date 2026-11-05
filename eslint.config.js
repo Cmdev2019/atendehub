@@ -21,14 +21,11 @@ export default [
     rules: {
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
-      // B-86 (react-hooks 7): o preset traz as regras do React Compiler. Duas
-      // ficam de fora como erro (B-118):
-      // - `refs`: acusa todo `ref` passado ao h() — sem JSX, a análise não sabe
-      //   que h é o createElement (11 dos 14 achados eram isso);
-      // - `set-state-in-effect`: 15 setState síncronos em useEffect, que fazem
-      //   um render a mais — aviso até o B-118 refatorá-los, depois erro.
+      // B-118: estado em efeitos passa a ser erro. A regra refs continua
+      // desligada nos componentes: confunde refs passadas ao createElement
+      // (h) com leitura no render. O hook de conversas é verificado abaixo.
       'react-hooks/refs': 'off',
-      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/set-state-in-effect': 'error',
       // Componentes usam createElement (h) — sem JSX transform, sem prop-types
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
@@ -36,6 +33,10 @@ export default [
       'no-console': ['error', { allow: ['warn', 'error'] }],
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }],
     },
+  },
+  {
+    files: ['src/hooks/useConversations.js'],
+    rules: { 'react-hooks/refs': 'error' },
   },
   {
     files: ['src/**/*.test.{js,jsx}', 'src/setupTests.js', '**/__mocks__/**'],
