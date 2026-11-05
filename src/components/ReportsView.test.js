@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement as h } from 'react';
 
 jest.mock('../services/api', () => ({
@@ -29,6 +29,22 @@ describe('ReportsView (B-33)', () => {
     mockApiClient = require('../services/api').apiClient;
     global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
     global.URL.revokeObjectURL = jest.fn();
+  });
+
+  it('mostra carregamento no filtro novo e ignora a resposta atrasada do filtro anterior (B-118)', async () => {
+    let resolveOld;
+    let resolveNew;
+    mockApiClient.getReport
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveNew = resolve; }));
+    render(h(ReportsView));
+    fireEvent.change(screen.getByLabelText('Tipo de relatório'), { target: { value: 'by-agent' } });
+    expect(screen.getByText('Carregando relatório…')).toBeInTheDocument();
+    await act(async () => resolveNew({ rows: [{ atendente: 'Atendente atual', atendidas: 2 }] }));
+    expect(screen.getByText('Atendente atual')).toBeInTheDocument();
+    await act(async () => resolveOld({ rows: attendanceRows }));
+    expect(screen.getByText('Atendente atual')).toBeInTheDocument();
+    expect(screen.queryByText('Marina Alves')).not.toBeInTheDocument();
   });
 
   it('carrega o relatório "Base de atendimento" por padrão e mostra a tabela', async () => {

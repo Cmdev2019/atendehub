@@ -27,6 +27,22 @@ describe('QueueArrivalToast (B-68)', () => {
   });
   afterEach(() => jest.useRealTimers());
 
+  it('retoma Online sem restaurar aviso antigo e cancela o prazo da sessão anterior (B-118)', () => {
+    const props = { online: true, onAttend: jest.fn() };
+    const { rerender } = render(h(QueueArrivalToast, props));
+    arrive(waiting);
+    act(() => jest.advanceTimersByTime(ARRIVAL_TOAST_MS - 1000));
+    rerender(h(QueueArrivalToast, { ...props, online: false }));
+    expect(jest.getTimerCount()).toBe(0);
+    rerender(h(QueueArrivalToast, props));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    arrive({ ...waiting, contact: { name: 'Segundo contato' } });
+    act(() => jest.advanceTimersByTime(1000));
+    expect(screen.getByText('Segundo contato')).toBeInTheDocument();
+    act(() => jest.advanceTimersByTime(ARRIVAL_TOAST_MS - 1000));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('Online: avisa a conversa nova na fila, com o nome do paciente', () => {
     render(h(QueueArrivalToast, { online: true, onAttend: jest.fn() }));
 

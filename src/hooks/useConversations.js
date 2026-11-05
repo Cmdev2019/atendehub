@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { initialConversations } from '../data/mockConversations';
 import { apiClient } from '../services/api';
 import { wsClient } from '../services/websocket';
@@ -107,29 +107,63 @@ const emptyStats = {
 // só com o que já veio no fetch inicial/eventos em tempo real).
 export function useConversations(currentUserId) {
   // Começar com mock data como fallback
-  const [conversations, setConversations] = useState(initialUiConversations);
-  const [activeId, setActiveId] = useState(initialUiConversations[0]?.id);
+  const [{ conversations, closedConversations }, setConversationLists] = useState({
+    conversations: initialUiConversations,
+    closedConversations: [],
+  });
+  const setConversations = useCallback((value) => setConversationLists((current) => ({
+    ...current,
+    conversations: typeof value === 'function' ? value(current.conversations) : value,
+  })), []);
+  const setClosedConversations = useCallback((value) => setConversationLists((current) => ({
+    ...current,
+    closedConversations: typeof value === 'function' ? value(current.closedConversations) : value,
+  })), []);
+  // As duas listas mudam juntas, sem depender da execução antecipada de um updater.
+  const moveToClosed = useCallback((conversationId, changes) => setConversationLists((current) => {
+    const conversation = current.conversations.find((c) => c.id === conversationId);
+    if (!conversation) return current;
+    const closed = { ...conversation, ...changes, status: 'CLOSED', slaBreached: false };
+    return {
+      conversations: current.conversations.filter((c) => c.id !== conversationId),
+      closedConversations: current.closedConversations.some((c) => c.id === conversationId)
+        ? current.closedConversations : [closed, ...current.closedConversations],
+    };
+  }), []);
+  // Seleção e erro mudam juntos; falhas atrasadas de outra conversa são ignoradas.
+  const [{ activeId, sendError }, setSelection] = useState({
+    activeId: initialUiConversations[0]?.id,
+    sendError: null,
+  });
+  const setActiveId = useCallback((value) => setSelection((current) => {
+    const nextId = typeof value === 'function' ? value(current.activeId) : value;
+    return nextId === current.activeId ? current : { activeId: nextId, sendError: null };
+  }), []);
+  const setSendError = useCallback((error) => setSelection((current) => (
+    current.activeId !== activeId || current.sendError === error
+      ? current : { ...current, sendError: error }
+  )), [activeId]);
   const [draft, setDraft] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(emptyStats);
   // true somente após carregar conversas REAIS — evita join/fetch com ids mock
   const [loadedFromApi, setLoadedFromApi] = useState(false);
   // Mensagem de erro do último envio que falhou (visível na UI)
-  const [sendError, setSendError] = useState(null);
   const loadingMessagesRef = useRef(new Set());
   // Lista atual acessível pelos handlers de socket (registrados uma única vez)
   const conversationsRef = useRef(conversations);
-  conversationsRef.current = conversations;
   // Idem para a conversa aberta: mensagem nova nela não conta como não lida
   const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
+  useLayoutEffect(() => {
+    conversationsRef.current = conversations;
+    activeIdRef.current = activeId;
+  }, [conversations, activeId]);
   const fetchingConversationsRef = useRef(new Set());
 
   // Fetch conversas reais do backend
   useEffect(() => {
     const fetchConversations = async () => {
       try {
-        setLoading(true);
         const response = await apiClient.getConversations();
 
         // Qualquer resposta do backend (mesmo lista vazia) é autoritativa —
@@ -151,18 +185,13 @@ export function useConversations(currentUserId) {
     };
 
     fetchConversations();
-  }, []);
+  }, [setActiveId, setConversations]);
 
   // Métricas agregadas (B-2) — endpoint próprio, independente da paginação
   // da fila (ver fetchStats reusado nos handlers de socket abaixo).
-  const fetchStats = useCallback(async () => {
-    try {
-      const result = await apiClient.getConversationStats();
-      if (result) setStats(result);
-    } catch (error) {
-      console.warn('⚠️ Erro ao buscar métricas:', error.message);
-    }
-  }, []);
+  const fetchStats = useCallback(() => Promise.resolve(apiClient.getConversationStats())
+    .then((result) => { if (result) setStats(result); })
+    .catch((error) => console.warn('⚠️ Erro ao buscar métricas:', error.message)), []);
 
   useEffect(() => {
     fetchStats();
@@ -170,12 +199,11 @@ export function useConversations(currentUserId) {
 
   // Usado só pelos eventos de socket; ações do próprio usuário (atender,
   // encerrar, abrir conversa) seguem buscando na hora
-  const scheduleStatsRefreshRef = useRef(null);
-  if (!scheduleStatsRefreshRef.current) {
-    scheduleStatsRefreshRef.current = debounce(() => fetchStats(), STATS_REFRESH_DEBOUNCE_MS);
-  }
-  const scheduleStatsRefresh = scheduleStatsRefreshRef.current;
-  useEffect(() => () => scheduleStatsRefreshRef.current?.cancel(), []);
+  const scheduleStatsRefresh = useMemo(
+    () => debounce(fetchStats, STATS_REFRESH_DEBOUNCE_MS),
+    [fetchStats],
+  );
+  useEffect(() => () => scheduleStatsRefresh.cancel(), [scheduleStatsRefresh]);
 
   // Catálogo de tags da empresa (B-27) — carregado uma vez, usado tanto pra
   // exibir quanto pra popular o seletor de "adicionar tag" na conversa ativa.
@@ -196,7 +224,6 @@ export function useConversations(currentUserId) {
   // ── Encerrados (B-31) — carregado sob demanda só quando a aba é aberta,
   // separado de `conversations` porque o backend já exclui CLOSED da
   // listagem padrão (mesmo filtro implícito usado pela fila ativa).
-  const [closedConversations, setClosedConversations] = useState([]);
   const [closedLoaded, setClosedLoaded] = useState(false);
   const [closedPage, setClosedPage] = useState(1);
   const [closedHasMore, setClosedHasMore] = useState(false);
@@ -214,7 +241,7 @@ export function useConversations(currentUserId) {
     } catch (error) {
       console.warn('⚠️ Erro ao buscar conversas encerradas:', error.message);
     }
-  }, [closedLoaded]);
+  }, [closedLoaded, setClosedConversations]);
 
   const loadMoreClosedConversations = useCallback(async () => {
     if (!closedHasMore || closedLoadingMore) return;
@@ -236,7 +263,7 @@ export function useConversations(currentUserId) {
     } finally {
       setClosedLoadingMore(false);
     }
-  }, [closedHasMore, closedLoadingMore, closedPage]);
+  }, [closedHasMore, closedLoadingMore, closedPage, setClosedConversations]);
 
   // Scroll infinito por aba (B-31) — "Fila"/"Meus"/"Em atendimento" cada uma
   // pagina sua PRÓPRIA busca filtrada no servidor (status/agentId), igual ao
@@ -252,7 +279,7 @@ export function useConversations(currentUserId) {
       const toAdd = fresh.filter((c) => !existingIds.has(c.id));
       return toAdd.length ? [...prev, ...toAdd] : prev;
     });
-  }, []);
+  }, [setConversations]);
 
   const [queuePage, setQueuePage] = useState(0);
   const [queueHasMore, setQueueHasMore] = useState(true);
@@ -363,7 +390,7 @@ export function useConversations(currentUserId) {
 
     wsClient.on('reconnected', resync);
     return () => wsClient.off('reconnected', resync);
-  }, [fetchStats]);
+  }, [fetchStats, setActiveId, setConversations]);
 
   // Setup WebSocket listeners para tempo real
   // Nomes e payloads conforme o backend (events.service.ts)
@@ -501,34 +528,15 @@ export function useConversations(currentUserId) {
       const { conversationId, changes } = payload ?? {};
       if (!conversationId) return;
 
-      let closedElsewhere = null;
-      setConversations((prev) =>
-        prev
-          .map((conv) => {
-            if (conv.id !== conversationId) return conv;
-            const next = { ...conv, ...(changes ?? {}) };
-            // Saiu de WAITING por qualquer caminho (não só atribuição de
-            // agente, ver conversation.assigned abaixo) — o alerta de SLA
-            // deixa de fazer sentido.
-            if (changes?.status && changes.status !== 'WAITING') {
-              next.slaBreached = false;
-            }
-            // Encerrada (por mim em outra aba, ou por outro agente/supervisor)
-            // — sai da lista ativa, igual ao que closeConversation já faz.
-            if (changes?.status === 'CLOSED') {
-              closedElsewhere = next;
-              return null;
-            }
-            return next;
-          })
-          .filter(Boolean),
-      );
-      // Real-time: se a aba "Encerrados" já estava carregada, reflete a
-      // conversa recém-fechada nela também, sem esperar um refresh manual.
-      if (closedElsewhere) {
-        setClosedConversations((prev) =>
-          prev.some((c) => c.id === closedElsewhere.id) ? prev : [closedElsewhere, ...prev],
-        );
+      if (changes?.status === 'CLOSED') {
+        moveToClosed(conversationId, changes);
+      } else {
+        setConversations((prev) => prev.map((conv) => {
+          if (conv.id !== conversationId) return conv;
+          const next = { ...conv, ...(changes ?? {}) };
+          if (changes?.status && changes.status !== 'WAITING') next.slaBreached = false;
+          return next;
+        }));
       }
       scheduleStatsRefresh();
     };
@@ -615,7 +623,7 @@ export function useConversations(currentUserId) {
       wsClient.off('sla.breached', handleSlaBreached);
       wsClient.off('sla.service_breached', handleServiceSlaBreached);
     };
-  }, []);
+  }, [moveToClosed, scheduleStatsRefresh, setConversations]);
 
   // Carrega as mensagens da conversa ativa sob demanda (a listagem da API
   // não inclui mensagens). Só para conversas reais (messagesLoaded === false).
@@ -645,7 +653,7 @@ export function useConversations(currentUserId) {
         loadingMessagesRef.current.delete(activeId);
       }
     })();
-  }, [activeId, conversations]);
+  }, [activeId, conversations, setConversations]);
 
   // Carrega mensagens mais antigas ao rolar pro topo do histórico (B-4) —
   // cursor é o id da mensagem mais antiga já carregada (a própria API usa o
@@ -683,7 +691,7 @@ export function useConversations(currentUserId) {
       loadingMoreMessagesRef.current.delete(conversationId);
       setLoadingOlderMessages(false);
     }
-  }, []);
+  }, [setConversations]);
 
   // Entra na sala da conversa ativa (join:conversation) para receber os
   // eventos direcionados a ela; sai da sala anterior ao trocar de conversa.
@@ -702,12 +710,7 @@ export function useConversations(currentUserId) {
       wsClient.off('connected', join);
       if (wsClient.isConnected) wsClient.leaveConversation(activeId);
     };
-  }, [activeId]);
-
-  // Erro de envio pertence à conversa em que ocorreu — limpa ao trocar
-  useEffect(() => {
-    setSendError(null);
-  }, [activeId]);
+  }, [activeId, loadedFromApi]);
 
   // B-60: abrir a conversa marca como lida — no backend (antes o front nunca
   // chamava PATCH /conversations/:id/read) e na lista local. Só para conversas
@@ -724,7 +727,7 @@ export function useConversations(currentUserId) {
       .markConversationRead(activeId)
       .then(() => fetchStats())
       .catch((error) => console.warn('⚠️ Erro ao marcar conversa como lida:', error.message));
-  }, [activeId, loadedFromApi]);
+  }, [activeId, loadedFromApi, fetchStats, setConversations]);
 
   // Também busca em closedConversations — clicar numa conversa na aba
   // "Encerrados" (B-31) precisa abrir o histórico dela no ChatPanel também.
@@ -756,7 +759,7 @@ export function useConversations(currentUserId) {
           : conv,
       ),
     );
-  }, []);
+  }, [setConversations]);
 
   const attendConversation = useCallback(async (conversationId, agent) => {
     try {
@@ -792,7 +795,7 @@ export function useConversations(currentUserId) {
     } catch (error) {
       return { ok: false, error: error?.message || 'Não foi possível pegar a próxima conversa' };
     }
-  }, [fetchStats, markAttended]);
+  }, [fetchStats, markAttended, setConversations]);
 
   // Encerrar (B-31): fecha a conversa ativa — some da fila ativa e, se a aba
   // "Encerrados" já tiver sido aberta antes, entra nela na hora.
@@ -806,19 +809,7 @@ export function useConversations(currentUserId) {
   const closeConversation = useCallback(async (conversationId, resolution, resolutionNote) => {
     try {
       await apiClient.updateConversationStatus(conversationId, 'CLOSED', resolution, resolutionNote);
-      let closed = null;
-      setConversations((prev) =>
-        prev.filter((conv) => {
-          if (conv.id !== conversationId) return true;
-          closed = { ...conv, status: 'CLOSED', resolution, resolutionNote: resolutionNote ?? null };
-          return false;
-        }),
-      );
-      if (closed) {
-        setClosedConversations((prev) =>
-          prev.some((c) => c.id === closed.id) ? prev : [closed, ...prev],
-        );
-      }
+      moveToClosed(conversationId, { resolution, resolutionNote: resolutionNote ?? null });
       setActiveId((prev) => (prev === conversationId ? null : prev));
       fetchStats();
       return true;
@@ -826,7 +817,7 @@ export function useConversations(currentUserId) {
       console.warn('⚠️ Erro ao encerrar conversa:', error.message);
       return false;
     }
-  }, [fetchStats]);
+  }, [fetchStats, moveToClosed, setActiveId]);
 
   // Atribuir/remover tag na conversa ativa (B-27) — qualquer usuário
   // autenticado pode (backend não restringe por role aqui, só a criação/
@@ -848,7 +839,7 @@ export function useConversations(currentUserId) {
         console.warn('⚠️ Erro ao adicionar tag:', error.message);
       }
     },
-    [activeId, availableTags],
+    [activeId, availableTags, setConversations],
   );
 
   const removeTagFromConversation = useCallback(
@@ -867,7 +858,7 @@ export function useConversations(currentUserId) {
         console.warn('⚠️ Erro ao remover tag:', error.message);
       }
     },
-    [activeId],
+    [activeId, setConversations],
   );
 
   // Envia texto e/ou arquivos de mídia (prints colados, anexos).

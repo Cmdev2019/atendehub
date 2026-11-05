@@ -72,19 +72,16 @@ function WhatsappSection() {
   const [qr, setQr] = useState(null);
   const pollRef = useRef(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [conns, deps] = await Promise.all([
-        apiClient.getWhatsappConnections(),
-        apiClient.getDepartments().catch(() => []),
-      ]);
+  const load = useCallback(() => Promise.all([
+    apiClient.getWhatsappConnections(),
+    apiClient.getDepartments().catch(() => []),
+  ])
+    .then(([conns, deps]) => {
       setConnections(unwrap(conns));
       setDepartments(unwrap(deps));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
+    })
+    .catch((e) => setError(errMsg(e))), []);
 
   useEffect(() => {
     load();
@@ -331,20 +328,17 @@ function UsersSection({ canManage }) {
   // memória, nunca é logada nem persistida; some ao fechar ou trocar de tela.
   const [resetResult, setResetResult] = useState(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [us, deps] = await Promise.all([
-        apiClient.getUsers(),
-        // Só quem gerencia escolhe setores; sem a lista, os usuários aparecem igual
-        canManage ? apiClient.getDepartments().catch(() => []) : [],
-      ]);
+  const load = useCallback(() => Promise.all([
+    apiClient.getUsers(),
+    // Só quem gerencia escolhe setores; sem a lista, os usuários aparecem igual
+    canManage ? apiClient.getDepartments().catch(() => []) : [],
+  ])
+    .then(([us, deps]) => {
       setUsers(unwrap(us));
       setDepartments(unwrap(deps));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, [canManage]);
+    })
+    .catch((e) => setError(errMsg(e))), [canManage]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -752,19 +746,16 @@ function QueuesSection() {
   // Fila sendo editada (null = formulário de criação)
   const [editingId, setEditingId] = useState(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [qs, deps] = await Promise.all([
-        apiClient.getQueues(),
-        apiClient.getDepartments().catch(() => []),
-      ]);
+  const load = useCallback(() => Promise.all([
+    apiClient.getQueues(),
+    apiClient.getDepartments().catch(() => []),
+  ])
+    .then(([qs, deps]) => {
       setQueues(unwrap(qs));
       setDepartments(unwrap(deps));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
+    })
+    .catch((e) => setError(errMsg(e))), []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -990,22 +981,19 @@ function AutoAttendanceSection() {
     });
   };
 
-  const load = useCallback(async () => {
-    try {
-      const [f, deps, qs] = await Promise.all([
-        apiClient.getAutoAttendanceFlow(),
-        apiClient.getDepartments().catch(() => []),
-        apiClient.getQueues().catch(() => []),
-      ]);
+  const load = useCallback(() => Promise.all([
+    apiClient.getAutoAttendanceFlow(),
+    apiClient.getDepartments().catch(() => []),
+    apiClient.getQueues().catch(() => []),
+  ])
+    .then(([f, deps, qs]) => {
       setFlow(f);
       hydrateForm(f);
       setDepartments(unwrap(deps));
       setQueues(unwrap(qs));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
+    })
+    .catch((e) => setError(errMsg(e))), []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1277,14 +1265,12 @@ function TagsSection() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
 
-  const load = useCallback(async () => {
-    try {
-      setTags(unwrap(await apiClient.getTags()));
+  const load = useCallback(() => apiClient.getTags()
+    .then((tags) => {
+      setTags(unwrap(tags));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
+    })
+    .catch((e) => setError(errMsg(e))), []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1420,19 +1406,16 @@ function GroupsSection() {
   const [expanded, setExpanded] = useState(null);
   const [memberToAdd, setMemberToAdd] = useState('');
 
-  const load = useCallback(async () => {
-    try {
-      const [deps, us] = await Promise.all([
-        apiClient.getDepartments(),
-        apiClient.getUsers().catch(() => []),
-      ]);
+  const load = useCallback(() => Promise.all([
+    apiClient.getDepartments(),
+    apiClient.getUsers().catch(() => []),
+  ])
+    .then(([deps, us]) => {
       setDepartments(unwrap(deps));
       setUsers(unwrap(us));
       setError(null);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
+    })
+    .catch((e) => setError(errMsg(e))), []);
 
   useEffect(() => { load(); }, [load]);
 

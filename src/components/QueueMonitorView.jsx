@@ -37,17 +37,13 @@ export function QueueMonitorView() {
   const [error, setError] = useState(null);
   const [now, setNow] = useState(() => Date.now());
 
-  const load = useCallback(async () => {
-    try {
-      const data = await apiClient.getConversationsOverview();
+  const load = useCallback(() => apiClient.getConversationsOverview()
+    .then((data) => {
       setOverview(data);
       setError(null);
-    } catch (err) {
-      setError(err?.message || 'Não foi possível carregar o painel');
-    } finally {
-      setNow(Date.now());
-    }
-  }, []);
+    })
+    .catch((err) => setError(err?.message || 'Não foi possível carregar o painel'))
+    .finally(() => setNow(Date.now())), []);
 
   useEffect(() => {
     load();

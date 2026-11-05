@@ -13,20 +13,18 @@ const MAX_REASON_LENGTH = 500;
 // diálogo sem mexer na conversa. Por isso o dismiss (desistir e continuar
 // na mesma conversa) agora é só o X/Escape/clique fora — "Cancelado" nunca
 // mais significa "não fazer nada".
-export function CloseConversationDialog({ open, contactName, onChoose, onCancel }) {
+export function CloseConversationDialog(props) {
+  return props.open ? h(CloseConversationContent, props) : null;
+}
+
+// Cada abertura monta um formulário novo, sem resetar estado em um efeito.
+function CloseConversationContent({ contactName, onChoose, onCancel }) {
   const [view, setView] = useState('choice'); // 'choice' | 'cancel-reason'
   const [reason, setReason] = useState('');
   const dismissRef = useRef(null);
   const reasonRef = useRef(null);
 
   useEffect(() => {
-    if (!open) return;
-    setView('choice');
-    setReason('');
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
     if (view === 'choice') dismissRef.current?.focus();
     if (view === 'cancel-reason') reasonRef.current?.focus();
 
@@ -35,9 +33,7 @@ export function CloseConversationDialog({ open, contactName, onChoose, onCancel 
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, view, onCancel]);
-
-  if (!open) return null;
+  }, [view, onCancel]);
 
   const reasonValid = reason.trim().length > 0;
 

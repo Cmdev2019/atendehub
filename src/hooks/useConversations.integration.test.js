@@ -41,6 +41,59 @@ describe('useConversations Integration Tests', () => {
     mockWsClient.isConnected = true;
   });
 
+  it('limpa o erro ao trocar de conversa e não o restaura ao voltar (B-118)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data: [
+      { id: '1', contact: 'Ana', messages: [] }, { id: '2', contact: 'Bia', messages: [] },
+    ] });
+    mockApiClient.sendMessage.mockRejectedValueOnce(new Error('Falha no envio'));
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.activeId).toBe('1'));
+    act(() => result.current.setDraft('Mensagem'));
+    await act(async () => { await result.current.sendMessage(); });
+    expect(result.current.sendError).toContain('Falha no envio');
+    act(() => result.current.setActiveId('2'));
+    expect(result.current.sendError).toBeNull();
+    act(() => result.current.setActiveId('1'));
+    expect(result.current.sendError).toBeNull();
+  });
+
+  it('ignora falha atrasada de envio depois de selecionar outra conversa (B-118)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data: [
+      { id: '1', contact: 'Ana', messages: [] }, { id: '2', contact: 'Bia', messages: [] },
+    ] });
+    let rejectSend;
+    mockApiClient.sendMessage.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSend = reject; }));
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.activeId).toBe('1'));
+    act(() => result.current.setDraft('Mensagem'));
+    let sending;
+    act(() => { sending = result.current.sendMessage(); });
+    act(() => result.current.setActiveId('2'));
+    await act(async () => {
+      rejectSend(new Error('Falha antiga'));
+      await sending;
+    });
+    expect(result.current.activeId).toBe('2');
+    expect(result.current.sendError).toBeNull();
+  });
+
+  it('preserva atualização e move a conversa uma vez quando eventos chegam no mesmo lote (B-118)', async () => {
+    mockApiClient.getConversations.mockResolvedValueOnce({ data: [
+      { id: '1', contact: 'Ana', status: 'WAITING', messages: [] },
+    ] });
+    const { result } = renderHook(() => useConversations());
+    await waitFor(() => expect(result.current.activeId).toBe('1'));
+    const updated = mockWsClient.on.mock.calls.find(([event]) => event === 'conversation.updated')[1];
+    act(() => {
+      updated({ conversationId: '1', changes: { summary: 'Última atualização' } });
+      updated({ conversationId: '1', changes: { status: 'CLOSED', resolution: 'RESOLVED' } });
+      updated({ conversationId: '1', changes: { status: 'CLOSED' } });
+    });
+    expect(result.current.conversations).toHaveLength(0);
+    expect(result.current.closedConversations).toHaveLength(1);
+    expect(result.current.closedConversations[0]).toMatchObject({ summary: 'Última atualização', resolution: 'RESOLVED', status: 'CLOSED' });
+  });
+
   it('retorna estrutura inicial de conversas', () => {
     mockApiClient.getConversations.mockResolvedValueOnce({
       data: [],

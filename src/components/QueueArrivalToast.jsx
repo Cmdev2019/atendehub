@@ -9,13 +9,14 @@ export const ARRIVAL_TOAST_MS = 8000;
 // está Online. Offline continua vendo a lista, mas não é chamado. O evento
 // `conversation.created` já chega só a quem enxerga o setor da conversa (B-40).
 export function QueueArrivalToast({ online, onAttend }) {
+  return online ? h(OnlineQueueArrivalToast, { onAttend }) : null;
+}
+
+// Offline desmonta o aviso e cancela tanto o listener quanto seu prazo.
+function OnlineQueueArrivalToast({ onAttend }) {
   const [arrival, setArrival] = useState(null);
 
   useEffect(() => {
-    if (!online) {
-      setArrival(null);
-      return undefined;
-    }
     return wsClient.on('conversation.created', (payload) => {
       const conversation = payload?.conversation;
       if (!conversation || conversation.status !== 'WAITING') return;
@@ -24,7 +25,7 @@ export function QueueArrivalToast({ online, onAttend }) {
         contact: conversation.contact?.name || conversation.contact?.phone || 'Contato',
       });
     });
-  }, [online]);
+  }, []);
 
   useEffect(() => {
     if (!arrival) return undefined;

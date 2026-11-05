@@ -90,34 +90,10 @@ export function ReportsView() {
   const [reportType, setReportType] = useState('attendance');
   const [from, setFrom] = useState(toDateInputValue(defaultFrom));
   const [to, setTo] = useState(toDateInputValue(today));
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
   const [exportError, setExportError] = useState(null);
 
   const activeReport = REPORT_TYPES.find((r) => r.id === reportType);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setExportError(null);
-
-    (async () => {
-      try {
-        const result = await apiClient.getReport(reportType, { from, to });
-        if (!cancelled) setRows(result?.rows || []);
-      } catch (error) {
-        console.warn('⚠️ Erro ao buscar relatório:', error.message);
-        if (!cancelled) setRows([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reportType, from, to]);
 
   const handleExport = async (format) => {
     setExporting(format);
@@ -149,17 +125,17 @@ export function ReportsView() {
           className: 'reports-type-select',
           'aria-label': 'Tipo de relatório',
           value: reportType,
-          onChange: (e) => setReportType(e.target.value),
+          onChange: (e) => { setExportError(null); setReportType(e.target.value); },
         },
         REPORT_TYPES.map((r) => h('option', { key: r.id, value: r.id }, r.label)),
       ),
       h('label', { className: 'reports-date-field' },
         'De',
-        h('input', { type: 'date', value: from, max: to, onChange: (e) => setFrom(e.target.value) }),
+        h('input', { type: 'date', value: from, max: to, onChange: (e) => { setExportError(null); setFrom(e.target.value); } }),
       ),
       h('label', { className: 'reports-date-field' },
         'Até',
-        h('input', { type: 'date', value: to, min: from, onChange: (e) => setTo(e.target.value) }),
+        h('input', { type: 'date', value: to, min: from, onChange: (e) => { setExportError(null); setTo(e.target.value); } }),
       ),
       h(
         'div',
@@ -177,31 +153,59 @@ export function ReportsView() {
       ),
     ),
     exportError && h('div', { className: 'send-error', role: 'alert' }, h(Icon, { name: 'warning', size: 15 }), ` ${exportError}`),
-    loading
-      ? h('p', { className: 'dashboard-loading' }, 'Carregando relatório…')
-      : rows.length === 0
-      ? h('p', { className: 'reports-empty' }, activeReport.emptyMessage)
-      : h(
-          'div',
-          { className: 'reports-table-wrap' },
+    h(ReportResults, { key: JSON.stringify([reportType, from, to]), reportType, from, to, activeReport }),
+  );
+}
+
+// Cada filtro monta seu resultado; respostas antigas são descartadas no cleanup.
+function ReportResults({ reportType, from, to, activeReport }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const result = await apiClient.getReport(reportType, { from, to });
+        if (!cancelled) setRows(result?.rows || []);
+      } catch (error) {
+        console.warn('⚠️ Erro ao buscar relatório:', error.message);
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reportType, from, to]);
+
+  return loading
+    ? h('p', { className: 'dashboard-loading' }, 'Carregando relatório…')
+    : rows.length === 0
+    ? h('p', { className: 'reports-empty' }, activeReport.emptyMessage)
+    : h(
+        'div',
+        { className: 'reports-table-wrap' },
+        h(
+          'table',
+          { className: 'reports-table' },
+          h('thead', null, h('tr', null, activeReport.columns.map((col) => h('th', { key: col.key }, col.label)))),
           h(
-            'table',
-            { className: 'reports-table' },
-            h('thead', null, h('tr', null, activeReport.columns.map((col) => h('th', { key: col.key }, col.label)))),
-            h(
-              'tbody',
-              null,
-              rows.map((row, i) =>
-                h(
-                  'tr',
-                  { key: i },
-                  activeReport.columns.map((col) =>
-                    h('td', { key: col.key }, col.format ? col.format(row[col.key]) : String(row[col.key] ?? '—')),
-                  ),
+            'tbody',
+            null,
+            rows.map((row, i) =>
+              h(
+                'tr',
+                { key: i },
+                activeReport.columns.map((col) =>
+                  h('td', { key: col.key }, col.format ? col.format(row[col.key]) : String(row[col.key] ?? '—')),
                 ),
               ),
             ),
           ),
         ),
-  );
+      );
 }

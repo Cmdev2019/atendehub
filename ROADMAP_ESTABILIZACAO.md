@@ -5,7 +5,7 @@
 > em [`docs/03-Roadmap/ROADMAP-HISTORICO.md`](docs/03-Roadmap/ROADMAP-HISTORICO.md) — separado no
 > B-90 (M-24), quando este arquivo tinha 390 KB e linhas de até 8.700 caracteres.
 >
-> **Última atualização:** 2026-10-21
+> **Última atualização:** 2026-11-05
 
 ## 📍 Onde estamos
 
@@ -65,16 +65,29 @@
   a divisão do pacote (B-105) foi reescrita e ficou igual, com os arquivos menores.
   **TypeScript 5 → 6 com o CLI 12 do Nest e o `@types/node` 24 concluído** (PR #127): os padrões novos do
   TS 6 (modo estrito, tipos globais, pasta de origem) ficaram explícitos no `tsconfig`, sem mudar a saída.
+- **B-107 em validação** ([PR #129](https://github.com/Cmdev2019/atendehub/pull/129)): aguarda a revisão do responsável. A implementação desse PR continua separada do B-118.
+- **B-118 implementado localmente, em validação** (2026-11-05): removidos os 15 avisos de estado em
+  efeitos e os refs acessados no render; a regra de estado em efeitos agora é erro, assim como
+  a de refs no hook de conversas. Diálogos reiniciam ao abrir, atualizar tags preserva rascunhos,
+  falhas atrasadas de envio não vazam para outra conversa e a passagem para Encerrados atualiza
+  as listas juntas. Validação: 440 testes em 44 suítes numa cópia isolada dos fontes, lint sem
+  avisos e build de produção. **Branch própria preparada; CI e revisão pendentes**; B-107 continua aguardando
+  revisão. Evidências e limites no [registro de regressão](docs/23-Testes/Regressao/b-118-efeitos-e-refs.md).
 - **Números do projeto:** `node scripts/project-stats.mjs` (publicado no resumo do job `web`).
 
 ## ⏭️ Próximos passos
 
-1. **B-118** — refatorar os 15 `setState` dentro de efeitos e os 3 refs gravados no render que o react-hooks
-   7 acusou; depois, a regra vira erro.
-2. **Pendências registradas** — B-45 (Swagger), B-107 a B-111 (recomendações dos relatórios antigos).
-3. ~~Atualização de majors~~ (B-86) ✅ — em espera, por dependerem de terceiros: TypeScript 7 e ESLint 10
+1. **B-107** em validação (PR #129) — revisão do responsável e merge.
+2. **B-118** — branch `refactor/b-118-efeitos-e-refs` isolada sobre master; acompanhar os checks
+   `api`, `web` e `api-e2e` do PR e revisar a mudança antes do merge.
+3. **Validação de 2026-10-30** — triar os achados do relatório externo e registrá-los com IDs antes de
+   iniciar as correções; detalhes de segurança continuam fora do repositório público.
+4. **Pendências registradas** — B-45 (Swagger), B-108 a B-111 (recomendações dos relatórios antigos).
+   Ficaram para ocorrências à parte, por decisão do responsável no B-107: o prazo da checagem do banco
+   no readiness (D4) e a verificação de como a Evolution trata o 5xx do webhook (D7).
+5. ~~Atualização de majors~~ (B-86) ✅ — em espera, por dependerem de terceiros: TypeScript 7 e ESLint 10
    do front.
-4. ~~Evolução: filas de atendimento~~ (ADR-0019) ✅ — trilha encerrada em 2026-10-21: B-65, B-113, B-66,
+6. ~~Evolução: filas de atendimento~~ (ADR-0019) ✅ — trilha encerrada em 2026-10-21: B-65, B-113, B-66,
    B-67, B-112, B-114 e B-68 (com o B-116, setores pelo admin).
 
 ## 📊 Painel de status
@@ -119,7 +132,7 @@
 | B-109 | L-17 | Logs do processamento de webhook sem o id da mensagem em todas as linhas | ⬜ Pendente |
 | B-110 | L-17 | A API usa a credencial administrativa do storage em dev (menor privilégio) | ⬜ Pendente |
 | B-111 | L-17 | Payload dos eventos de socket sem tipo compartilhado entre API e front | ⬜ Pendente |
-| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | ⬜ Pendente |
+| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (CI/revisão pendentes) |
 
 **Concluídos em parte** (o resto em espera):
 
@@ -250,7 +263,7 @@ Uma linha por item; o detalhe está no [histórico](docs/03-Roadmap/ROADMAP-HIST
 | B-115 | — | Aviso alto novo no follow-redirects 1.16.0 (via axios, na API) deixou a auditoria de dependências do CI vermelha | ✅ 2026-10-20 |
 | B-116 | — | Setores criados pelo admin conforme a necessidade, até 20 ativos por empresa; o seed não cria mais os 13 setores de exemplo | ✅ 2026-10-21 |
 | B-117 | — | No Windows, o localhost do DATABASE_URL fazia transações simultâneas do Prisma falharem (P2028); exemplo e .env local com 127.0.0.1 | ✅ 2026-10-21 |
-| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | ⬜ Pendente |
+| B-118 | — | Regras do React Compiler (react-hooks 7) acusam 15 setState síncronos em useEffect e 3 refs gravados no render | 🔍 Em validação 2026-11-05 (CI/revisão pendentes) |
 
 ## 📖 Regras do documento vivo
 

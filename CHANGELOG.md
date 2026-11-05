@@ -12,6 +12,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não lançado]
 
+### Alterado
+- **B-118 (2026-11-05, implementação local):** estado em efeitos passa a ser erro no lint. Diálogos reiniciam ao abrir; o formulário de contato preserva o rascunho ao atualizar tags. Filtros de relatório reiniciam o resultado, o aviso da fila cancela sua sessão ao ficar Offline, e conversas atualizam refs após o render, descartam erros de outra conversa e movem as listas de ativos e encerrados juntas. Validação: 440 testes/44 suítes em cópia isolada, lint limpo e build de produção; CI/revisão pendentes.
+
 ### Adicionado
 - **B-68 (2026-10-21):** "Painel da fila" para supervisor e admin — indicadores da fila, uma tabela por setor (quantas esperam, a maior espera, quantas estão em atendimento, SLAs estourados e quem está Online) e uma por atendente (estado, atendimentos, estouros e quantos pacientes esperam resposta), com destaque para quem está Offline com paciente esperando. Atualiza sozinho em tempo real. Nova rota `GET /conversations/overview`. Com isso, a trilha das filas (ADR-0019) está completa.
 - **B-68, parte 1 (2026-10-21):** painel do atendente na Caixa de Entrada — botão "Pegar próxima" no topo da Fila (que vai por ordem de chegada), o prazo do SLA em cada conversa ("SLA 4 min", "Atendimento estourado"), com aviso de perto de estourar, e um aviso de conversa nova na fila só para quem está Online, com "Atender" direto. A visão do supervisor vem na parte 2.

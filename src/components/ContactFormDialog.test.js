@@ -16,6 +16,33 @@ describe('ContactFormDialog (B-34)', () => {
     jest.clearAllMocks();
   });
 
+  it('preserva nome e e-mail em edição quando as tags do mesmo contato mudam (B-118)', () => {
+    const contact = { id: 'c1', name: 'Ana', phone: '5511999998888', email: 'ana@test.com', channel: 'WHATSAPP', tags: [] };
+    const { rerender } = render(h(ContactFormDialog, { ...baseProps, contact }));
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Ana editada' } });
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), { target: { value: 'novo@test.com' } });
+
+    rerender(h(ContactFormDialog, { ...baseProps, contact: { ...contact, tags: [{ id: 't1', name: 'Prioridade' }] } }));
+
+    expect(screen.getByLabelText('Nome')).toHaveValue('Ana editada');
+    expect(screen.getByLabelText('E-mail (opcional)')).toHaveValue('novo@test.com');
+    expect(screen.getByText('Prioridade')).toBeInTheDocument();
+  });
+
+  it('reinicia o rascunho ao trocar de contato e ao reabrir o diálogo (B-118)', () => {
+    const contact = { id: 'c1', name: 'Ana', phone: '5511999998888', channel: 'WHATSAPP' };
+    const { rerender } = render(h(ContactFormDialog, { ...baseProps, contact }));
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Rascunho' } });
+    const other = { ...contact, id: 'c2', name: 'Bia' };
+    rerender(h(ContactFormDialog, { ...baseProps, contact: other }));
+    expect(screen.getByLabelText('Nome')).toHaveValue('Bia');
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Outro rascunho' } });
+    rerender(h(ContactFormDialog, { ...baseProps, contact: other, open: false }));
+    rerender(h(ContactFormDialog, { ...baseProps, contact: other }));
+    expect(screen.getByLabelText('Nome')).toHaveValue('Bia');
+    expect(screen.getByLabelText('Nome')).toHaveFocus();
+  });
+
   it('não renderiza nada quando open=false', () => {
     const { container } = render(h(ContactFormDialog, { ...baseProps, open: false }));
     expect(container).toBeEmptyDOMElement();
